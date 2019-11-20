@@ -28,6 +28,7 @@ object EchoServer {
             .addLast(new HttpRequestDecoder(), new HttpResponseEncoder())
             .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
             .addLast(handler)
+          ()
         }
       })
   }
@@ -71,8 +72,10 @@ object EchoServer {
     start(new AutoReadHandler {
       override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
         ctx.writeAndFlush(echo(msg))
+        ()
       }
     }).bind(8080).await().get()
+    ()
   }
 
   @Sharable

@@ -77,8 +77,8 @@ object Translate {
               case buf =>
                 Sync[F].delay {
                   val buffer: ByteBuf =
-                    ByteBufAllocator.DEFAULT.buffer(buf.size)
-                  buffer.setBytes(0, buf.toArray)
+                    ByteBufAllocator.DEFAULT.ioBuffer(buf.size)
+                  buffer.writeBytes(buf.toArray)
                   new DefaultHttpContent(buffer)
                 }
             }

@@ -1,12 +1,12 @@
 package example
 
 import fs2.Chunk
-import fs2.Chunk.{Bytes, KnownElementType}
+import fs2.Chunk.KnownElementType
 import io.netty.buffer.ByteBuf
 
 import scala.reflect.ClassTag
 
-case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int)
+final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int)
     extends Chunk[Byte]
     with KnownElementType[Byte] {
   checkBounds(buf, offset, length)
@@ -27,8 +27,10 @@ case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int)
     else if (n >= size) this
     else BytebufChunk(buf, offset, n)
 
-  override def copyToArray[O2 >: Byte](xs: Array[O2], start: Int): Unit =
+  override def copyToArray[O2 >: Byte](xs: Array[O2], start: Int): Unit = {
     buf.readBytes(xs.asInstanceOf[Array[Byte]], start, start + offset)
+    ()
+  }
 
   override protected def splitAtChunk_(n: Int): (Chunk[Byte], Chunk[Byte]) =
     BytebufChunk(buf, offset, n) -> BytebufChunk(buf, offset + n, length - n)
