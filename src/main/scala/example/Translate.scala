@@ -5,6 +5,7 @@ import com.typesafe.netty.http.{DefaultStreamedHttpResponse, StreamedHttpRequest
 import io.netty.buffer.{ByteBuf, ByteBufAllocator}
 import io.netty.handler.codec.http.{
   DefaultHttpContent,
+  DefaultHttpHeaders,
   FullHttpRequest,
   HttpContent,
   HttpRequest,
@@ -63,11 +64,22 @@ object Translate {
     val version = NettyHttpVersion.valueOf(response.httpVersion.show)
     val status =
       HttpResponseStatus.valueOf(response.status.code, response.status.reason)
+    val headers = {
+      val heads = new DefaultHttpHeaders()
+      response.headers.foreach { h =>
+        heads.add(h.name.value, h.value)
+        ()
+      }
+      heads
+    }
 
     response.body match {
-      case http4s.EmptyBody => new NettyFullResponse(version, status)
+      case http4s.EmptyBody =>
+        val res = new NettyFullResponse(version, status)
+        res.headers().add(headers)
+        res
       case stream =>
-        new DefaultStreamedHttpResponse(
+        val res = new DefaultStreamedHttpResponse(
           version,
           status,
           stream.chunks
@@ -84,6 +96,8 @@ object Translate {
             }
             .toUnicastPublisher()
         )
+        res.headers().add(headers)
+        res
     }
   }
 }
