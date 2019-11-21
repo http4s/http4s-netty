@@ -51,6 +51,7 @@ final class Http4sHandler[F[_]](app: HttpApp[F], errorHandler: ServiceErrorHandl
               case NonFatal(e) => exceptionCaught(ctx, e)
             }
         }
+      case _ => exceptionCaught(ctx, InvalidMessageException)
     }
 
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
