@@ -6,16 +6,14 @@ import io.netty.buffer.ByteBuf
 
 import scala.reflect.ClassTag
 
-final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int)
-    extends Chunk[Byte]
-    with KnownElementType[Byte] {
+final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int) extends Chunk[Byte] with KnownElementType[Byte] {
   checkBounds(buf, offset, length)
 
   override def elementClassTag: ClassTag[Byte] = ClassTag.Byte
 
-  def size = length
+  def size          = length
   def apply(i: Int) = buf.getByte(offset + i)
-  def at(i: Int) = buf.getByte(offset + i)
+  def at(i: Int)    = buf.getByte(offset + i)
 
   override def drop(n: Int): Chunk[Byte] =
     if (n <= 0) this
@@ -36,17 +34,16 @@ final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int)
     BytebufChunk(buf, offset, n) -> BytebufChunk(buf, offset + n, length - n)
 
   private def checkBounds(values: ByteBuf, offset: Int, length: Int): Unit = {
-    require(offset >= 0 && offset <= values.capacity())
-    require(length >= 0 && length <= values.capacity())
+    require(offset >= 0 && offset <= values.readableBytes())
+    require(length >= 0 && length <= values.readableBytes())
     val end = offset + length
-    require(end >= 0 && end <= values.capacity())
+    require(end >= 0 && end <= values.readableBytes())
   }
-
 }
 
 object BytebufChunk {
   def apply(buf: ByteBuf): BytebufChunk = {
     val read = buf.asReadOnly()
-    BytebufChunk(read, 0, read.capacity())
+    BytebufChunk(read, 0, read.readableBytes())
   }
 }

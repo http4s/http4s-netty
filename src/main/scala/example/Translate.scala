@@ -1,23 +1,15 @@
 package example
 
+import cats.syntax.show._
 import cats.effect.{ConcurrentEffect, Sync}
 import com.typesafe.netty.http.{DefaultStreamedHttpResponse, StreamedHttpRequest}
 import io.netty.buffer.{ByteBuf, ByteBufAllocator}
-import io.netty.handler.codec.http.{
-  DefaultHttpContent,
-  DefaultHttpHeaders,
-  FullHttpRequest,
-  HttpContent,
-  HttpRequest,
-  HttpResponse,
-  HttpResponseStatus,
-  DefaultFullHttpResponse => NettyFullResponse,
-  HttpVersion => NettyHttpVersion
-}
+import io.netty.handler.codec.http.{DefaultHttpContent, DefaultHttpHeaders, FullHttpRequest, HttpContent, HttpRequest, HttpResponse, HttpResponseStatus, DefaultFullHttpResponse => NettyFullResponse, HttpVersion => NettyHttpVersion}
 import fs2.Stream
 import fs2.interop.reactivestreams._
 import org.http4s
 import org.http4s._
+import org.http4s.util.StringWriter
 
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
@@ -56,10 +48,9 @@ object Translate {
     } yield Request[F](m, u, v, headers, b)
   }
 
-  def toNettyResponse[F[_]: ConcurrentEffect](
+  def toNettyResponse[F[_]: ConcurrentEffect](now: HttpDate,
       response: Response[F]
   ): HttpResponse = {
-    import cats.syntax.show._
 
     val version = NettyHttpVersion.valueOf(response.httpVersion.show)
     val status =
@@ -70,6 +61,11 @@ object Translate {
         heads.add(h.name.value, h.value)
         ()
       }
+      heads.add("Date", {
+        val s = new StringWriter()
+        now.render(s)
+        s.result
+      })
       heads
     }
 
