@@ -1,12 +1,15 @@
 package example
 
+import cats.effect.{ConcurrentEffect, ExitCode, IO, IOApp}
 import cats.syntax.functor._
-import cats.effect.{ExitCode, IO, IOApp}
-import io.netty.channel.{Channel, ChannelHandlerContext}
+import io.netty.channel.ChannelHandler.Sharable
+import io.netty.channel.{Channel, ChannelHandlerContext, ChannelInboundHandler, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpRequest
-import org.http4s.HttpRoutes
-import org.http4s.implicits._
 import org.http4s.dsl.io._
+import org.http4s.implicits._
+import org.http4s.{HttpApp, HttpRoutes}
+
+import scala.util.control.NonFatal
 
 object NettyTestServer extends IOApp {
   override def run(args: List[String]): IO[ExitCode] = {
@@ -16,30 +19,45 @@ object NettyTestServer extends IOApp {
       }
       .orNotFound
 
-    IO.async { cb: ((Either[Throwable, Channel]) => Unit) =>
-        val server = EchoServer.start(new EchoServer.AutoReadHandler {
-          override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-            msg match {
-              case req: HttpRequest =>
-                Translate.toHttp4sRequest[IO](req) match {
-                  case Left(error) =>
-                    cb(Left(error))
-                  case Right(request) =>
-                    app(request).unsafeRunAsync {
-                      case Left(error) =>
-                        cb(Left(error))
-                      case Right(response) =>
-                        ctx.write(Translate.toNettyResponse(response))
-                        ()
-                    }
-                }
-            }
-            ()
-          }
-        })
-
+    IO.async { (cb: Either[Throwable, Channel] => Unit) =>
+        val server = EchoServer.start(onChannelRead(app, err => cb(Left(err))))
         cb(Right(server.bind(8081).channel()))
       }
       .as(ExitCode.Success)
+  }
+
+  def onChannelRead[F[_]](app: HttpApp[F], onError: (Throwable) => Unit)(implicit F: ConcurrentEffect[F]): ChannelInboundHandler =
+    new AutoReadHandler {
+      override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
+        msg match {
+          case req: HttpRequest =>
+            Translate.toHttp4sRequest[F](req) match {
+              case Left(error) =>
+                onError(error)
+              case Right(request) =>
+                try {
+                  F.runAsync(app(request)) {
+                      case Left(error) =>
+                        IO(onError(error))
+                      case Right(response) =>
+                        IO {
+                          ctx.write(Translate.toNettyResponse(response))
+                          ()
+                        }
+                    }
+                    .unsafeRunSync()
+                } catch {
+                  case NonFatal(e) => onError(e)
+                }
+            }
+        }
+    }
+
+  @Sharable
+  class AutoReadHandler extends ChannelInboundHandlerAdapter {
+    override def channelActive(ctx: ChannelHandlerContext): Unit = {
+      ctx.read()
+      ()
+    }
   }
 }

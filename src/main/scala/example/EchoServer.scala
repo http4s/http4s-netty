@@ -19,7 +19,7 @@ object EchoServer {
     bootstrap
       .group(group)
       .channel(classOf[NioServerSocketChannel])
-      .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.TRUE)
+      .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
           val pipeline = ch.pipeline()
