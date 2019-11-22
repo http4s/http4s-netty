@@ -19,6 +19,6 @@ object NettyTestServer extends IOApp {
       Right(server.bind(8081).channel())
     }.as(ExitCode.Success)*/
 
-    NettyBuilder(app, org.http4s.server.DefaultServiceErrorHandler[IO]).resource.use(_ => IO.never)
+    NettyBuilder[IO].withHttpApp(app).resource.use(_ => IO.never)
   }
 }

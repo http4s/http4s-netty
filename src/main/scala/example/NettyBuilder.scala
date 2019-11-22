@@ -20,21 +20,21 @@ import scala.collection.immutable
 import scala.concurrent.duration.Duration
 import scala.reflect.ClassTag
 
-case class NettyBuilder[F[_]](
-    app: HttpApp[F],
+class NettyBuilder[F[_]](
+    httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
-    socketAddress: InetSocketAddress = org.http4s.server.defaults.SocketAddress,
-    idleTimeout: Duration = org.http4s.server.defaults.IdleTimeout,
-    eventLoopThreads: Int = 0, //let netty decide
-    maxInitialLineLength: Int = 4096,
-    maxHeaderSize: Int = 8192,
-    maxChunkSize: Int = 8192,
+    socketAddress: InetSocketAddress,
+    idleTimeout: Duration,
+    eventLoopThreads: Int, //let netty decide
+    maxInitialLineLength: Int,
+    maxHeaderSize: Int,
+    maxChunkSize: Int,
+    transport: NettyTransport,
+    banner: immutable.Seq[String]
     //sslBits: Option[NettySSLConfig],
-    transport: NettyTransport = NettyTransport.Native,
     //ec: ExecutionContext,
     //enableWebsockets: Boolean = false,
     //maxWSPayloadLength: Option[Int],
-    banner: immutable.Seq[String] = org.http4s.server.defaults.Banner
     //nettyChannelOptions: NettyBuilder.NettyChannelOptions
 )(implicit F: ConcurrentEffect[F])
     extends ServerBuilder[F] {
@@ -43,6 +43,31 @@ case class NettyBuilder[F[_]](
   type Self = NettyBuilder[F]
 
   override protected implicit def F: Concurrent[F] = F
+
+  private def copy(
+      httpApp: HttpApp[F] = httpApp,
+      serviceErrorHandler: ServiceErrorHandler[F] = serviceErrorHandler,
+      socketAddress: InetSocketAddress = socketAddress,
+      idleTimeout: Duration = idleTimeout,
+      eventLoopThreads: Int = eventLoopThreads,
+      maxInitialLineLength: Int = maxInitialLineLength,
+      maxHeaderSize: Int = maxHeaderSize,
+      maxChunkSize: Int = maxChunkSize,
+      transport: NettyTransport = transport,
+      banner: immutable.Seq[String] = banner
+  ): NettyBuilder[F] =
+    new NettyBuilder[F](
+      httpApp,
+      serviceErrorHandler,
+      socketAddress,
+      idleTimeout,
+      eventLoopThreads,
+      maxInitialLineLength,
+      maxHeaderSize,
+      maxChunkSize,
+      transport,
+      banner
+    )
 
   override def bindSocketAddress(socketAddress: InetSocketAddress): NettyBuilder[F] =
     copy(socketAddress = socketAddress)
@@ -90,6 +115,8 @@ case class NettyBuilder[F[_]](
 
   override def withBanner(banner: immutable.Seq[String]): NettyBuilder[F] = copy(banner = banner)
 
+  def withHttpApp(httpApp: HttpApp[F]): NettyBuilder[F] = copy(httpApp = httpApp)
+
   def bind() = {
     val resolvedAddress = new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
     val holder          = getEventLoop
@@ -107,7 +134,7 @@ case class NettyBuilder[F[_]](
           }
           pipeline
             .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
-            .addLast(new Http4sHandler[F](app, serviceErrorHandler))
+            .addLast(new Http4sHandler[F](httpApp, serviceErrorHandler))
           ()
         }
       })
@@ -128,7 +155,22 @@ case class NettyBuilder[F[_]](
   case class Bound(address: InetSocketAddress, eventLoop: MultithreadEventLoopGroup, channel: Channel)
 }
 
-object NettyBuilder {}
+object NettyBuilder {
+  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyBuilder[F] = {
+    new NettyBuilder[F](
+      httpApp = HttpApp.notFound[F],
+      serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
+      socketAddress = org.http4s.server.defaults.SocketAddress,
+      idleTimeout = org.http4s.server.defaults.IdleTimeout,
+      eventLoopThreads = 0, //let netty decide
+      maxInitialLineLength = 4096,
+      maxHeaderSize = 8192,
+      maxChunkSize = 8192,
+      transport = NettyTransport.Native,
+      banner = org.http4s.server.defaults.Banner
+    )
+  }
+}
 
 sealed trait NettyTransport extends Product with Serializable
 
