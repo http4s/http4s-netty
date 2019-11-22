@@ -30,16 +30,9 @@ final class Http4sHandler[F[_]](app: HttpApp[F], errorHandler: ServiceErrorHandl
             exceptionCaught(ctx, error)
           case Right(request) =>
             try {
-              F.runAsync(app(request)) {
+              F.runAsync(F.recoverWith(app(request))(errorHandler(request))) {
                   case Left(error) =>
-                    val handler = errorHandler(request)
-                    if (handler.isDefinedAt(error)) {
-                      F.toIO(handler(error)).map { res =>
-                        ctx.write(Translate.toNettyResponse[F](HttpDate.now, res)); ()
-                      }
-                    } else {
-                      IO(exceptionCaught(ctx, error))
-                    }
+                    IO(exceptionCaught(ctx, error))
                   case Right(response) =>
                     IO {
                       ctx.write(Translate.toNettyResponse(HttpDate.now, response))
