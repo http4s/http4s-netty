@@ -1,12 +1,13 @@
 package example
 
 import java.io.IOException
+import java.time.Instant
 
 import cats.effect.{ConcurrentEffect, IO}
 import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel.{ChannelFuture, ChannelFutureListener, ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.TooLongFrameException
-import io.netty.handler.codec.http.{DefaultHttpResponse, HttpHeaderNames, HttpRequest, HttpResponseStatus, HttpVersion}
+import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.{HttpApp, HttpDate}
@@ -35,7 +36,7 @@ final class Http4sHandler[F[_]](app: HttpApp[F], errorHandler: ServiceErrorHandl
                     IO(exceptionCaught(ctx, error))
                   case Right(response) =>
                     IO {
-                      ctx.write(Translate.toNettyResponse(HttpDate.now, response))
+                      ctx.write(Translate.toNettyResponse(HttpDate.unsafeFromInstant(Instant.now), response))
                       ()
                     }
                 }

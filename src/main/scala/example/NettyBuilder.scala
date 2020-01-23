@@ -83,7 +83,7 @@ class NettyBuilder[F[_]](
                 case Bound(address, loop, channel) =>
                   Sync[F].delay {
                     channel.close().awaitUninterruptibly()
-                    loop.shutdownGracefully()
+                    loop.shutdown()
                     logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
                   }
               }
@@ -99,17 +99,17 @@ class NettyBuilder[F[_]](
     }
   }
 
-  private def getEventLoop: EventLoopHolder[_] = transport match {
+  private def getEventLoop: EventLoopHolder[_ <: ServerChannel] = transport match {
     case NettyTransport.Nio =>
-      EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+      EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads), new NioEventLoopGroup(2))
     case NettyTransport.Native =>
       if (Epoll.isAvailable)
-        EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads), new EpollEventLoopGroup(2))
       else if (KQueue.isAvailable)
-        EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads), new KQueueEventLoopGroup(2))
       else {
         logger.info("Falling back to NIO EventLoopGroup")
-        EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads), new NioEventLoopGroup(2))
       }
   }
 
@@ -119,10 +119,9 @@ class NettyBuilder[F[_]](
 
   def bind() = {
     val resolvedAddress = new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
-    val holder          = getEventLoop
+    val loop            = getEventLoop
     val server          = new ServerBootstrap()
-    val channel = holder
-      .configure(server)
+    val channel = configure(loop, server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
           val pipeline = ch.pipeline()
@@ -141,18 +140,26 @@ class NettyBuilder[F[_]](
       .bind(resolvedAddress)
       .await()
       .channel()
-    Bound(resolvedAddress, holder.eventloop, channel)
+    Bound(resolvedAddress, loop, channel)
   }
 
-  case class EventLoopHolder[A <: ServerChannel](eventloop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
-    def configure(boostrap: ServerBootstrap) =
-      boostrap
-        .group(eventloop)
-        .channel(classTag.runtimeClass.asInstanceOf[Class[A]])
-        .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
-  }
+  def configure(holder: EventLoopHolder[_ <: ServerChannel], boostrap: ServerBootstrap) =
+    boostrap
+      .group(holder.parent, holder.child)
+      .channel(holder.runtimeClass)
+      .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
 
-  case class Bound(address: InetSocketAddress, eventLoop: MultithreadEventLoopGroup, channel: Channel)
+  case class EventLoopHolder[A <: ServerChannel](parent: MultithreadEventLoopGroup, child: MultithreadEventLoopGroup)(
+      implicit classTag: ClassTag[A]
+  ) {
+    def shutdown(): Unit = {
+      child.shutdownGracefully()
+      parent.shutdownGracefully()
+      ()
+    }
+    def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
+  }
+  case class Bound(address: InetSocketAddress, holder: EventLoopHolder[_ <: ServerChannel], channel: Channel)
 }
 
 object NettyBuilder {
