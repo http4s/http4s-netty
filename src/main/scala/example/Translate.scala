@@ -4,7 +4,17 @@ import cats.syntax.show._
 import cats.effect.{ConcurrentEffect, Sync}
 import com.typesafe.netty.http.{DefaultStreamedHttpResponse, StreamedHttpRequest}
 import io.netty.buffer.{ByteBuf, ByteBufAllocator}
-import io.netty.handler.codec.http.{DefaultHttpContent, DefaultHttpHeaders, FullHttpRequest, HttpContent, HttpRequest, HttpResponse, HttpResponseStatus, DefaultFullHttpResponse => NettyFullResponse, HttpVersion => NettyHttpVersion}
+import io.netty.handler.codec.http.{
+  DefaultHttpContent,
+  DefaultHttpHeaders,
+  FullHttpRequest,
+  HttpContent,
+  HttpRequest,
+  HttpResponse,
+  HttpResponseStatus,
+  DefaultFullHttpResponse => NettyFullResponse,
+  HttpVersion => NettyHttpVersion
+}
 import fs2.Stream
 import fs2.interop.reactivestreams._
 import org.http4s
@@ -48,9 +58,7 @@ object Translate {
     } yield Request[F](m, u, v, headers, b)
   }
 
-  def toNettyResponse[F[_]: ConcurrentEffect](now: HttpDate,
-      response: Response[F]
-  ): HttpResponse = {
+  def toNettyResponse[F[_]: ConcurrentEffect](now: HttpDate, response: Response[F]): HttpResponse = {
 
     val version = NettyHttpVersion.valueOf(response.httpVersion.show)
     val status =

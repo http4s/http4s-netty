@@ -34,10 +34,11 @@ final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int) extends Ch
     BytebufChunk(buf, offset, n) -> BytebufChunk(buf, offset + n, length - n)
 
   private def checkBounds(values: ByteBuf, offset: Int, length: Int): Unit = {
-    require(offset >= 0 && offset <= values.readableBytes())
-    require(length >= 0 && length <= values.readableBytes())
+    val realLength = values.readableBytes()
+    require(offset >= 0 && offset <= realLength)
+    require(length >= 0 && length <= realLength)
     val end = offset + length
-    require(end >= 0 && end <= values.readableBytes())
+    require(end >= 0 && end <= realLength)
   }
 }
 
