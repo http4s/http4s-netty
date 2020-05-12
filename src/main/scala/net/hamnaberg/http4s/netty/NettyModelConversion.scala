@@ -3,13 +3,13 @@ package net.hamnaberg.http4s.netty
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 
-import cats.effect.{ConcurrentEffect, IO, Sync}
+import cats.effect.{ConcurrentEffect, IO}
 import cats.implicits.{catsSyntaxEither => _}
 import com.typesafe.netty.http._
 import fs2.interop.reactivestreams._
 import fs2.{Chunk, Stream}
 import io.chrisdavenport.vault.Vault
-import io.netty.buffer.{ByteBuf, ByteBufAllocator, Unpooled}
+import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
@@ -51,7 +51,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       val (requestBody, cleanup)                        = convertRequestBody(request)
       val uri: ParseResult[Uri]                         = Uri.fromString(request.uri())
       val headerBuf                                     = new ListBuffer[Header]
-      val headersIterator                               = request.headers().iterator()
+      val headersIterator                               = request.headers().iteratorAsString()
       var mapEntry: java.util.Map.Entry[String, String] = null
       while (headersIterator.hasNext) {
         mapEntry = headersIterator.next()
@@ -146,15 +146,17 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       }
     }
 
-  private[this] def appendAllToNetty(header: Header, nettyHeaders: HttpHeaders) =
+  /*private[this] def appendAllToNetty(header: Header, nettyHeaders: HttpHeaders) =
     nettyHeaders.add(header.name.toString(), header.value)
-
+   */
   /**
     * Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
-  private[this] def appendSomeToNetty(header: Header, nettyHeaders: HttpHeaders) =
+  private[this] def appendSomeToNetty(header: Header, nettyHeaders: HttpHeaders): Unit = {
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
       nettyHeaders.add(header.name.toString(), header.value)
+    ()
+  }
 
   /** Create a Netty response from the result */
   def toNettyResponse(
@@ -278,14 +280,9 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         httpResponse.body.chunks
           .evalMap[F, HttpContent] {
             case chnk: BytebufChunk =>
-              Sync[F].delay(new DefaultHttpContent(chnk.buf))
+              F.delay(new DefaultHttpContent(chnk.buf))
             case buf                =>
-              Sync[F].delay {
-                val buffer: ByteBuf =
-                  ByteBufAllocator.DEFAULT.ioBuffer(buf.size)
-                buffer.writeBytes(buf.toArray)
-                new DefaultHttpContent(buffer)
-              }
+              F.delay(chunkToNetty(buf))
           }
           .toUnicastPublisher()
       )

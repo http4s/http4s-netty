@@ -18,7 +18,7 @@ import org.http4s.server.{Server, ServiceErrorHandler}
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
 
 class NettyBuilder[F[_]](
@@ -86,12 +86,33 @@ class NettyBuilder[F[_]](
 
   def withHttpApp(httpApp: HttpApp[F]): NettyBuilder[F]          = copy(httpApp = httpApp)
   def withExcutionContext(ec: ExecutionContext): NettyBuilder[F] = copy(executionContext = ec)
+  def withPort(port: Int)                                        = copy(socketAddress = InetSocketAddress.createUnresolved(socketAddress.getHostName, port))
+  def withHost(host: String)                                     = copy(socketAddress = InetSocketAddress.createUnresolved(host, socketAddress.getPort))
+  def withHostAndPort(host: String, port: Int)                   =
+    copy(socketAddress = InetSocketAddress.createUnresolved(host, port))
+  def withNativeTransport                                        = copy(transport = NettyTransport.Native)
+  def withNioTransport                                           = copy(transport = NettyTransport.Nio)
+  def withoutBanner                                              = copy(banner = Nil)
+  def withMaxHeaderSize(size: Int)                               = copy(maxHeaderSize = size)
+  def withMaxChunkSize(size: Int)                                = copy(maxChunkSize = size)
+  def withMaxInitialLineLength(size: Int)                        = copy(maxInitialLineLength = size)
+  def withServiceErrorHandler(handler: ServiceErrorHandler[F])   = copy(serviceErrorHandler = handler)
 
-  def bind() = {
+  /**
+    * Socket selector threads.
+    * @param nThreads number of selector threads. Use <code>0</code> for netty default
+    * @return an updated builder
+    */
+  def withEventLoopThreads(nThreads: Int) = copy(eventLoopThreads = nThreads)
+
+  def withIdleTimeout(duration: FiniteDuration) = copy(idleTimeout = duration)
+
+  private def bind() = {
     val resolvedAddress = new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
     val loop            = getEventLoop
     val server          = new ServerBootstrap()
-    val channel         = configure(loop, server)
+    val channel         = loop
+      .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
           val pipeline = ch.pipeline()
@@ -133,12 +154,6 @@ class NettyBuilder[F[_]](
       server
     }
 
-  def configure(holder: EventLoopHolder[_ <: ServerChannel], boostrap: ServerBootstrap) =
-    boostrap
-      .group(holder.eventLoop)
-      .channel(holder.runtimeClass)
-      .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
-
   case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
@@ -146,7 +161,13 @@ class NettyBuilder[F[_]](
       eventLoop.shutdownGracefully()
       ()
     }
-    def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
+    def runtimeClass: Class[A]                = classTag.runtimeClass.asInstanceOf[Class[A]]
+    def configure(bootstrap: ServerBootstrap) =
+      bootstrap
+        .group(eventLoop)
+        .channel(runtimeClass)
+        .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
+
   }
   case class Bound(address: InetSocketAddress, holder: EventLoopHolder[_ <: ServerChannel], channel: Channel)
 }

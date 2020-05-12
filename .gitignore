@@ -3,3 +3,4 @@ target/
 .ensime
 release.sbt
 .metals
+.bloop
