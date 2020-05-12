@@ -1,4 +1,4 @@
-package example
+package net.hamnaberg.http4s.netty
 
 import fs2.Chunk
 import fs2.Chunk.KnownElementType
@@ -37,7 +37,7 @@ final case class BytebufChunk(buf: ByteBuf, offset: Int, length: Int) extends Ch
     val realLength = values.readableBytes()
     require(offset >= 0 && offset <= realLength)
     require(length >= 0 && length <= realLength)
-    val end = offset + length
+    val end        = offset + length
     require(end >= 0 && end <= realLength)
   }
 }
