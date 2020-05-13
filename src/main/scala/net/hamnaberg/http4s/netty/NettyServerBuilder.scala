@@ -14,14 +14,14 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.HttpApp
-import org.http4s.server.{Server, ServiceErrorHandler}
+import org.http4s.server.{defaults, Server, ServiceErrorHandler}
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
 
-class NettyBuilder[F[_]](
+final class NettyServerBuilder[F[_]](
     httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
@@ -40,8 +40,6 @@ class NettyBuilder[F[_]](
 )(implicit F: ConcurrentEffect[F]) {
   private val logger = org.log4s.getLogger
 
-  type Self = NettyBuilder[F]
-
   private def copy(
       httpApp: HttpApp[F] = httpApp,
       serviceErrorHandler: ServiceErrorHandler[F] = serviceErrorHandler,
@@ -54,8 +52,8 @@ class NettyBuilder[F[_]](
       transport: NettyTransport = transport,
       banner: immutable.Seq[String] = banner,
       executionContext: ExecutionContext = executionContext
-  ): NettyBuilder[F] =
-    new NettyBuilder[F](
+  ): NettyServerBuilder[F] =
+    new NettyServerBuilder[F](
       httpApp,
       serviceErrorHandler,
       socketAddress,
@@ -84,19 +82,22 @@ class NettyBuilder[F[_]](
         }
     }
 
-  def withHttpApp(httpApp: HttpApp[F]): NettyBuilder[F]          = copy(httpApp = httpApp)
-  def withExcutionContext(ec: ExecutionContext): NettyBuilder[F] = copy(executionContext = ec)
-  def withPort(port: Int)                                        = copy(socketAddress = InetSocketAddress.createUnresolved(socketAddress.getHostName, port))
-  def withHost(host: String)                                     = copy(socketAddress = InetSocketAddress.createUnresolved(host, socketAddress.getPort))
-  def withHostAndPort(host: String, port: Int)                   =
-    copy(socketAddress = InetSocketAddress.createUnresolved(host, port))
-  def withNativeTransport                                        = copy(transport = NettyTransport.Native)
-  def withNioTransport                                           = copy(transport = NettyTransport.Nio)
-  def withoutBanner                                              = copy(banner = Nil)
-  def withMaxHeaderSize(size: Int)                               = copy(maxHeaderSize = size)
-  def withMaxChunkSize(size: Int)                                = copy(maxChunkSize = size)
-  def withMaxInitialLineLength(size: Int)                        = copy(maxInitialLineLength = size)
-  def withServiceErrorHandler(handler: ServiceErrorHandler[F])   = copy(serviceErrorHandler = handler)
+  def withHttpApp(httpApp: HttpApp[F])              = copy(httpApp = httpApp)
+  def withExcutionContext(ec: ExecutionContext)     = copy(executionContext = ec)
+  def bindSocketAddress(address: InetSocketAddress) = copy(socketAddress = address)
+
+  final def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host) =
+    bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
+  final def bindLocal(port: Int)                                                  = bindHttp(port, defaults.Host)
+  final def bindAny(host: String = defaults.Host)                                 = bindHttp(0, host)
+
+  def withNativeTransport                                      = copy(transport = NettyTransport.Native)
+  def withNioTransport                                         = copy(transport = NettyTransport.Nio)
+  def withoutBanner                                            = copy(banner = Nil)
+  def withMaxHeaderSize(size: Int)                             = copy(maxHeaderSize = size)
+  def withMaxChunkSize(size: Int)                              = copy(maxChunkSize = size)
+  def withMaxInitialLineLength(size: Int)                      = copy(maxInitialLineLength = size)
+  def withServiceErrorHandler(handler: ServiceErrorHandler[F]) = copy(serviceErrorHandler = handler)
 
   /**
     * Socket selector threads.
@@ -108,7 +109,8 @@ class NettyBuilder[F[_]](
   def withIdleTimeout(duration: FiniteDuration) = copy(idleTimeout = duration)
 
   private def bind() = {
-    val resolvedAddress = new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
+    val resolvedAddress =
+      if (socketAddress.isUnresolved) new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort) else socketAddress
     val loop            = getEventLoop
     val server          = new ServerBootstrap()
     val channel         = loop
@@ -118,7 +120,7 @@ class NettyBuilder[F[_]](
           val pipeline = ch.pipeline()
           pipeline
             .addLast(new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize), new HttpResponseEncoder())
-          if (idleTimeout.isFinite() && idleTimeout.length > 0) {
+          if (idleTimeout.isFinite && idleTimeout.length > 0) {
             pipeline.addLast("idle-handler", new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           }
           pipeline
@@ -130,7 +132,7 @@ class NettyBuilder[F[_]](
       .bind(resolvedAddress)
       .await()
       .channel()
-    Bound(resolvedAddress, loop, channel)
+    Bound(channel.localAddress().asInstanceOf[InetSocketAddress], loop, channel)
   }
 
   def resource: Resource[F, Server[F]] =
@@ -172,9 +174,9 @@ class NettyBuilder[F[_]](
   case class Bound(address: InetSocketAddress, holder: EventLoopHolder[_ <: ServerChannel], channel: Channel)
 }
 
-object NettyBuilder {
-  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyBuilder[F] = {
-    new NettyBuilder[F](
+object NettyServerBuilder {
+  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyServerBuilder[F] = {
+    new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
       socketAddress = org.http4s.server.defaults.SocketAddress,

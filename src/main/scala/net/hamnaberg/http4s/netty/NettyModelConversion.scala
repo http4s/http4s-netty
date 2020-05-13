@@ -119,7 +119,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         val stream    =
           streamed
             .toStream()
-            .flatMap(c => Stream.chunk(BytebufChunk(c.content())))
+            .flatMap(c => Stream.chunk(Chunk.bytes(bytebufToArray(c.content()))))
             .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
         (stream, drainBody(_, stream, isDrained))
     }
@@ -278,12 +278,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         httpVersion,
         HttpResponseStatus.valueOf(httpResponse.status.code),
         httpResponse.body.chunks
-          .evalMap[F, HttpContent] {
-            case chnk: BytebufChunk =>
-              F.delay(new DefaultHttpContent(chnk.buf))
-            case buf                =>
-              F.delay(chunkToNetty(buf))
-          }
+          .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))
           .toUnicastPublisher()
       )
     httpResponse.headers.foreach(appendSomeToNetty(_, response.headers()))

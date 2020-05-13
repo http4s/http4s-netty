@@ -13,11 +13,6 @@ object NettyTestServer extends IOApp {
       }
       .orNotFound
 
-    /*IO {
-      val server = EchoServer.start(new Http4sHandler(app))
-      Right(server.bind(8081).channel())
-    }.as(ExitCode.Success)*/
-
-    NettyBuilder[IO].withHttpApp(app).resource.use(_ => IO.never)
+    NettyServerBuilder[IO].withHttpApp(app).resource.use(_ => IO.never)
   }
 }
