@@ -1,4 +1,4 @@
-organization := "net.hamnaberg.http4s"
+organization := "org.http4s"
 name := "http4s-netty"
 
 val http4sVersion = "0.21.4"

@@ -1,4 +1,4 @@
-package net.hamnaberg.http4s.netty
+package org.http4s.netty
 
 import cats.effect.{ContextShift, IO, Resource, Timer}
 

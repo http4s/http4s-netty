@@ -1,4 +1,4 @@
-package net.hamnaberg.http4s.netty
+package org.http4s.netty
 
 import scala.compat.java8.FutureConverters._
 import java.util.concurrent.CompletableFuture

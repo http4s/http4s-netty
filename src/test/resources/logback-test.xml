@@ -4,7 +4,7 @@
             <pattern>[%thread] %highlight(%-5level) %cyan(%logger{15}) - %msg %n</pattern>
         </encoder>
     </appender>
-    <logger name="net.hamnaberg" level="trace"/>
+    <logger name="org.http4s" level="trace"/>
     <root level="INFO">
         <appender-ref ref="STDOUT"/>
     </root>
