@@ -12,7 +12,6 @@ import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
 
-import scala.compat.java8.OptionConverters._
 import scala.concurrent.duration._
 
 class NettyServerTest extends NettySuite {
@@ -22,6 +21,7 @@ class NettyServerTest extends NettySuite {
       .withHttpApp(NettyServerTest.routes)
       .withIdleTimeout(2.seconds)
       .withExcutionContext(munitExecutionContext)
+      .withoutBanner
       .bindAny()
       .resource,
     "server"
@@ -32,31 +32,31 @@ class NettyServerTest extends NettySuite {
 
   test("simple") {
     val uri = server().baseUri / "simple"
-    val s   = client.sendAsync(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
-    s.thenApply { res =>
+    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
+    s.map { res =>
       assertEquals(res.body(), "simple path")
     }
   }
 
   test("no-content") {
     val uri = server().baseUri / "no-content"
-    val s   = client.sendAsync(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.discarding())
-    s.thenApply { res =>
+    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.discarding())
+    s.map { res =>
       assertEquals(res.statusCode(), 204)
     }
   }
 
   test("delayed") {
     val uri = server().baseUri / "delayed"
-    val s   = client.sendAsync(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
-    s.thenApply { res =>
+    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
+    s.map { res =>
       assertEquals(res.statusCode(), 200)
       assertEquals(res.body(), "delayed path")
     }
   }
   test("chunked") {
     val uri = server().baseUri / "chunked"
-    val s   = client.sendAsync(
+    val s   = client.sendIO(
       HttpRequest
         .newBuilder(URI.create(uri.renderString))
         .timeout(java.time.Duration.ofSeconds(5))
@@ -64,9 +64,9 @@ class NettyServerTest extends NettySuite {
         .build(),
       BodyHandlers.ofString()
     )
-    s.thenApply { res =>
-      val transfer = res.headers().firstValue("Transfer-Encoding").asScala
-      assertEquals(transfer, Some("chunked"))
+    s.map { res =>
+      val transfer = res.headers().firstValue("Transfer-Encoding").orElse("not-chunked")
+      assertEquals(transfer, "chunked")
       assertEquals(res.statusCode(), 200)
       assertEquals(res.body(), "hello")
     }
@@ -75,17 +75,14 @@ class NettyServerTest extends NettySuite {
     val uri = server().baseUri / "timeout"
     val url = URI.create(uri.renderString)
 
-    val s = client.sendAsync(
+    val s = client.sendIO(
       HttpRequest
         .newBuilder(url)
         .timeout(java.time.Duration.ofSeconds(5))
         .build(),
       BodyHandlers.ofString()
     )
-    s.handle { (res, ex) =>
-      assert(ex != null)
-      assert(res == null)
-    }
+    s.attempt.map(e => assert(e.isLeft))
   }
 }
 

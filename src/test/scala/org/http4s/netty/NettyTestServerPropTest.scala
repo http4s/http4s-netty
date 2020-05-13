@@ -17,6 +17,7 @@ class NettyTestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
       .withHttpApp(NettyServerTest.routes)
       .withIdleTimeout(2.seconds)
       .withExcutionContext(munitExecutionContext)
+      .withoutBanner
       .bindAny()
       .resource,
     "server"
