@@ -5,11 +5,12 @@ val http4sVersion = "0.21.4"
 val netty         = "4.1.49.Final"
 val munit         = "0.7.6"
 
-scalaVersion := "2.13.2"
+crossScalaVersions := Seq("2.13.2", "2.12.11")
+scalaVersion := crossScalaVersions.value.head
 
 libraryDependencies ++= List(
   "co.fs2"                 %% "fs2-reactive-streams"          % "2.3.0",
-  "com.typesafe.netty"      % "netty-reactive-streams-http"   % "2.0.4" exclude ("io.netty", "netty-codec-http"),
+  "com.typesafe.netty"      % "netty-reactive-streams-http"   % "2.0.4" exclude("io.netty", "netty-codec-http") exclude("io.netty", "netty-handler"),
   "io.netty"                % "netty-codec-http"              % netty,
   "io.netty"                % "netty-transport-native-epoll"  % netty classifier "linux-x86_64",
   "io.netty"                % "netty-transport-native-kqueue" % netty classifier "osx-x86_64",
