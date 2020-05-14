@@ -127,7 +127,7 @@ final class NettyServerBuilder[F[_]](
 
   def withIdleTimeout(duration: FiniteDuration) = copy(idleTimeout = duration)
 
-  private def bind(context: Option[SSLContext]) = {
+  private def bind(tlsEngine: Option[SSLEngine]) = {
     val resolvedAddress =
       if (socketAddress.isUnresolved) new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort) else socketAddress
     val loop            = getEventLoop
@@ -137,9 +137,7 @@ final class NettyServerBuilder[F[_]](
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
           val pipeline = ch.pipeline()
-          context.foreach { ctx =>
-            val engine = ctx.createSSLEngine()
-            engine.setUseClientMode(false)
+          tlsEngine.foreach { engine =>
             pipeline.addLast("ssl", new SslHandler(engine))
           }
           pipeline
@@ -161,8 +159,8 @@ final class NettyServerBuilder[F[_]](
 
   def resource: Resource[F, Server[F]] =
     for {
-      maybeContext <- Resource.liftF(sslConfig.makeContext)
-      bound        <- Resource.make(Sync[F].delay(bind(maybeContext))) {
+      maybeEngine <- Resource.liftF(createSSLEngine)
+      bound       <- Resource.make(Sync[F].delay(bind(maybeEngine))) {
                  case Bound(address, loop, channel) =>
                    Sync[F].delay {
                      channel.close().awaitUninterruptibly()
@@ -180,6 +178,17 @@ final class NettyServerBuilder[F[_]](
       logger.info(s"Started Http4s Netty Server at ${server.baseUri}")
       server
     }
+
+  private def createSSLEngine = {
+    sslConfig.makeContext.flatMap(maybeCtx =>
+      F.delay(maybeCtx.map { ctx =>
+        val engine = ctx.createSSLEngine()
+        engine.setUseClientMode(false)
+        sslConfig.configureEngine(engine)
+        engine
+      })
+    )
+  }
 
   case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
