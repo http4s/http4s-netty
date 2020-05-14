@@ -3,9 +3,11 @@ inThisBuild(
     organization := "org.http4s",
     name := "http4s-netty",
     crossScalaVersions := Seq("2.13.2", "2.12.11"),
-    scalaVersion := crossScalaVersions.value.head
+    scalaVersion := crossScalaVersions.value.head,
   )
 )
+Compile/scalacOptions ++= Seq("-release", "8")
+Test/scalacOptions ++= Seq("-release", "11")
 
 val http4sVersion = "0.21.4"
 val netty         = "4.1.49.Final"
