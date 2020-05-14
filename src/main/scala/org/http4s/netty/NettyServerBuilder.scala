@@ -82,7 +82,7 @@ final class NettyServerBuilder[F[_]](
     }
 
   def withHttpApp(httpApp: HttpApp[F])              = copy(httpApp = httpApp)
-  def withExcutionContext(ec: ExecutionContext)     = copy(executionContext = ec)
+  def withExecutionContext(ec: ExecutionContext)    = copy(executionContext = ec)
   def bindSocketAddress(address: InetSocketAddress) = copy(socketAddress = address)
 
   final def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host) =

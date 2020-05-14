@@ -20,7 +20,7 @@ class NettyServerTest extends NettySuite {
     NettyServerBuilder[IO]
       .withHttpApp(NettyServerTest.routes)
       .withIdleTimeout(2.seconds)
-      .withExcutionContext(munitExecutionContext)
+      .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()
       .resource,

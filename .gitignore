@@ -4,3 +4,4 @@ target/
 release.sbt
 .metals
 .bloop
+out
