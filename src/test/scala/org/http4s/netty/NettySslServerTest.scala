@@ -120,7 +120,6 @@ class NettySslServerTest extends NettySuite {
     client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString()).map { res =>
       val Right(decoded) = io.circe.jawn.decode[SecureSession](res.body())
       assert(decoded.X509Certificate.nonEmpty)
-      assert(decoded.keySize > 0)
     }
   }
 }
