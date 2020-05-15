@@ -18,7 +18,7 @@ abstract class NettySuite extends IOSuite {
       })
   }
 
-  private class P[T](cb: Either[Throwable, T] => Unit) extends BiConsumer[T, Throwable] {
+  private[netty] class P[T](cb: Either[Throwable, T] => Unit) extends BiConsumer[T, Throwable] {
     override def accept(v: T, e: Throwable): Unit = {
       if (e == null) cb(Right(v))
       else cb(Left(e))

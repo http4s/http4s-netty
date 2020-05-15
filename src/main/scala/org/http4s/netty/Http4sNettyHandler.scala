@@ -85,7 +85,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
     }
 
     msg match {
-      case req: HttpRequest =>
+      case req: HttpRequest                   =>
         requestsInFlight.incrementAndGet()
         val p: Promise[(HttpResponse, Channel => F[Unit])] =
           Promise[(HttpResponse, Channel => F[Unit])]
@@ -130,9 +130,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
                 sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
             }(trampoline)
         }(trampoline)
-
-      case _                =>
-        logger.error("Invalid message type received")
+      case LastHttpContent.EMPTY_LAST_CONTENT =>
+        //These are empty trailers... what do do???
+        ()
+      case msg                                =>
+        logger.error(s"Invalid message type received, ${msg.getClass}")
         throw InvalidMessageException
     }
   }
@@ -227,16 +229,14 @@ object Http4sNettyHandler {
     }
   }
 
-  /*private class WebsocketHandler[F[_]](
-      service: HttpService[F],
+  private class WebsocketHandler[F[_]](
+      app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
-      maxWSPayloadLength: Int
-  )(
-      implicit F: Effect[F],
+      maxWSPayloadLength: Int,
       ec: ExecutionContext
-  ) extends Http4sNettyHandler[F] {
-    private[this] val unwrapped: Request[F] => F[Response[F]] =
-      service.mapF(_.getOrElse(Response.notFound[F])).run
+  )(implicit
+      F: ConcurrentEffect[F]
+  ) extends Http4sNettyHandler[F](ec) {
 
     private[this] val converter: NettyModelConversion[F] =
       new NettyModelConversion[F]()
@@ -251,23 +251,25 @@ object Http4sNettyHandler {
         .fromNettyRequest(channel, request)
         .flatMap {
           case (req, cleanup) =>
-            F.suspend(unwrapped(req))
+            F.suspend(app(req))
               .recoverWith(serviceErrorHandler(req))
               .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
               .map((_, cleanup))
         }
     }
-  }*/
+  }
 
   def default[F[_]](app: HttpApp[F], serviceErrorHandler: ServiceErrorHandler[F], ec: ExecutionContext)(implicit
       F: ConcurrentEffect[F]
   ): Http4sNettyHandler[F] = new DefaultHandler[F](app, serviceErrorHandler, ec)
 
-  /*def websocket[F[_]](service: HttpService[F], serviceErrorHandler: ServiceErrorHandler[F], maxWSPayloadLength: Int)(
-      implicit F: Effect[F],
+  def websocket[F[_]](
+      app: HttpApp[F],
+      serviceErrorHandler: ServiceErrorHandler[F],
+      maxWSPayloadLength: Int,
       ec: ExecutionContext
+  )(implicit
+      F: ConcurrentEffect[F]
   ): Http4sNettyHandler[F] =
-    new WebsocketHandler[F](service, serviceErrorHandler, maxWSPayloadLength)
-
-   */
+    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, ec)
 }

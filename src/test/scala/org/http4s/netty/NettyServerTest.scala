@@ -70,7 +70,7 @@ class NettyServerTest extends NettySuite {
   }
   test("timeout") {
     val uri = server().baseUri / "timeout"
-    val s = client.sendIO(
+    val s   = client.sendIO(
       HttpRequest
         .newBuilder(uri.toURI)
         .timeout(java.time.Duration.ofSeconds(5))

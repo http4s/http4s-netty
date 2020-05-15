@@ -6,7 +6,7 @@ import java.net.http.HttpResponse.BodyHandlers
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 
-import cats.effect.IO
+import cats.effect.{ConcurrentEffect, IO}
 import fs2.io.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
@@ -19,24 +19,8 @@ import scodec.bits.ByteVector
 import scala.util.Try
 
 class NettySslServerTest extends NettySuite {
-  lazy val sslContext: SSLContext = {
-    val ks = KeyStore.getInstance("JKS")
-    ks.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
+  lazy val sslContext: SSLContext = NettySslServerTest.sslContext
 
-    val kmf = KeyManagerFactory.getInstance("SunX509")
-    kmf.init(ks, "password".toCharArray)
-
-    val js = KeyStore.getInstance("JKS")
-    js.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
-
-    val tmf = TrustManagerFactory.getInstance("SunX509")
-    tmf.init(js)
-
-    val sc = SSLContext.getInstance("TLSv1.2")
-    sc.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
-
-    sc
-  }
   implicit val x509Encoder: Encoder[X509Certificate] = Encoder.encodeString.contramap { x =>
     ByteVector(x.getEncoded).toBase64
   }
@@ -57,37 +41,25 @@ class NettySslServerTest extends NettySuite {
     )
 
   implicit val entityEncoder: EntityEncoder[IO, SecureSession] = org.http4s.circe.jsonEncoderOf[IO, SecureSession]
+  val routes: HttpRoutes[IO]                                   = HttpRoutes
+    .of[IO] {
+      case GET -> Root                   => Ok("Hello from TLS")
+      case r @ GET -> Root / "cert-info" =>
+        r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
+          case Some(value) => Ok(value)
+          case None        => BadRequest()
+        }
+    }
 
   val server = resourceFixture(
-    newServer(sslContext),
+    NettySslServerTest.sslServer(routes, sslContext).resource,
     "server"
   )
 
   val mutualTlsServerRequired = resourceFixture(
-    newServer(sslContext, TLSParameters(needClientAuth = true)),
+    NettySslServerTest.sslServer(routes, sslContext, TLSParameters(needClientAuth = true)).resource,
     "mtlsServer"
   )
-
-  private def newServer(ctx: SSLContext, parameters: TLSParameters = TLSParameters.Default) = {
-    NettyServerBuilder[IO]
-      .withHttpApp(
-        HttpRoutes
-          .of[IO] {
-            case GET -> Root                   => Ok("Hello from TLS")
-            case r @ GET -> Root / "cert-info" =>
-              r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
-                case Some(value) => Ok(value)
-                case None        => BadRequest()
-              }
-          }
-          .orNotFound
-      )
-      .withExecutionContext(munitExecutionContext)
-      .withoutBanner
-      .bindAny()
-      .withSslContext(ctx, parameters)
-      .resource
-  }
 
   val client = HttpClient.newBuilder().sslContext(sslContext).build()
 
@@ -122,4 +94,34 @@ class NettySslServerTest extends NettySuite {
       assert(decoded.X509Certificate.nonEmpty)
     }
   }
+}
+
+object NettySslServerTest {
+  def sslContext: SSLContext = {
+    val ks = KeyStore.getInstance("JKS")
+    ks.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
+
+    val kmf = KeyManagerFactory.getInstance("SunX509")
+    kmf.init(ks, "password".toCharArray)
+
+    val js = KeyStore.getInstance("JKS")
+    js.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
+
+    val tmf = TrustManagerFactory.getInstance("SunX509")
+    tmf.init(js)
+
+    val sc = SSLContext.getInstance("TLSv1.2")
+    sc.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
+
+    sc
+  }
+
+  def sslServer(routes: HttpRoutes[IO], ctx: SSLContext, parameters: TLSParameters = TLSParameters.Default)(implicit
+      eff: ConcurrentEffect[IO]
+  ): NettyServerBuilder[IO] =
+    NettyServerBuilder[IO]
+      .withHttpApp(routes.orNotFound)
+      .withoutBanner
+      .bindAny()
+      .withSslContext(ctx, parameters)
 }

@@ -39,7 +39,9 @@ final class NettyServerBuilder[F[_]](
     banner: immutable.Seq[String],
     executionContext: ExecutionContext,
     nettyChannelOptions: NettyServerBuilder.NettyChannelOptions,
-    sslConfig: NettyServerBuilder.SslConfig[F]
+    sslConfig: NettyServerBuilder.SslConfig[F],
+    websocketsEnabled: Boolean,
+    wsMaxFrameLength: Int
 )(implicit F: ConcurrentEffect[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -57,7 +59,9 @@ final class NettyServerBuilder[F[_]](
       banner: immutable.Seq[String] = banner,
       executionContext: ExecutionContext = executionContext,
       nettyChannelOptions: NettyServerBuilder.NettyChannelOptions = nettyChannelOptions,
-      sslConfig: NettyServerBuilder.SslConfig[F] = sslConfig
+      sslConfig: NettyServerBuilder.SslConfig[F] = sslConfig,
+      websocketsEnabled: Boolean = websocketsEnabled,
+      wsMaxFrameLength: Int = wsMaxFrameLength
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -72,7 +76,9 @@ final class NettyServerBuilder[F[_]](
       banner,
       executionContext,
       nettyChannelOptions,
-      sslConfig
+      sslConfig,
+      websocketsEnabled,
+      wsMaxFrameLength
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -107,6 +113,8 @@ final class NettyServerBuilder[F[_]](
   def withMaxInitialLineLength(size: Int): Self                                   = copy(maxInitialLineLength = size)
   def withServiceErrorHandler(handler: ServiceErrorHandler[F]): Self              = copy(serviceErrorHandler = handler)
   def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions): Self = copy(nettyChannelOptions = opts)
+  def withWebsockets: Self                                                        = copy(websocketsEnabled = true)
+  def withoutWebsockets: Self                                                     = copy(websocketsEnabled = false)
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
   def withSslContext(sslContext: SSLContext, tlsParameters: TLSParameters = TLSParameters.Default): Self =
@@ -144,7 +152,12 @@ final class NettyServerBuilder[F[_]](
           }
           pipeline
             .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
-            .addLast("http4s", Http4sNettyHandler.default(app = httpApp, serviceErrorHandler, executionContext))
+            .addLast(
+              "http4s",
+              if (websocketsEnabled)
+                Http4sNettyHandler.websocket(httpApp, serviceErrorHandler, wsMaxFrameLength, executionContext)
+              else Http4sNettyHandler.default(app = httpApp, serviceErrorHandler, executionContext)
+            )
           ()
         }
       })
@@ -208,6 +221,8 @@ final class NettyServerBuilder[F[_]](
 }
 
 object NettyServerBuilder {
+  private val DefaultWSMaxFrameLength = 65536
+
   def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyServerBuilder[F] = {
     new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
@@ -222,7 +237,9 @@ object NettyServerBuilder {
       banner = org.http4s.server.defaults.Banner,
       executionContext = ExecutionContext.global,
       nettyChannelOptions = NettyChannelOptions.empty,
-      sslConfig = new NettyServerBuilder.NoSsl[F]
+      sslConfig = new NettyServerBuilder.NoSsl[F],
+      websocketsEnabled = false,
+      wsMaxFrameLength = DefaultWSMaxFrameLength
     )
   }
 
