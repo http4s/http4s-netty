@@ -41,6 +41,7 @@ final class NettyServerBuilder[F[_]](
     sslConfig: NettyServerBuilder.SslConfig[F]
 )(implicit F: ConcurrentEffect[F]) {
   private val logger = org.log4s.getLogger
+  type Self = NettyServerBuilder[F]
 
   private def copy(
       httpApp: HttpApp[F] = httpApp,
@@ -88,34 +89,34 @@ final class NettyServerBuilder[F[_]](
         }
     }
 
-  def withHttpApp(httpApp: HttpApp[F])              = copy(httpApp = httpApp)
-  def withExecutionContext(ec: ExecutionContext)    = copy(executionContext = ec)
-  def bindSocketAddress(address: InetSocketAddress) = copy(socketAddress = address)
+  def withHttpApp(httpApp: HttpApp[F]): Self              = copy(httpApp = httpApp)
+  def withExecutionContext(ec: ExecutionContext): Self    = copy(executionContext = ec)
+  def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
-  final def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host) =
+  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host): Self =
     bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
-  final def bindLocal(port: Int)                                                  = bindHttp(port, defaults.Host)
-  final def bindAny(host: String = defaults.Host)                                 = bindHttp(0, host)
+  def bindLocal(port: Int): Self                                                  = bindHttp(port, defaults.Host)
+  def bindAny(host: String = defaults.Host): Self                                 = bindHttp(0, host)
 
-  def withNativeTransport                                                   = copy(transport = NettyTransport.Native)
-  def withNioTransport                                                      = copy(transport = NettyTransport.Nio)
-  def withoutBanner                                                         = copy(banner = Nil)
-  def withMaxHeaderSize(size: Int)                                          = copy(maxHeaderSize = size)
-  def withMaxChunkSize(size: Int)                                           = copy(maxChunkSize = size)
-  def withMaxInitialLineLength(size: Int)                                   = copy(maxInitialLineLength = size)
-  def withServiceErrorHandler(handler: ServiceErrorHandler[F])              = copy(serviceErrorHandler = handler)
-  def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions) = copy(nettyChannelOptions = opts)
+  def withNativeTransport: Self                                                   = copy(transport = NettyTransport.Native)
+  def withNioTransport: Self                                                      = copy(transport = NettyTransport.Nio)
+  def withoutBanner: Self                                                         = copy(banner = Nil)
+  def withMaxHeaderSize(size: Int): Self                                          = copy(maxHeaderSize = size)
+  def withMaxChunkSize(size: Int): Self                                           = copy(maxChunkSize = size)
+  def withMaxInitialLineLength(size: Int): Self                                   = copy(maxInitialLineLength = size)
+  def withServiceErrorHandler(handler: ServiceErrorHandler[F]): Self              = copy(serviceErrorHandler = handler)
+  def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions): Self = copy(nettyChannelOptions = opts)
 
   /** Configures the server with TLS, using the provided `SSLContext` and its
     * default `SSLParameters` */
-  def withSslContext(sslContext: SSLContext) =
+  def withSslContext(sslContext: SSLContext): Self =
     copy(sslConfig = new NettyServerBuilder.ContextOnly[F](sslContext))
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
-  def withSslContextAndParameters(sslContext: SSLContext, sslParameters: SSLParameters) =
+  def withSslContextAndParameters(sslContext: SSLContext, sslParameters: SSLParameters): Self =
     copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, sslParameters))
 
-  def withoutSsl =
+  def withoutSsl: Self =
     copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
 
   /**
@@ -123,9 +124,9 @@ final class NettyServerBuilder[F[_]](
     * @param nThreads number of selector threads. Use <code>0</code> for netty default
     * @return an updated builder
     */
-  def withEventLoopThreads(nThreads: Int) = copy(eventLoopThreads = nThreads)
+  def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
-  def withIdleTimeout(duration: FiniteDuration) = copy(idleTimeout = duration)
+  def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   private def bind(tlsEngine: Option[SSLEngine]) = {
     val resolvedAddress =
