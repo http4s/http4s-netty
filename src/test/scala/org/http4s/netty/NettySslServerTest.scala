@@ -59,7 +59,7 @@ class NettySslServerTest extends NettySuite {
   implicit val entityEncoder: EntityEncoder[IO, SecureSession] = org.http4s.circe.jsonEncoderOf[IO, SecureSession]
 
   val server = resourceFixture(
-    newServer(sslContext, TLSParameters()),
+    newServer(sslContext),
     "server"
   )
 
@@ -68,7 +68,7 @@ class NettySslServerTest extends NettySuite {
     "mtlsServer"
   )
 
-  private def newServer(ctx: SSLContext, parameters: TLSParameters) = {
+  private def newServer(ctx: SSLContext, parameters: TLSParameters = TLSParameters.Default) = {
     NettyServerBuilder[IO]
       .withHttpApp(
         HttpRoutes
@@ -85,7 +85,7 @@ class NettySslServerTest extends NettySuite {
       .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()
-      .withSslContextAndParameters(ctx, parameters.toSSLParameters)
+      .withSslContext(ctx, parameters)
       .resource
   }
 
@@ -113,7 +113,7 @@ class NettySslServerTest extends NettySuite {
       assertEquals(res.body(), "Hello from TLS")
     }
   }
-  
+
   test("mtls Cert-Info over TLS") {
     val s   = mutualTlsServerRequired()
     val uri = s.baseUri / "cert-info"

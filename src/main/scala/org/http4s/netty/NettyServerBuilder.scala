@@ -6,6 +6,7 @@ import cats.implicits._
 import cats.Applicative
 import cats.effect.{ConcurrentEffect, Resource, Sync}
 import com.typesafe.netty.http.HttpStreamsServerHandler
+import fs2.io.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel._
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollServerSocketChannel}
@@ -16,7 +17,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
-import javax.net.ssl.{SSLContext, SSLEngine, SSLParameters}
+import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
 import org.http4s.server.{defaults, Server, ServiceErrorHandler}
 
@@ -107,14 +108,9 @@ final class NettyServerBuilder[F[_]](
   def withServiceErrorHandler(handler: ServiceErrorHandler[F]): Self              = copy(serviceErrorHandler = handler)
   def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions): Self = copy(nettyChannelOptions = opts)
 
-  /** Configures the server with TLS, using the provided `SSLContext` and its
-    * default `SSLParameters` */
-  def withSslContext(sslContext: SSLContext): Self =
-    copy(sslConfig = new NettyServerBuilder.ContextOnly[F](sslContext))
-
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
-  def withSslContextAndParameters(sslContext: SSLContext, sslParameters: SSLParameters): Self =
-    copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, sslParameters))
+  def withSslContext(sslContext: SSLContext, tlsParameters: TLSParameters = TLSParameters.Default): Self =
+    copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, tlsParameters))
 
   def withoutSsl: Self =
     copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
@@ -273,19 +269,10 @@ object NettyServerBuilder {
     def isSecure: Boolean
   }
 
-  private class ContextOnly[F[_]](sslContext: SSLContext)(implicit F: Applicative[F]) extends SslConfig[F] {
-    def makeContext = F.pure(sslContext.some)
-    def configureEngine(engine: SSLEngine) = {
-      val _ = engine
-      ()
-    }
-    def isSecure    = true
-  }
-
-  private class ContextWithParameters[F[_]](sslContext: SSLContext, sslParameters: SSLParameters)(implicit F: Applicative[F])
+  private class ContextWithParameters[F[_]](sslContext: SSLContext, tlsParameters: TLSParameters)(implicit F: Applicative[F])
       extends SslConfig[F] {
     def makeContext                        = F.pure(sslContext.some)
-    def configureEngine(engine: SSLEngine) = engine.setSSLParameters(sslParameters)
+    def configureEngine(engine: SSLEngine) = engine.setSSLParameters(tlsParameters.toSSLParameters)
     def isSecure                           = true
   }
 
