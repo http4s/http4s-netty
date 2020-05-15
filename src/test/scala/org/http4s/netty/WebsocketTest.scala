@@ -11,7 +11,7 @@ import org.http4s.dsl.io._
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketFrame
 
-class NettyWebsocketTest extends NettySuite {
+class WebsocketTest extends IOSuite {
   val queue                  = fs2.concurrent.Queue.bounded[IO, WebSocketFrame](1).unsafeRunSync()
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case _ -> Root / "ws" => {
@@ -34,9 +34,9 @@ class NettyWebsocketTest extends NettySuite {
     "server"
   )
 
-  val sslContext: SSLContext = NettySslServerTest.sslContext
+  val sslContext: SSLContext = SslServerTest.sslContext
   val tlsServer              = resourceFixture(
-    NettySslServerTest.sslServer(routes, sslContext).withWebsockets.resource,
+    SslServerTest.sslServer(routes, sslContext).withWebsockets.resource,
     "tls-server"
   )
 

@@ -1,23 +1,22 @@
 package org.http4s.netty
 
-import java.net.http.HttpRequest.BodyPublishers
-import java.net.http.HttpResponse.BodyHandlers
-import java.net.http.{HttpClient, HttpRequest}
+import java.net.http.HttpClient
 
 import cats.implicits._
 import cats.effect.{IO, Timer}
-import org.http4s.{HttpRoutes, Response}
+import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
+import org.http4s.client.jdkhttpclient.JdkHttpClient
 
 import scala.concurrent.duration._
 
-class NettyServerTest extends NettySuite {
+class ServerTest extends IOSuite {
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
-      .withHttpApp(NettyServerTest.routes)
+      .withHttpApp(ServerTest.routes)
       .withIdleTimeout(2.seconds)
       .withExecutionContext(munitExecutionContext)
       .withoutBanner
@@ -25,63 +24,45 @@ class NettyServerTest extends NettySuite {
       .resource,
     "server"
   )
-  val client = HttpClient.newHttpClient()
+  val client = JdkHttpClient[IO](HttpClient.newHttpClient())
 
   test("simple") {
     val uri = server().baseUri / "simple"
-    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString())
-    s.map { res =>
-      assertEquals(res.body(), "simple path")
-    }
+    client.expect[String](uri).map(body => assertEquals(body, "simple path"))
   }
 
   test("no-content") {
     val uri = server().baseUri / "no-content"
-    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.discarding())
-    s.map { res =>
-      assertEquals(res.statusCode(), 204)
+    client.statusFromUri(uri).map { status =>
+      assertEquals(status, NoContent)
     }
   }
 
   test("delayed") {
     val uri = server().baseUri / "delayed"
-    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString())
-    s.map { res =>
-      assertEquals(res.statusCode(), 200)
-      assertEquals(res.body(), "delayed path")
+
+    client.expect[String](uri).map { body =>
+      assertEquals(body, "delayed path")
     }
   }
   test("chunked") {
     val uri = server().baseUri / "chunked"
-    val s   = client.sendIO(
-      HttpRequest
-        .newBuilder(uri.toURI)
-        .timeout(java.time.Duration.ofSeconds(5))
-        .POST(BodyPublishers.ofString("hello"))
-        .build(),
-      BodyHandlers.ofString()
-    )
-    s.map { res =>
-      val transfer = res.headers().firstValue("Transfer-Encoding").orElse("not-chunked")
-      assertEquals(transfer, "chunked")
-      assertEquals(res.statusCode(), 200)
-      assertEquals(res.body(), "hello")
+
+    client.run(Request[IO](POST, uri).withEntity("hello")).use { res =>
+      res.as[String].map { body =>
+        assert(res.isChunked)
+        assertEquals(res.status, Ok)
+        assertEquals(body, "hello")
+      }
     }
   }
   test("timeout") {
     val uri = server().baseUri / "timeout"
-    val s   = client.sendIO(
-      HttpRequest
-        .newBuilder(uri.toURI)
-        .timeout(java.time.Duration.ofSeconds(5))
-        .build(),
-      BodyHandlers.ofString()
-    )
-    s.attempt.map(e => assert(e.isLeft))
+    client.expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
   }
 }
 
-object NettyServerTest {
+object ServerTest {
   def routes(implicit timer: Timer[IO]) =
     HttpRoutes
       .of[IO] {

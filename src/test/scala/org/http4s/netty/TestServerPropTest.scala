@@ -1,19 +1,21 @@
 package org.http4s.netty
 
+import java.net.URI
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest}
 
 import cats.effect.IO
+import org.http4s.Uri
 
 import scala.concurrent.duration._
 import org.scalacheck.Prop._
 
-class NettyTestServerPropTest extends NettySuite with munit.ScalaCheckSuite {
+class TestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
-      .withHttpApp(NettyServerTest.routes)
+      .withHttpApp(ServerTest.routes)
       .withIdleTimeout(2.seconds)
       .withExecutionContext(munitExecutionContext)
       .withoutBanner
@@ -53,5 +55,9 @@ class NettyTestServerPropTest extends NettySuite with munit.ScalaCheckSuite {
         body
       )
     }
+  }
+
+  implicit class ToURI(uri: Uri) {
+    def toURI = URI.create(uri.renderString)
   }
 }

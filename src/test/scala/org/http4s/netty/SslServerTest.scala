@@ -1,8 +1,7 @@
 package org.http4s.netty
 
 import java.io.ByteArrayInputStream
-import java.net.http.{HttpClient, HttpRequest}
-import java.net.http.HttpResponse.BodyHandlers
+import java.net.http.HttpClient
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 
@@ -10,7 +9,8 @@ import cats.effect.{ConcurrentEffect, IO}
 import fs2.io.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
-import org.http4s.{EntityEncoder, HttpRoutes}
+import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.server.{SecureSession, ServerRequestKeys}
@@ -18,8 +18,8 @@ import scodec.bits.ByteVector
 
 import scala.util.Try
 
-class NettySslServerTest extends NettySuite {
-  lazy val sslContext: SSLContext = NettySslServerTest.sslContext
+class SslServerTest extends IOSuite {
+  lazy val sslContext: SSLContext = SslServerTest.sslContext
 
   implicit val x509Encoder: Encoder[X509Certificate] = Encoder.encodeString.contramap { x =>
     ByteVector(x.getEncoded).toBase64
@@ -52,51 +52,53 @@ class NettySslServerTest extends NettySuite {
     }
 
   val server = resourceFixture(
-    NettySslServerTest.sslServer(routes, sslContext).resource,
+    SslServerTest.sslServer(routes, sslContext).resource,
     "server"
   )
 
   val mutualTlsServerRequired = resourceFixture(
-    NettySslServerTest.sslServer(routes, sslContext, TLSParameters(needClientAuth = true)).resource,
+    SslServerTest.sslServer(routes, sslContext, TLSParameters(needClientAuth = true)).resource,
     "mtlsServer"
   )
 
-  val client = HttpClient.newBuilder().sslContext(sslContext).build()
+  val client = JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())
 
   test("GET Root over TLS") {
     val s = server()
-    client.sendIO(HttpRequest.newBuilder(s.baseUri.toURI).build(), BodyHandlers.ofString()).map { res =>
-      assertEquals(res.body(), "Hello from TLS")
+    client.expect[String](s.baseUri).map { res =>
+      assertEquals(res, "Hello from TLS")
     }
   }
 
   test("GET Cert-Info over TLS") {
+    implicit val entityDecoder: EntityDecoder[IO, SecureSession] = org.http4s.circe.jsonOf[IO, SecureSession]
+
     val s   = server()
     val uri = s.baseUri / "cert-info"
-    client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString()).map { res =>
-      val Right(decoded) = io.circe.jawn.decode[SecureSession](res.body())
-      assert(decoded.X509Certificate.isEmpty)
+    client.expect[SecureSession](uri).map { res =>
+      assert(res.X509Certificate.isEmpty)
     }
   }
 
   test("mtls GET Root") {
     val s = mutualTlsServerRequired()
-    client.sendIO(HttpRequest.newBuilder(s.baseUri.toURI).build(), BodyHandlers.ofString()).map { res =>
-      assertEquals(res.body(), "Hello from TLS")
+    client.expect[String](s.baseUri).map { res =>
+      assertEquals(res, "Hello from TLS")
     }
   }
 
   test("mtls Cert-Info over TLS") {
+    implicit val entityDecoder: EntityDecoder[IO, SecureSession] = org.http4s.circe.jsonOf[IO, SecureSession]
+
     val s   = mutualTlsServerRequired()
     val uri = s.baseUri / "cert-info"
-    client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString()).map { res =>
-      val Right(decoded) = io.circe.jawn.decode[SecureSession](res.body())
-      assert(decoded.X509Certificate.nonEmpty)
+    client.expect[SecureSession](uri).map { res =>
+      assert(res.X509Certificate.nonEmpty)
     }
   }
 }
 
-object NettySslServerTest {
+object SslServerTest {
   def sslContext: SSLContext = {
     val ks = KeyStore.getInstance("JKS")
     ks.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
