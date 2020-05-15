@@ -1,10 +1,12 @@
 package org.http4s.netty
 
+import java.net.URI
 import java.net.http.HttpResponse.BodyHandler
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.util.function.BiConsumer
 
 import cats.effect.IO
+import org.http4s.Uri
 
 abstract class NettySuite extends IOSuite {
   implicit class HttpClientOps(client: HttpClient) {
@@ -21,5 +23,9 @@ abstract class NettySuite extends IOSuite {
       if (e == null) cb(Right(v))
       else cb(Left(e))
     }
+  }
+
+  implicit class ToURI(uri: Uri) {
+    def toURI = URI.create(uri.renderString)
   }
 }

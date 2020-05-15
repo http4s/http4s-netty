@@ -1,6 +1,5 @@
 package org.http4s.netty
 
-import java.net.URI
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest}
@@ -28,11 +27,9 @@ class NettyServerTest extends NettySuite {
   )
   val client = HttpClient.newHttpClient()
 
-  override def munitFixtures: Seq[Fixture[_]] = List(server)
-
   test("simple") {
     val uri = server().baseUri / "simple"
-    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
+    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString())
     s.map { res =>
       assertEquals(res.body(), "simple path")
     }
@@ -40,7 +37,7 @@ class NettyServerTest extends NettySuite {
 
   test("no-content") {
     val uri = server().baseUri / "no-content"
-    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.discarding())
+    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.discarding())
     s.map { res =>
       assertEquals(res.statusCode(), 204)
     }
@@ -48,7 +45,7 @@ class NettyServerTest extends NettySuite {
 
   test("delayed") {
     val uri = server().baseUri / "delayed"
-    val s   = client.sendIO(HttpRequest.newBuilder(URI.create(uri.renderString)).build(), BodyHandlers.ofString())
+    val s   = client.sendIO(HttpRequest.newBuilder(uri.toURI).build(), BodyHandlers.ofString())
     s.map { res =>
       assertEquals(res.statusCode(), 200)
       assertEquals(res.body(), "delayed path")
@@ -58,7 +55,7 @@ class NettyServerTest extends NettySuite {
     val uri = server().baseUri / "chunked"
     val s   = client.sendIO(
       HttpRequest
-        .newBuilder(URI.create(uri.renderString))
+        .newBuilder(uri.toURI)
         .timeout(java.time.Duration.ofSeconds(5))
         .POST(BodyPublishers.ofString("hello"))
         .build(),
@@ -73,11 +70,9 @@ class NettyServerTest extends NettySuite {
   }
   test("timeout") {
     val uri = server().baseUri / "timeout"
-    val url = URI.create(uri.renderString)
-
     val s = client.sendIO(
       HttpRequest
-        .newBuilder(url)
+        .newBuilder(uri.toURI)
         .timeout(java.time.Duration.ofSeconds(5))
         .build(),
       BodyHandlers.ofString()

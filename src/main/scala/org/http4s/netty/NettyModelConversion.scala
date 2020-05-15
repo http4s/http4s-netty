@@ -3,8 +3,8 @@ package org.http4s.netty
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 
+import cats.implicits._
 import cats.effect.{ConcurrentEffect, IO}
-import cats.implicits.{catsSyntaxEither => _}
 import com.typesafe.netty.http._
 import fs2.interop.reactivestreams._
 import fs2.{Chunk, Stream}
@@ -13,10 +13,12 @@ import io.netty.buffer.{ByteBuf, Unpooled}
 import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
-import org.http4s.Request.Connection
+import javax.net.ssl.SSLEngine
 import org.http4s.headers.{`Content-Length`, `Transfer-Encoding`, Connection => ConnHeader}
+import org.http4s.server.{SecureSession, ServerRequestKeys}
 import org.http4s.{HttpVersion => HV, _}
 import org.log4s.getLogger
+import scodec.bits.ByteVector
 
 import scala.collection.mutable.ListBuffer
 
@@ -39,12 +41,8 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
     * @return Http4s request
     */
   def fromNettyRequest(channel: Channel, request: HttpRequest): F[(Request[F], Channel => F[Unit])] = {
-    //Useful for testing, since embedded channels will _not_
-    //have connection info
-    val attributeMap = createRemoteConnection(channel) match {
-      case Some(conn) => Vault.empty.insert(Request.Keys.ConnectionInfo, conn)
-      case None       => Vault.empty
-    }
+    val attributeMap = requestAttributes(Option(channel.pipeline().get(classOf[SslHandler])).map(_.engine()), channel)
+
     if (request.decoderResult().isFailure)
       F.raiseError(ParseFailure("Malformed request", "Netty codec parsing unsuccessful"))
     else {
@@ -80,19 +78,36 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
     }
   }
 
-  /** Capture a request's connection info from its channel and headers. */
-  private[this] def createRemoteConnection(channel: Channel): Option[Connection] =
-    channel.localAddress() match {
-      case address: InetSocketAddress =>
-        Some(
-          Connection(
-            address,
-            channel.remoteAddress().asInstanceOf[InetSocketAddress],
-            channel.pipeline().get(classOf[SslHandler]) != null
+  private def requestAttributes(optionalSslEngine: Option[SSLEngine], channel: Channel): Vault = {
+    (channel.localAddress(), channel.remoteAddress()) match {
+      case (local: InetSocketAddress, remote: InetSocketAddress) =>
+        Vault.empty
+          .insert(
+            Request.Keys.ConnectionInfo,
+            Request.Connection(
+              local = local,
+              remote = remote,
+              secure = optionalSslEngine.isDefined
+            )
           )
-        )
-      case _                          => None
+          .insert(
+            ServerRequestKeys.SecureSession,
+            //Create SSLSession object only for https requests and if current SSL session is not empty. Here, each
+            //condition is checked inside a "flatMap" to handle possible "null" values
+            optionalSslEngine
+              .flatMap(engine => Option(engine.getSession))
+              .flatMap { session =>
+                (
+                  Option(session.getId).map(ByteVector(_).toHex),
+                  Option(session.getCipherSuite),
+                  Option(session.getCipherSuite).map(CertificateInfo.deduceKeyLength),
+                  Option(CertificateInfo.getPeerCertChain(session))
+                ).mapN(SecureSession.apply)
+              }
+          )
+      case _                                                     => Vault.empty
     }
+  }
 
   /** Create the source for the request body
     *

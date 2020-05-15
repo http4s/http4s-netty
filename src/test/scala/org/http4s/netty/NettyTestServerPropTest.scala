@@ -1,6 +1,5 @@
 package org.http4s.netty
 
-import java.net.URI
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest}
@@ -10,7 +9,7 @@ import cats.effect.IO
 import scala.concurrent.duration._
 import org.scalacheck.Prop._
 
-class NettyTestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
+class NettyTestServerPropTest extends NettySuite with munit.ScalaCheckSuite {
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
@@ -24,8 +23,6 @@ class NettyTestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
   )
   val client = HttpClient.newHttpClient()
 
-  override def munitFixtures: Seq[Fixture[_]] = List(server)
-
   property("POST chunked body") {
     forAll { (body: String) =>
       val s   = server()
@@ -33,7 +30,7 @@ class NettyTestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
       assertEquals(
         client
           .send(
-            HttpRequest.newBuilder(URI.create(url.renderString)).POST(BodyPublishers.ofString(body)).build(),
+            HttpRequest.newBuilder(url.toURI).POST(BodyPublishers.ofString(body)).build(),
             BodyHandlers.ofString()
           )
           .body(),
@@ -49,7 +46,7 @@ class NettyTestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
       assertEquals(
         client
           .send(
-            HttpRequest.newBuilder(URI.create(url.renderString)).POST(BodyPublishers.ofString(body)).build(),
+            HttpRequest.newBuilder(url.toURI).POST(BodyPublishers.ofString(body)).build(),
             BodyHandlers.ofString()
           )
           .body(),
