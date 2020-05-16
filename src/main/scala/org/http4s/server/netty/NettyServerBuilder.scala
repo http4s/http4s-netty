@@ -199,6 +199,9 @@ final class NettyServerBuilder[F[_]](
       server
     }
 
+  def allocated: F[(Server[F], F[Unit])] = resource.allocated
+  def stream = fs2.Stream.resource(resource)
+
   private def createSSLEngine =
     sslConfig.makeContext.flatMap(maybeCtx =>
       F.delay(maybeCtx.map { ctx =>
