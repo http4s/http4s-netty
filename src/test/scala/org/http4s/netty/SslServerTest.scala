@@ -100,14 +100,14 @@ class SslServerTest extends IOSuite {
 
 object SslServerTest {
   def sslContext: SSLContext = {
-    val ks = KeyStore.getInstance("JKS")
-    ks.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
+    val ks = KeyStore.getInstance("PKCS12")
+    ks.load(getClass.getResourceAsStream("/teststore.p12"), "password".toCharArray)
 
     val kmf = KeyManagerFactory.getInstance("SunX509")
     kmf.init(ks, "password".toCharArray)
 
-    val js = KeyStore.getInstance("JKS")
-    js.load(getClass.getResourceAsStream("/teststore.jks"), "password".toCharArray)
+    val js = KeyStore.getInstance("PKCS12")
+    js.load(getClass.getResourceAsStream("/teststore.p12"), "password".toCharArray)
 
     val tmf = TrustManagerFactory.getInstance("SunX509")
     tmf.init(js)
