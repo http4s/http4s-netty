@@ -27,7 +27,7 @@ class TestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
 
   property("POST chunked body") {
     forAll { (body: String) =>
-      val s   = server()
+      val s = server()
       val url = s.baseUri / "chunked"
       assertEquals(
         client
@@ -43,7 +43,7 @@ class TestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
 
   property("POST normal body") {
     forAll { (body: String) =>
-      val s   = server()
+      val s = server()
       val url = s.baseUri / "echo"
       assertEquals(
         client

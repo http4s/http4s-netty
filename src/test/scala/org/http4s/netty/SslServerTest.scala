@@ -29,25 +29,27 @@ class SslServerTest extends IOSuite {
     .emapTry(base64 =>
       Try {
         val cf = CertificateFactory.getInstance("X509")
-        cf.generateCertificate(new ByteArrayInputStream(base64.toArray)).asInstanceOf[X509Certificate]
-      }
-    )
+        cf.generateCertificate(new ByteArrayInputStream(base64.toArray))
+          .asInstanceOf[X509Certificate]
+      })
 
   implicit val encoderSession: Encoder[SecureSession] =
-    Encoder.forProduct4("sessionId", "cipherSuite", "keySize", "client_certificates")(SecureSession.unapply(_).get)
+    Encoder.forProduct4("sessionId", "cipherSuite", "keySize", "client_certificates")(
+      SecureSession.unapply(_).get)
   implicit val decoderSession: Decoder[SecureSession] =
     Decoder.forProduct4("sessionId", "cipherSuite", "keySize", "client_certificates")(
       SecureSession.apply(_: String, _: String, _: Int, _: List[X509Certificate])
     )
 
-  implicit val entityEncoder: EntityEncoder[IO, SecureSession] = org.http4s.circe.jsonEncoderOf[IO, SecureSession]
-  val routes: HttpRoutes[IO]                                   = HttpRoutes
+  implicit val entityEncoder: EntityEncoder[IO, SecureSession] =
+    org.http4s.circe.jsonEncoderOf[IO, SecureSession]
+  val routes: HttpRoutes[IO] = HttpRoutes
     .of[IO] {
-      case GET -> Root                   => Ok("Hello from TLS")
+      case GET -> Root => Ok("Hello from TLS")
       case r @ GET -> Root / "cert-info" =>
         r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
           case Some(value) => Ok(value)
-          case None        => BadRequest()
+          case None => BadRequest()
         }
     }
 
@@ -71,9 +73,10 @@ class SslServerTest extends IOSuite {
   }
 
   test("GET Cert-Info over TLS") {
-    implicit val entityDecoder: EntityDecoder[IO, SecureSession] = org.http4s.circe.jsonOf[IO, SecureSession]
+    implicit val entityDecoder: EntityDecoder[IO, SecureSession] =
+      org.http4s.circe.jsonOf[IO, SecureSession]
 
-    val s   = server()
+    val s = server()
     val uri = s.baseUri / "cert-info"
     client.expect[SecureSession](uri).map { res =>
       assert(res.X509Certificate.isEmpty)
@@ -88,9 +91,10 @@ class SslServerTest extends IOSuite {
   }
 
   test("mtls Cert-Info over TLS") {
-    implicit val entityDecoder: EntityDecoder[IO, SecureSession] = org.http4s.circe.jsonOf[IO, SecureSession]
+    implicit val entityDecoder: EntityDecoder[IO, SecureSession] =
+      org.http4s.circe.jsonOf[IO, SecureSession]
 
-    val s   = mutualTlsServerRequired()
+    val s = mutualTlsServerRequired()
     val uri = s.baseUri / "cert-info"
     client.expect[SecureSession](uri).map { res =>
       assert(res.X509Certificate.nonEmpty)
@@ -118,7 +122,10 @@ object SslServerTest {
     sc
   }
 
-  def sslServer(routes: HttpRoutes[IO], ctx: SSLContext, parameters: TLSParameters = TLSParameters.Default)(implicit
+  def sslServer(
+      routes: HttpRoutes[IO],
+      ctx: SSLContext,
+      parameters: TLSParameters = TLSParameters.Default)(implicit
       eff: ConcurrentEffect[IO]
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]

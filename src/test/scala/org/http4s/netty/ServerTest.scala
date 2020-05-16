@@ -66,20 +66,20 @@ object ServerTest {
   def routes(implicit timer: Timer[IO]) =
     HttpRoutes
       .of[IO] {
-        case req @ _ -> Root / "echo"        => Ok(req.as[String])
-        case GET -> Root / "simple"          => Ok("simple path")
-        case req @ POST -> Root / "chunked"  =>
+        case req @ _ -> Root / "echo" => Ok(req.as[String])
+        case GET -> Root / "simple" => Ok("simple path")
+        case req @ POST -> Root / "chunked" =>
           Response[IO](Ok)
             .withEntity(Stream.eval(req.as[String]))
             .pure[IO]
-        case GET -> Root / "timeout"         => IO.never
-        case GET -> Root / "delayed"         =>
+        case GET -> Root / "timeout" => IO.never
+        case GET -> Root / "delayed" =>
           timer.sleep(1.second) *>
             Ok("delayed path")
-        case GET -> Root / "no-content"      => NoContent()
-        case GET -> Root / "not-found"       => NotFound("not found")
+        case GET -> Root / "no-content" => NoContent()
+        case GET -> Root / "not-found" => NotFound("not found")
         case GET -> Root / "empty-not-found" => NotFound()
-        case GET -> Root / "internal-error"  => InternalServerError()
+        case GET -> Root / "internal-error" => InternalServerError()
       }
       .orNotFound
 }
