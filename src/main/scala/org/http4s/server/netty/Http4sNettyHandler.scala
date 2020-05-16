@@ -1,4 +1,4 @@
-package org.http4s.netty
+package org.http4s.server.netty
 
 import java.io.IOException
 import java.time.format.DateTimeFormatter
