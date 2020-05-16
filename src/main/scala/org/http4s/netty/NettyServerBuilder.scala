@@ -145,8 +145,8 @@ final class NettyServerBuilder[F[_]](
           tlsEngine.foreach { engine =>
             pipeline.addLast("ssl", new SslHandler(engine))
           }
-          pipeline
-            .addLast(new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize), new HttpResponseEncoder())
+          pipeline.addLast("http-decoder", new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize))
+          pipeline.addLast("http-encoder", new HttpResponseEncoder())
           if (idleTimeout.isFinite && idleTimeout.length > 0) {
             pipeline.addLast("idle-handler", new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           }
