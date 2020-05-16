@@ -64,7 +64,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
 
   // Compute the formatted date string only once per second, and cache the result.
   // This should help microscopically under load.
-  private[this] var cachedDate: Long         = Long.MinValue
+  private[this] var cachedDate: Long = Long.MinValue
   private[this] var cachedDateString: String = _
 
   protected val logger = getLogger
@@ -74,7 +74,10 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
     * Note: Handle implementations fork into user ExecutionContext
     * Returns the cleanup action along with the drain action
     */
-  def handle(channel: Channel, request: HttpRequest, dateString: String): F[(DefaultHttpResponse, Channel => F[Unit])]
+  def handle(
+      channel: Channel,
+      request: HttpRequest,
+      dateString: String): F[(DefaultHttpResponse, Channel => F[Unit])]
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
@@ -85,7 +88,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
     }
 
     msg match {
-      case req: HttpRequest                   =>
+      case req: HttpRequest =>
         requestsInFlight.incrementAndGet()
         val p: Promise[(HttpResponse, Channel => F[Unit])] =
           Promise[(HttpResponse, Channel => F[Unit])]
@@ -97,7 +100,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
                 p.complete(Failure(error)); ()
               }
 
-            case Right(r)    =>
+            case Right(r) =>
               IO {
                 p.complete(Success(r)); ()
               }
@@ -112,16 +115,15 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
           p.future
             .map[Unit] {
               case (response, cleanup) =>
-                if (requestsInFlight.decrementAndGet() == 0) {
+                if (requestsInFlight.decrementAndGet() == 0)
                   // Since we've now gone down to zero, we need to issue a
                   // read, in case we ignored an earlier read complete
                   ctx.read()
-                }
                 ctx
                   .writeAndFlush(response)
                   .addListener((future: ChannelFuture) =>
-                    ec.execute(() => F.runAsync(cleanup(future.channel()))(_ => IO.unit).unsafeRunSync())
-                  ); ()
+                    ec.execute(() =>
+                      F.runAsync(cleanup(future.channel()))(_ => IO.unit).unsafeRunSync())); ()
 
             }(trampoline)
             .recover[Unit] {
@@ -133,7 +135,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         //These are empty trailers... what do do???
         ()
-      case msg                                =>
+      case msg =>
         logger.error(s"Invalid message type received, ${msg.getClass}")
         throw InvalidMessageException
     }
@@ -163,16 +165,16 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
     cause match {
       // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
       // sending/receiving the response.
-      case e: IOException           =>
+      case e: IOException =>
         logger.trace(e)("Benign IO exception caught in Netty")
         ctx.channel().close(); ()
       case e: TooLongFrameException =>
         logger.warn(e)("Handling TooLongFrameException")
         sendSimpleErrorResponse(ctx, HttpResponseStatus.REQUEST_URI_TOO_LONG); ()
 
-      case InvalidMessageException  =>
+      case InvalidMessageException =>
         sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR); ()
-      case e                        =>
+      case e =>
         logger.error(e)("Exception caught in Netty")
         ctx.channel().close(); ()
     }
@@ -189,14 +191,16 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
         ctx.close(); ()
-      case _                                         => super.userEventTriggered(ctx, evt)
+      case _ => super.userEventTriggered(ctx, evt)
     }
 
-  private def sendSimpleErrorResponse(ctx: ChannelHandlerContext, status: HttpResponseStatus): ChannelFuture = {
+  private def sendSimpleErrorResponse(
+      ctx: ChannelHandlerContext,
+      status: HttpResponseStatus): ChannelFuture = {
     val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status)
     response.headers().set(HttpHeaderNames.CONNECTION, "close")
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, "0")
-    val f        = ctx.channel().write(response)
+    val f = ctx.channel().write(response)
     f.addListener(ChannelFutureListener.CLOSE)
     f
   }
@@ -205,7 +209,10 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
 object Http4sNettyHandler {
   private[netty] case object InvalidMessageException extends Exception with NoStackTrace
 
-  private class DefaultHandler[F[_]](app: HttpApp[F], serviceErrorHandler: ServiceErrorHandler[F], ec: ExecutionContext)(implicit
+  private class DefaultHandler[F[_]](
+      app: HttpApp[F],
+      serviceErrorHandler: ServiceErrorHandler[F],
+      ec: ExecutionContext)(implicit
       F: ConcurrentEffect[F]
   ) extends Http4sNettyHandler[F](ec) {
 
@@ -253,13 +260,17 @@ object Http4sNettyHandler {
           case (req, cleanup) =>
             F.suspend(app(req))
               .recoverWith(serviceErrorHandler(req))
-              .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
+              .flatMap(
+                converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
               .map((_, cleanup))
         }
     }
   }
 
-  def default[F[_]](app: HttpApp[F], serviceErrorHandler: ServiceErrorHandler[F], ec: ExecutionContext)(implicit
+  def default[F[_]](
+      app: HttpApp[F],
+      serviceErrorHandler: ServiceErrorHandler[F],
+      ec: ExecutionContext)(implicit
       F: ConcurrentEffect[F]
   ): Http4sNettyHandler[F] = new DefaultHandler[F](app, serviceErrorHandler, ec)
 

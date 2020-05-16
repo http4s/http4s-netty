@@ -44,16 +44,20 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
     * @param request the netty http request impl
     * @return Http4s request
     */
-  def fromNettyRequest(channel: Channel, request: HttpRequest): F[(Request[F], Channel => F[Unit])] = {
-    val attributeMap = requestAttributes(Option(channel.pipeline().get(classOf[SslHandler])).map(_.engine()), channel)
+  def fromNettyRequest(
+      channel: Channel,
+      request: HttpRequest): F[(Request[F], Channel => F[Unit])] = {
+    val attributeMap = requestAttributes(
+      Option(channel.pipeline().get(classOf[SslHandler])).map(_.engine()),
+      channel)
 
     if (request.decoderResult().isFailure)
       F.raiseError(ParseFailure("Malformed request", "Netty codec parsing unsuccessful"))
     else {
-      val (requestBody, cleanup)                        = convertRequestBody(request)
-      val uri: ParseResult[Uri]                         = Uri.fromString(request.uri())
-      val headerBuf                                     = new ListBuffer[Header]
-      val headersIterator                               = request.headers().iteratorAsString()
+      val (requestBody, cleanup) = convertRequestBody(request)
+      val uri: ParseResult[Uri] = Uri.fromString(request.uri())
+      val headerBuf = new ListBuffer[Header]
+      val headersIterator = request.headers().iteratorAsString()
       var mapEntry: java.util.Map.Entry[String, String] = null
       while (headersIterator.hasNext) {
         mapEntry = headersIterator.next()
@@ -62,7 +66,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
 
       val method: ParseResult[Method] =
         Method.fromString(request.method().name())
-      val version: ParseResult[HV]    = HV.fromString(request.protocolVersion().text())
+      val version: ParseResult[HV] = HV.fromString(request.protocolVersion().text())
 
       (for {
         v <- version
@@ -77,12 +81,12 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         attributeMap
       )) match {
         case Right(http4sRequest) => F.pure((http4sRequest, cleanup))
-        case Left(err)            => F.raiseError(err)
+        case Left(err) => F.raiseError(err)
       }
     }
   }
 
-  private def requestAttributes(optionalSslEngine: Option[SSLEngine], channel: Channel): Vault = {
+  private def requestAttributes(optionalSslEngine: Option[SSLEngine], channel: Channel): Vault =
     (channel.localAddress(), channel.remoteAddress()) match {
       case (local: InetSocketAddress, remote: InetSocketAddress) =>
         Vault.empty
@@ -109,23 +113,23 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
                 ).mapN(SecureSession.apply)
               }
           )
-      case _                                                     => Vault.empty
+      case _ => Vault.empty
     }
-  }
 
   /** Create the source for the request body
     *
     */
-  private[this] def convertRequestBody(request: HttpRequest): (Stream[F, Byte], Channel => F[Unit]) =
+  private[this] def convertRequestBody(
+      request: HttpRequest): (Stream[F, Byte], Channel => F[Unit]) =
     request match {
-      case full: FullHttpRequest         =>
+      case full: FullHttpRequest =>
         val content = full.content()
         val buffers = content.nioBuffers()
         if (buffers.isEmpty)
           (Stream.empty.covary[F], _ => F.unit)
         else {
           val content = full.content()
-          val arr     = bytebufToArray(content)
+          val arr = bytebufToArray(content)
           (
             Stream
               .chunk(Chunk.bytes(arr))
@@ -135,7 +139,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         }
       case streamed: StreamedHttpRequest =>
         val isDrained = new AtomicBoolean(false)
-        val stream    =
+        val stream =
           streamed
             .toStream()
             .flatMap(c => Stream.chunk(Chunk.bytes(bytebufToArray(c.content()))))
@@ -148,21 +152,17 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
     */
   private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
     F.delay {
-      if (isDrained.compareAndSet(false, true)) {
+      if (isDrained.compareAndSet(false, true))
         if (c.isOpen) {
           logger.info("Response body not drained to completion. Draining and closing connection")
           c.close().addListener { (_: ChannelFuture) =>
-            {
-              //Drain the stream regardless. Some bytebufs often
-              //Remain in the buffers. Draining them solves this issue
-              F.runAsync(f.compile.drain)(_ => IO.unit).unsafeRunSync()
-            }
+            //Drain the stream regardless. Some bytebufs often
+            //Remain in the buffers. Draining them solves this issue
+            F.runAsync(f.compile.drain)(_ => IO.unit).unsafeRunSync()
           }; ()
-        } else {
+        } else
           //Drain anyway, don't close the channel
           F.runAsync(f.compile.drain)(_ => IO.unit).unsafeRunSync()
-        }
-      }
     }
 
   private[this] def appendAllToNetty(header: Header, nettyHeaders: HttpHeaders) = {
@@ -186,16 +186,15 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       dateString: String
   ): DefaultHttpResponse = {
     //Http version is 1.0. We can assume it's most likely not.
-    var minorIs0                 = false
+    var minorIs0 = false
     val httpVersion: HttpVersion =
       if (httpRequest.httpVersion == HV.`HTTP/1.1`)
         HttpVersion.HTTP_1_1
       else if (httpRequest.httpVersion == HV.`HTTP/1.0`) {
         minorIs0 = true
         HttpVersion.HTTP_1_0
-      } else {
+      } else
         HttpVersion.valueOf(httpRequest.httpVersion.toString)
-      }
 
     toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0)
   }
@@ -208,21 +207,26 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       maxPayloadLength: Int
   ): F[DefaultHttpResponse] = {
     //Http version is 1.0. We can assume it's most likely not.
-    var minorIs0                 = false
+    var minorIs0 = false
     val httpVersion: HttpVersion =
       if (httpRequest.httpVersion == HV.`HTTP/1.1`)
         HttpVersion.HTTP_1_1
       else if (httpRequest.httpVersion == HV.`HTTP/1.0`) {
         minorIs0 = true
         HttpVersion.HTTP_1_0
-      } else {
+      } else
         HttpVersion.valueOf(httpRequest.httpVersion.toString)
-      }
 
     httpResponse.attributes.lookup(org.http4s.server.websocket.websocketKey[F]) match {
       case Some(wsContext) if !minorIs0 =>
-        toWSResponse(httpRequest, httpResponse, httpVersion, wsContext, dateString, maxPayloadLength)
-      case _                            =>
+        toWSResponse(
+          httpRequest,
+          httpResponse,
+          httpVersion,
+          wsContext,
+          dateString,
+          maxPayloadLength)
+      case _ =>
         F.pure(toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0))
     }
   }
@@ -245,9 +249,9 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       minorVersionIs0: Boolean
   ): DefaultHttpResponse = {
     val response =
-      if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD) {
+      if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD)
         canHaveBodyResponse(httpResponse, httpVersion, minorVersionIs0)
-      } else {
+      else {
         val r = new DefaultFullHttpResponse(
           httpVersion,
           HttpResponseStatus.valueOf(httpResponse.status.code)
@@ -258,13 +262,13 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         //Down the netty pipeline by the HttpResponseEncoder
         if (httpRequest.method == Method.HEAD) {
           val transferEncoding = `Transfer-Encoding`.from(httpResponse.headers)
-          val contentLength    = `Content-Length`.from(httpResponse.headers)
+          val contentLength = `Content-Length`.from(httpResponse.headers)
           (transferEncoding, contentLength) match {
             case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
               r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
-            case (_, Some(len))                                       =>
+            case (_, Some(len)) =>
               r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len.length)
-            case _                                                    => // no-op
+            case _ => // no-op
           }
         }
         r
@@ -277,7 +281,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       .from(httpRequest.headers) match {
       case Some(conn) =>
         response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
-      case None       =>
+      case None =>
         if (minorVersionIs0) //Close by default for Http 1.0
           response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaders.Values.CLOSE)
     }
@@ -293,7 +297,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       httpVersion: HttpVersion,
       minorIs0: Boolean
   ): DefaultHttpResponse = {
-    val response         =
+    val response =
       new DefaultStreamedHttpResponse(
         httpVersion,
         HttpResponseStatus.valueOf(httpResponse.status.code),
@@ -311,8 +315,8 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         //Ignore transfer-encoding if it's not chunked
         response.headers().add(HttpHeaderNames.CONTENT_LENGTH, clenHeader.length)
 
-      case _                                                                      =>
-        if (!minorIs0) {
+      case _ =>
+        if (!minorIs0)
           transferEncoding match {
             case Some(tr) =>
               tr.values.map { v =>
@@ -323,13 +327,12 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
               response
                 .headers()
                 .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
-            case None     =>
+            case None =>
               //Netty reactive streams transfers bodies as chunked transfer encoding anyway.
               response
                 .headers()
                 .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
           }
-        }
       //Http 1.0 without a content length means yolo mode. No guarantees on what may happen
       //As the downstream codec takes control from here. There is one more option:
       //Buffering the contents of a stream in an effect and serving them as one static chunk.
@@ -359,10 +362,11 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       dateString: String,
       maxPayloadLength: Int
   ): F[DefaultHttpResponse] =
-    if (httpRequest.headers.exists(h => h.name.toString.equalsIgnoreCase("Upgrade") && h.value.equalsIgnoreCase("websocket"))) {
+    if (httpRequest.headers.exists(h =>
+        h.name.toString.equalsIgnoreCase("Upgrade") && h.value.equalsIgnoreCase("websocket"))) {
       val wsProtocol = if (httpRequest.isSecure.exists(identity)) "wss" else "ws"
-      val wsUrl      = s"$wsProtocol://${httpRequest.serverAddr}${httpRequest.pathInfo}"
-      val factory    = new WebSocketServerHandshakerFactory(wsUrl, "*", true, maxPayloadLength)
+      val wsUrl = s"$wsProtocol://${httpRequest.serverAddr}${httpRequest.pathInfo}"
+      val factory = new WebSocketServerHandshakerFactory(wsUrl, "*", true, maxPayloadLength)
       StreamSubscriber[F, WebSocketFrame].flatMap { subscriber =>
         F.delay {
             val processor = new Processor[WSFrame, WSFrame] {
@@ -387,36 +391,43 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
               }(_ => IO.unit)
               .unsafeRunSync()
             val resp: DefaultHttpResponse =
-              new DefaultWebSocketHttpResponse(httpVersion, HttpResponseStatus.OK, processor, factory)
+              new DefaultWebSocketHttpResponse(
+                httpVersion,
+                HttpResponseStatus.OK,
+                processor,
+                factory)
             wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
             resp
           }
-          .handleErrorWith(_ => wsContext.failureResponse.map(toNonWSResponse(httpRequest, _, httpVersion, dateString, true)))
+          .handleErrorWith(_ =>
+            wsContext.failureResponse.map(
+              toNonWSResponse(httpRequest, _, httpVersion, dateString, true)))
       }
-    } else {
+    } else
       F.pure(toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, true))
-    }
 
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {
-      case Text(str, last)          => new TextWebSocketFrame(last, 0, str)
-      case Binary(data, last)       => new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
-      case Ping(data)               => new PingWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
-      case Pong(data)               => new PongWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
+      case Text(str, last) => new TextWebSocketFrame(last, 0, str)
+      case Binary(data, last) =>
+        new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
+      case Ping(data) => new PingWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
+      case Pong(data) => new PongWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
       case Continuation(data, last) =>
         new ContinuationWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
-      case Close(data)              => new CloseWebSocketFrame(true, 0, Unpooled.wrappedBuffer(data.toArray))
+      case Close(data) => new CloseWebSocketFrame(true, 0, Unpooled.wrappedBuffer(data.toArray))
     }
 
   private[this] def nettyWsToHttp4s(w: WSFrame): WebSocketFrame =
     w match {
-      case c: TextWebSocketFrame         => Text(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
-      case c: BinaryWebSocketFrame       => Binary(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
-      case c: PingWebSocketFrame         => Ping(ByteVector(bytebufToArray(c.content())))
-      case c: PongWebSocketFrame         => Pong(ByteVector(bytebufToArray(c.content())))
+      case c: TextWebSocketFrame => Text(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
+      case c: BinaryWebSocketFrame =>
+        Binary(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
+      case c: PingWebSocketFrame => Ping(ByteVector(bytebufToArray(c.content())))
+      case c: PongWebSocketFrame => Pong(ByteVector(bytebufToArray(c.content())))
       case c: ContinuationWebSocketFrame =>
         Continuation(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
-      case c: CloseWebSocketFrame        => Close(ByteVector(bytebufToArray(c.content())))
+      case c: CloseWebSocketFrame => Close(ByteVector(bytebufToArray(c.content())))
     }
 
   /** Convert a Chunk to a Netty ByteBuf. */
@@ -425,11 +436,11 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       NettyModelConversion.CachedEmpty
     else
       bytes match {
-        case c: Chunk.Bytes      =>
+        case c: Chunk.Bytes =>
           new DefaultHttpContent(Unpooled.wrappedBuffer(c.values, c.offset, c.length))
         case c: Chunk.ByteBuffer =>
           new DefaultHttpContent(Unpooled.wrappedBuffer(c.buf))
-        case _                   =>
+        case _ =>
           new DefaultHttpContent(Unpooled.wrappedBuffer(bytes.toArray))
       }
 

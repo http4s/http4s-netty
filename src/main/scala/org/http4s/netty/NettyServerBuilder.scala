@@ -19,7 +19,7 @@ import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
-import org.http4s.server.{defaults, Server, ServiceErrorHandler}
+import org.http4s.server.{Server, ServiceErrorHandler, defaults}
 
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
@@ -83,7 +83,7 @@ final class NettyServerBuilder[F[_]](
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
     transport match {
-      case NettyTransport.Nio    =>
+      case NettyTransport.Nio =>
         EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
       case NettyTransport.Native =>
         if (Epoll.isAvailable)
@@ -96,28 +96,32 @@ final class NettyServerBuilder[F[_]](
         }
     }
 
-  def withHttpApp(httpApp: HttpApp[F]): Self              = copy(httpApp = httpApp)
-  def withExecutionContext(ec: ExecutionContext): Self    = copy(executionContext = ec)
+  def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = httpApp)
+  def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
   def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host): Self =
     bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
-  def bindLocal(port: Int): Self                                                  = bindHttp(port, defaults.Host)
-  def bindAny(host: String = defaults.Host): Self                                 = bindHttp(0, host)
+  def bindLocal(port: Int): Self = bindHttp(port, defaults.Host)
+  def bindAny(host: String = defaults.Host): Self = bindHttp(0, host)
 
-  def withNativeTransport: Self                                                   = copy(transport = NettyTransport.Native)
-  def withNioTransport: Self                                                      = copy(transport = NettyTransport.Nio)
-  def withoutBanner: Self                                                         = copy(banner = Nil)
-  def withMaxHeaderSize(size: Int): Self                                          = copy(maxHeaderSize = size)
-  def withMaxChunkSize(size: Int): Self                                           = copy(maxChunkSize = size)
-  def withMaxInitialLineLength(size: Int): Self                                   = copy(maxInitialLineLength = size)
-  def withServiceErrorHandler(handler: ServiceErrorHandler[F]): Self              = copy(serviceErrorHandler = handler)
-  def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions): Self = copy(nettyChannelOptions = opts)
-  def withWebsockets: Self                                                        = copy(websocketsEnabled = true)
-  def withoutWebsockets: Self                                                     = copy(websocketsEnabled = false)
+  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNioTransport: Self = copy(transport = NettyTransport.Nio)
+  def withoutBanner: Self = copy(banner = Nil)
+  def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
+  def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
+  def withMaxInitialLineLength(size: Int): Self = copy(maxInitialLineLength = size)
+  def withServiceErrorHandler(handler: ServiceErrorHandler[F]): Self =
+    copy(serviceErrorHandler = handler)
+  def withNettyChannelOptions(opts: NettyServerBuilder.NettyChannelOptions): Self =
+    copy(nettyChannelOptions = opts)
+  def withWebsockets: Self = copy(websocketsEnabled = true)
+  def withoutWebsockets: Self = copy(websocketsEnabled = false)
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
-  def withSslContext(sslContext: SSLContext, tlsParameters: TLSParameters = TLSParameters.Default): Self =
+  def withSslContext(
+      sslContext: SSLContext,
+      tlsParameters: TLSParameters = TLSParameters.Default): Self =
     copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, tlsParameters))
 
   def withoutSsl: Self =
@@ -134,10 +138,12 @@ final class NettyServerBuilder[F[_]](
 
   private def bind(tlsEngine: Option[SSLEngine]) = {
     val resolvedAddress =
-      if (socketAddress.isUnresolved) new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort) else socketAddress
-    val loop            = getEventLoop
-    val server          = new ServerBootstrap()
-    val channel         = loop
+      if (socketAddress.isUnresolved)
+        new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
+      else socketAddress
+    val loop = getEventLoop
+    val server = new ServerBootstrap()
+    val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
@@ -145,17 +151,21 @@ final class NettyServerBuilder[F[_]](
           tlsEngine.foreach { engine =>
             pipeline.addLast("ssl", new SslHandler(engine))
           }
-          pipeline.addLast("http-decoder", new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize))
+          pipeline.addLast(
+            "http-decoder",
+            new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize))
           pipeline.addLast("http-encoder", new HttpResponseEncoder())
-          if (idleTimeout.isFinite && idleTimeout.length > 0) {
-            pipeline.addLast("idle-handler", new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
-          }
+          if (idleTimeout.isFinite && idleTimeout.length > 0)
+            pipeline.addLast(
+              "idle-handler",
+              new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           pipeline
             .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
             .addLast(
               "http4s",
               if (websocketsEnabled)
-                Http4sNettyHandler.websocket(httpApp, serviceErrorHandler, wsMaxFrameLength, executionContext)
+                Http4sNettyHandler
+                  .websocket(httpApp, serviceErrorHandler, wsMaxFrameLength, executionContext)
               else Http4sNettyHandler.default(app = httpApp, serviceErrorHandler, executionContext)
             )
           ()
@@ -170,14 +180,14 @@ final class NettyServerBuilder[F[_]](
   def resource: Resource[F, Server[F]] =
     for {
       maybeEngine <- Resource.liftF(createSSLEngine)
-      bound       <- Resource.make(Sync[F].delay(bind(maybeEngine))) {
-                 case Bound(address, loop, channel) =>
-                   Sync[F].delay {
-                     channel.close().awaitUninterruptibly()
-                     loop.eventLoop.shutdownGracefully()
-                     logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
-                   }
-               }
+      bound <- Resource.make(Sync[F].delay(bind(maybeEngine))) {
+        case Bound(address, loop, channel) =>
+          Sync[F].delay {
+            channel.close().awaitUninterruptibly()
+            loop.eventLoop.shutdownGracefully()
+            logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
+          }
+      }
     } yield {
       val server = new Server[F] {
         override def address: InetSocketAddress = bound.address
@@ -189,16 +199,14 @@ final class NettyServerBuilder[F[_]](
       server
     }
 
-  private def createSSLEngine = {
+  private def createSSLEngine =
     sslConfig.makeContext.flatMap(maybeCtx =>
       F.delay(maybeCtx.map { ctx =>
         val engine = ctx.createSSLEngine()
         engine.setUseClientMode(false)
         sslConfig.configureEngine(engine)
         engine
-      })
-    )
-  }
+      }))
 
   case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
@@ -217,13 +225,16 @@ final class NettyServerBuilder[F[_]](
     }
 
   }
-  case class Bound(address: InetSocketAddress, holder: EventLoopHolder[_ <: ServerChannel], channel: Channel)
+  case class Bound(
+      address: InetSocketAddress,
+      holder: EventLoopHolder[_ <: ServerChannel],
+      channel: Channel)
 }
 
 object NettyServerBuilder {
   private val DefaultWSMaxFrameLength = 65536
 
-  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyServerBuilder[F] = {
+  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
@@ -241,7 +252,6 @@ object NettyServerBuilder {
       websocketsEnabled = false,
       wsMaxFrameLength = DefaultWSMaxFrameLength
     )
-  }
 
   /** Ensure we construct our netty channel options in a typeful, immutable way, despite
     * the underlying being disgusting
@@ -264,14 +274,16 @@ object NettyServerBuilder {
     val empty = new NettyCOptions(Vector.empty)
   }
 
-  private[http4s] final class NettyCOptions(private[http4s] val underlying: Vector[(ChannelOption[Any], Any)])
+  private[http4s] final class NettyCOptions(
+      private[http4s] val underlying: Vector[(ChannelOption[Any], Any)])
       extends NettyChannelOptions {
 
     def prepend[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions =
       new NettyCOptions((channelOption.asInstanceOf[ChannelOption[Any]], value: Any) +: underlying)
 
     def append[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions =
-      new NettyCOptions(underlying :+ ((channelOption.asInstanceOf[ChannelOption[Any]], value: Any)))
+      new NettyCOptions(
+        underlying :+ ((channelOption.asInstanceOf[ChannelOption[Any]], value: Any)))
 
     def remove[O](channelOption: ChannelOption[O]): NettyChannelOptions =
       new NettyCOptions(underlying.filterNot(_._1 == channelOption))
@@ -286,11 +298,12 @@ object NettyServerBuilder {
     def isSecure: Boolean
   }
 
-  private class ContextWithParameters[F[_]](sslContext: SSLContext, tlsParameters: TLSParameters)(implicit F: Applicative[F])
+  private class ContextWithParameters[F[_]](sslContext: SSLContext, tlsParameters: TLSParameters)(
+      implicit F: Applicative[F])
       extends SslConfig[F] {
-    def makeContext                        = F.pure(sslContext.some)
+    def makeContext = F.pure(sslContext.some)
     def configureEngine(engine: SSLEngine) = engine.setSSLParameters(tlsParameters.toSSLParameters)
-    def isSecure                           = true
+    def isSecure = true
   }
 
   private class NoSsl[F[_]]()(implicit F: Applicative[F]) extends SslConfig[F] {
@@ -299,13 +312,13 @@ object NettyServerBuilder {
       val _ = engine
       ()
     }
-    def isSecure    = false
+    def isSecure = false
   }
 }
 
 sealed trait NettyTransport extends Product with Serializable
 
 object NettyTransport {
-  case object Nio    extends NettyTransport
+  case object Nio extends NettyTransport
   case object Native extends NettyTransport
 }
