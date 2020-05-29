@@ -31,7 +31,7 @@ final class NettyServerBuilder[F[_]](
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
     idleTimeout: Duration,
-    eventLoopThreads: Int, //let netty decide
+    eventLoopThreads: Int,
     maxInitialLineLength: Int,
     maxHeaderSize: Int,
     maxChunkSize: Int,
