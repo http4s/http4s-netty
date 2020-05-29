@@ -2,9 +2,9 @@ package org.http4s.server.netty
 
 import java.net.InetSocketAddress
 
-import cats.implicits._
 import cats.Applicative
 import cats.effect.{ConcurrentEffect, Resource, Sync}
+import cats.implicits._
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import fs2.io.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
