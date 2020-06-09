@@ -15,7 +15,7 @@ val netty         = "4.1.50.Final"
 val munit         = "0.7.8"
 
 libraryDependencies ++= List(
-  "co.fs2"            %% "fs2-reactive-streams"          % "2.3.0",
+  "co.fs2"            %% "fs2-reactive-streams"          % "2.4.1",
   "com.typesafe.netty" % "netty-reactive-streams-http"   % "2.0.4" exclude ("io.netty", "netty-codec-http") exclude ("io.netty", "netty-handler"),
   "io.netty"           % "netty-codec-http"              % netty,
   "io.netty"           % "netty-transport-native-epoll"  % netty classifier "linux-x86_64",
