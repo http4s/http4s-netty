@@ -12,7 +12,7 @@ Test / scalacOptions ++= Seq("-release", "11")
 val http4sVersion = "0.21.4"
 
 val netty         = "4.1.50.Final"
-val munit         = "0.7.8"
+val munit         = "0.7.9"
 
 libraryDependencies ++= List(
   "co.fs2"            %% "fs2-reactive-streams"          % "2.3.0",
