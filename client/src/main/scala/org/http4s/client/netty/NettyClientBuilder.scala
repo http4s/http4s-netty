@@ -14,11 +14,12 @@ import io.netty.channel.{
   ChannelHandlerContext,
   ChannelInboundHandlerAdapter,
   ChannelInitializer,
+  ChannelOption,
   MultithreadEventLoopGroup
 }
 import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponse, HttpResponseDecoder}
 import io.netty.util.AttributeKey
-import org.http4s.Response
+import org.http4s.{Request, Response}
 import org.http4s.Uri.Scheme
 import org.http4s.client.{Client, RequestKey}
 
@@ -56,13 +57,13 @@ class NettyClientBuilder[F[_]](
     getEventLoop.configure(bootstrap)
     bootstrap.handler(new ChannelInitializer[SocketChannel] {
       override def initChannel(channel: SocketChannel): Unit = {
-        val pipeline = channel.pipeline()
-        pipeline.addLast(
-          "response-decoder",
-          new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
+        println(s"Initializing $channel")
+
+        /*val pipeline = channel.pipeline()
+        pipeline.addLast( "response-decoder", new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
         pipeline.addLast("request-encoder", new HttpRequestEncoder)
         pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
-        //        pipeline.addLast("client-handler", new Http4ClientHandler[F](executionContext, callback))
+         */
         ()
       }
     })
@@ -70,7 +71,6 @@ class NettyClientBuilder[F[_]](
 
   def build(): Resource[F, Client[F]] =
     Resource.liftF(F.delay(setup)).map { bs =>
-      val modelConversion = new NettyModelConversion[F]()
       Client[F] { req =>
         val key = RequestKey.fromRequest(req)
         val host = key.authority.host.value
@@ -81,38 +81,71 @@ class NettyClientBuilder[F[_]](
           case (_, None) => sys.error("No port")
         }
         for {
-          channel <- Resource.make[F, Channel](F.delay {
+          /*channel <- Resource.make[F, Channel](F.delay {
+            println(s"Connecting to $key, $port")
             val channelFuture = bs.connect(host, port)
             val channel = channelFuture.channel()
             channel.attr(attributeKey).set(key)
             channel.writeAndFlush(modelConversion.toNettyRequest(req))
+            println("After writing request")
             channel
-          })(channel => F.delay(channel.pipeline().remove(key.toString())).void)
-          (res, cleanup) <- Resource.liftF(
-            Async.shift(executionContext) *> F.async[(Response[F], Channel => F[Unit])] { cb =>
-              channel
-                .pipeline()
-                .addLast(
-                  key.toString(),
-                  new ChannelInboundHandlerAdapter {
-                    override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
-                      msg match {
-                        case h: HttpResponse if ctx.channel().attr(attributeKey).get() == key =>
-                          F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
-                              IO(cb(either))
-                            }
-                            .unsafeRunSync()
-                        case _ => ()
-                      }
-                  }
-                )
-              ()
-            })
-          there <- Resource.make(F.pure(res))(_ => cleanup(channel))
+          })(channel => F.delay(channel.pipeline().remove(key.toString())).void)*/
+          (channel, (res, cleanup)) <- Resource.liftF(
+            F.delay {
+                println(s"Connecting to $key, $port")
+                val channelFuture = bs.connect(host, port)
+                val channel = channelFuture.channel()
+                channel
+              }
+              .flatMap(channel => responseCallback(channel, req, key)))
+          there <- Resource.make(F.pure(res))(_ =>
+            cleanup(channel) *> F.delay(channel.pipeline().remove(key.toString())).void)
 
         } yield there
       }
 
+    }
+
+  private def responseCallback(channel: Channel, request: Request[F], key: RequestKey) =
+    Async.shift(executionContext) *> F.async[(Channel, (Response[F], Channel => F[Unit]))] { cb =>
+      println("response channel" + channel)
+      channel
+        .pipeline()
+        .addLast(
+          "response-decoder",
+          new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
+        .addLast("request-encoder", new HttpRequestEncoder)
+        .addLast("streaming-handler", new HttpStreamsClientHandler)
+        .addLast(
+          key.toString(),
+          new ChannelInboundHandlerAdapter {
+            val modelConversion = new NettyModelConversion[F]()
+
+            override def channelActive(ctx: ChannelHandlerContext): Unit = {
+              println("channelActive")
+
+              channel.attr(attributeKey).set(key)
+              channel.writeAndFlush(modelConversion.toNettyRequest(request))
+              println("After writing request")
+              ctx.read()
+              ()
+            }
+
+            override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+              println(s"ChannelRead; $ctx, $msg")
+
+              msg match {
+                case h: HttpResponse if ctx.channel().attr(attributeKey).get() == key =>
+                  F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
+                      IO(cb(either.tupleLeft(channel)))
+                    }
+                    .unsafeRunSync()
+                case _ => super.channelRead(ctx, msg)
+              }
+            }
+          }
+        )
+      ()
     }
 
   case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit
@@ -127,6 +160,7 @@ class NettyClientBuilder[F[_]](
       bootstrap
         .group(eventLoop)
         .channel(runtimeClass)
+        .option(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
   }
 
 }

@@ -46,6 +46,7 @@ lazy val client = project.settings(
     ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
     ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
     "org.http4s" %% "http4s-client" % http4sVersion,
-    "org.scalameta" %% "munit" % munit % Test
+    "org.scalameta" %% "munit" % munit % Test,
+    "ch.qos.logback" % "logback-classic" % "1.2.3" % Test
   )
 )
