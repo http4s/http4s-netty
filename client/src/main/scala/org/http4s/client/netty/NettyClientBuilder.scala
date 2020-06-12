@@ -1,7 +1,9 @@
 package org.http4s.client.netty
 
+import java.net.ConnectException
+
 import cats.implicits._
-import cats.effect.{Async, ConcurrentEffect, IO, Resource}
+import cats.effect.{Async, ConcurrentEffect, Resource}
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
@@ -9,23 +11,20 @@ import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChanne
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.channel.{
-  Channel,
-  ChannelHandlerContext,
-  ChannelInboundHandlerAdapter,
-  ChannelInitializer,
-  ChannelOption,
-  MultithreadEventLoopGroup
-}
-import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponse, HttpResponseDecoder}
-import io.netty.util.AttributeKey
+import io.netty.channel.{Channel, ChannelInitializer, ChannelOption, MultithreadEventLoopGroup}
+import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponseDecoder}
+import io.netty.handler.ssl.SslHandler
+import io.netty.handler.timeout.IdleStateHandler
+import javax.net.ssl.SSLContext
 import org.http4s.{Request, Response}
 import org.http4s.Uri.Scheme
+import org.http4s.client.netty.NettyClientBuilder.SSLContextOption
 import org.http4s.client.{Client, RequestKey}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 class NettyClientBuilder[F[_]](
     idleTimeout: Duration,
@@ -34,10 +33,10 @@ class NettyClientBuilder[F[_]](
     maxHeaderSize: Int,
     maxChunkSize: Int,
     transport: NettyTransport,
+    sslContext: SSLContextOption,
     executionContext: ExecutionContext
 )(implicit F: ConcurrentEffect[F]) {
   private[this] val logger = org.log4s.getLogger
-  private[this] val attributeKey = AttributeKey.newInstance[RequestKey](classOf[RequestKey].getName)
 
   type Self = NettyClientBuilder[F]
 
@@ -48,6 +47,7 @@ class NettyClientBuilder[F[_]](
       maxHeaderSize: Int = maxHeaderSize,
       maxChunkSize: Int = maxChunkSize,
       transport: NettyTransport = transport,
+      sslContext: SSLContextOption = sslContext,
       executionContext: ExecutionContext = executionContext
       //nettyChannelOptions: NettyClientBuilder.NettyChannelOptions = nettyChannelOptions,
       //sslConfig: NettyClientBuilder.SslConfig[F] = sslConfig
@@ -59,7 +59,9 @@ class NettyClientBuilder[F[_]](
       maxHeaderSize,
       maxChunkSize,
       transport,
+      sslContext,
       executionContext
+
       //nettyChannelOptions,
       //sslConfig
     )
@@ -70,6 +72,15 @@ class NettyClientBuilder[F[_]](
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
+
+  def withSSLContext(sslContext: SSLContext): Self =
+    copy(sslContext = NettyClientBuilder.SSLContextOption.Provided(sslContext))
+
+  def withoutSSL: Self =
+    copy(sslContext = NettyClientBuilder.SSLContextOption.NoSSL)
+
+  def withDefaultSSLContext: Self =
+    copy(sslContext = NettyClientBuilder.SSLContextOption.TryDefaultSSLContext)
 
   private def getEventLoop: EventLoopHolder[_ <: SocketChannel] =
     transport match {
@@ -91,14 +102,30 @@ class NettyClientBuilder[F[_]](
     getEventLoop.configure(bootstrap)
     bootstrap.handler(new ChannelInitializer[SocketChannel] {
       override def initChannel(channel: SocketChannel): Unit = {
-        println(s"Initializing $channel")
+        logger.trace(s"Initializing $channel")
 
-        /*val pipeline = channel.pipeline()
-        pipeline.addLast( "response-decoder", new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
-        pipeline.addLast("request-encoder", new HttpRequestEncoder)
-        pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
-         */
-        ()
+        val pipeline = channel.pipeline()
+        if (idleTimeout.isFinite && idleTimeout.length > 0)
+          pipeline
+            .addFirst("timeout", new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
+        pipeline.addFirst("streaming-handler", new HttpStreamsClientHandler)
+        pipeline.addFirst("request-encoder", new HttpRequestEncoder)
+        pipeline.addFirst(
+          "response-decoder",
+          new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
+        (
+          Option(channel.attr(Http4sHandler.attributeKey).get()),
+          SSLContextOption.toMaybeSSLContext(sslContext)) match {
+          case (Some(RequestKey(Scheme.https, _)), Some(context)) =>
+            logger.trace("Creating SSL engine")
+            val engine = context.createSSLEngine()
+            engine.setUseClientMode(true)
+            pipeline.addFirst("ssl", new SslHandler(engine))
+            ()
+          case (m, a) =>
+            logger.trace(s"hmm $m, $a")
+            ()
+        }
       }
     })
   }
@@ -106,30 +133,25 @@ class NettyClientBuilder[F[_]](
   def resource: Resource[F, Client[F]] =
     Resource.liftF(F.delay(setup)).map { bs =>
       Client[F] { req =>
-        val key = RequestKey.fromRequest(req)
-        val host = key.authority.host.value
-        val port = (key.scheme, key.authority.port) match {
-          case (_, Some(port)) => port
-          case (Scheme.http, None) => 80
-          case (Scheme.https, None) => 443
-          case (_, None) => sys.error("No port")
-        }
         for {
-          /*channel <- Resource.make[F, Channel](F.delay {
-            println(s"Connecting to $key, $port")
-            val channelFuture = bs.connect(host, port)
-            val channel = channelFuture.channel()
-            channel.attr(attributeKey).set(key)
-            channel.writeAndFlush(modelConversion.toNettyRequest(req))
-            println("After writing request")
-            channel
-          })(channel => F.delay(channel.pipeline().remove(key.toString())).void)*/
+          (key, host, port) <- Resource.liftF(F.delay {
+            val key = RequestKey.fromRequest(req)
+            val host = key.authority.host.value
+            val port = (key.scheme, key.authority.port) match {
+              case (Scheme.http, None) => 80
+              case (Scheme.https, None) => 443
+              case (_, Some(port)) => port
+              case (_, None) =>
+                throw new ConnectException(
+                  s"Not possible to find any port to connect to for key $key")
+            }
+            (key, host, port)
+          })
           (channel, (res, cleanup)) <- Resource.liftF(
             F.delay {
-                println(s"Connecting to $key, $port")
+                logger.trace(s"Connecting to $key, $port")
                 val channelFuture = bs.connect(host, port)
-                val channel = channelFuture.channel()
-                channel
+                channelFuture.channel()
               }
               .flatMap(channel => responseCallback(channel, req, key)))
           there <- Resource.make(F.pure(res))(_ =>
@@ -142,43 +164,10 @@ class NettyClientBuilder[F[_]](
 
   private def responseCallback(channel: Channel, request: Request[F], key: RequestKey) =
     Async.shift(executionContext) *> F.async[(Channel, (Response[F], Channel => F[Unit]))] { cb =>
-      println("response channel" + channel)
+      channel.attr(Http4sHandler.attributeKey).set(key)
       channel
         .pipeline()
-        .addLast(
-          "response-decoder",
-          new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
-        .addLast("request-encoder", new HttpRequestEncoder)
-        .addLast("streaming-handler", new HttpStreamsClientHandler)
-        .addLast(
-          key.toString(),
-          new ChannelInboundHandlerAdapter {
-            val modelConversion = new NettyModelConversion[F]()
-
-            override def channelActive(ctx: ChannelHandlerContext): Unit = {
-              println("channelActive")
-
-              channel.attr(attributeKey).set(key)
-              channel.writeAndFlush(modelConversion.toNettyRequest(request))
-              println("After writing request")
-              ctx.read()
-              ()
-            }
-
-            override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
-              println(s"ChannelRead; $ctx, $msg")
-
-              msg match {
-                case h: HttpResponse if ctx.channel().attr(attributeKey).get() == key =>
-                  F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
-                      IO(cb(either.tupleLeft(channel)))
-                    }
-                    .unsafeRunSync()
-                case _ => super.channelRead(ctx, msg)
-              }
-            }
-          }
-        )
+        .addLast(key.toString(), new Http4sHandler[F](request, key, cb))
       ()
     }
 
@@ -207,8 +196,68 @@ object NettyClientBuilder {
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
       transport = NettyTransport.Native,
+      sslContext = SSLContextOption.TryDefaultSSLContext,
       executionContext = ExecutionContext.global
     )
+
+  /** Ensure we construct our netty channel options in a typeful, immutable way, despite
+    * the underlying being disgusting
+    */
+  sealed abstract class NettyChannelOptions {
+
+    /** Prepend to the channel options **/
+    def prepend[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions
+
+    /** Append to the channel options **/
+    def append[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions
+
+    /** Remove a channel option, if present **/
+    def remove[O](channelOption: ChannelOption[O]): NettyChannelOptions
+
+    private[http4s] def foldLeft[O](initial: O)(f: (O, (ChannelOption[Any], Any)) => O): O
+  }
+
+  object NettyChannelOptions {
+    val empty = new NettyCOptions(Vector.empty)
+  }
+
+  private[http4s] final class NettyCOptions(
+      private[http4s] val underlying: Vector[(ChannelOption[Any], Any)])
+      extends NettyChannelOptions {
+
+    def prepend[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions =
+      new NettyCOptions((channelOption.asInstanceOf[ChannelOption[Any]], value: Any) +: underlying)
+
+    def append[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions =
+      new NettyCOptions(
+        underlying :+ ((channelOption.asInstanceOf[ChannelOption[Any]], value: Any)))
+
+    def remove[O](channelOption: ChannelOption[O]): NettyChannelOptions =
+      new NettyCOptions(underlying.filterNot(_._1 == channelOption))
+
+    private[http4s] def foldLeft[O](initial: O)(f: (O, (ChannelOption[Any], Any)) => O) =
+      underlying.foldLeft[O](initial)(f)
+  }
+
+  private sealed trait SSLContextOption extends Product with Serializable
+  private object SSLContextOption {
+    case object NoSSL extends SSLContextOption
+    case object TryDefaultSSLContext extends SSLContextOption
+    final case class Provided(sslContext: SSLContext) extends SSLContextOption
+
+    def toMaybeSSLContext(sco: SSLContextOption): Option[SSLContext] =
+      sco match {
+        case SSLContextOption.NoSSL => None
+        case SSLContextOption.TryDefaultSSLContext => tryDefaultSslContext
+        case SSLContextOption.Provided(context) => Some(context)
+      }
+
+    def tryDefaultSslContext: Option[SSLContext] =
+      try Some(SSLContext.getDefault())
+      catch {
+        case NonFatal(_) => None
+      }
+  }
 }
 
 sealed trait NettyTransport extends Product with Serializable

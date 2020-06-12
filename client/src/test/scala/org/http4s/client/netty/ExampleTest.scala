@@ -15,5 +15,9 @@ class ExampleTest extends munit.FunSuite {
     val builder = NettyClientBuilder[IO].resource
     builder.use(_.expect[String]("http://example.com")).flatMap(s => IO(println(s)))
   }
+  test("TLS Get example.com") {
+    val builder = NettyClientBuilder[IO].resource
+    builder.use(_.expect[String]("https://www.nrk.no")).flatMap(s => IO(println(s)))
+  }
 
 }
