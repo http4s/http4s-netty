@@ -1,7 +1,6 @@
 package org.http4s.client.netty
 
 import cats.effect.{ContextShift, IO, Timer}
-import org.http4s.client.netty.NettyTransport.Native
 
 class ExampleTest extends munit.FunSuite {
   implicit val context: ContextShift[IO] = IO.contextShift(munitExecutionContext)
@@ -13,8 +12,8 @@ class ExampleTest extends munit.FunSuite {
       { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
 
   test("Get example.com") {
-    val builder = new NettyClientBuilder[IO](0, 1024, 8092, 4096, Native, munitExecutionContext)
-    builder.build().use(_.expect[String]("http://example.com"))
+    val builder = NettyClientBuilder[IO].resource
+    builder.use(_.expect[String]("http://example.com")).flatMap(s => IO(println(s)))
   }
 
 }

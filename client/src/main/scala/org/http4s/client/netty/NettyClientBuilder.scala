@@ -24,9 +24,11 @@ import org.http4s.Uri.Scheme
 import org.http4s.client.{Client, RequestKey}
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 import scala.reflect.ClassTag
 
 class NettyClientBuilder[F[_]](
+    idleTimeout: Duration,
     eventLoopThreads: Int,
     maxInitialLength: Int,
     maxHeaderSize: Int,
@@ -36,6 +38,38 @@ class NettyClientBuilder[F[_]](
 )(implicit F: ConcurrentEffect[F]) {
   private[this] val logger = org.log4s.getLogger
   private[this] val attributeKey = AttributeKey.newInstance[RequestKey](classOf[RequestKey].getName)
+
+  type Self = NettyClientBuilder[F]
+
+  private def copy(
+      idleTimeout: Duration = idleTimeout,
+      eventLoopThreads: Int = eventLoopThreads,
+      maxInitialLength: Int = maxInitialLength,
+      maxHeaderSize: Int = maxHeaderSize,
+      maxChunkSize: Int = maxChunkSize,
+      transport: NettyTransport = transport,
+      executionContext: ExecutionContext = executionContext
+      //nettyChannelOptions: NettyClientBuilder.NettyChannelOptions = nettyChannelOptions,
+      //sslConfig: NettyClientBuilder.SslConfig[F] = sslConfig
+  ): NettyClientBuilder[F] =
+    new NettyClientBuilder[F](
+      idleTimeout,
+      eventLoopThreads,
+      maxInitialLength,
+      maxHeaderSize,
+      maxChunkSize,
+      transport,
+      executionContext
+      //nettyChannelOptions,
+      //sslConfig
+    )
+
+  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNioTransport: Self = copy(transport = NettyTransport.Nio)
+  def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
+  def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
+  def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
+  def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   private def getEventLoop: EventLoopHolder[_ <: SocketChannel] =
     transport match {
@@ -69,7 +103,7 @@ class NettyClientBuilder[F[_]](
     })
   }
 
-  def build(): Resource[F, Client[F]] =
+  def resource: Resource[F, Client[F]] =
     Resource.liftF(F.delay(setup)).map { bs =>
       Client[F] { req =>
         val key = RequestKey.fromRequest(req)
@@ -162,7 +196,19 @@ class NettyClientBuilder[F[_]](
         .channel(runtimeClass)
         .option(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
   }
+}
 
+object NettyClientBuilder {
+  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyClientBuilder[F] =
+    new NettyClientBuilder[F](
+      idleTimeout = 60.seconds,
+      eventLoopThreads = 0,
+      maxInitialLength = 4096,
+      maxHeaderSize = 8192,
+      maxChunkSize = 8192,
+      transport = NettyTransport.Native,
+      executionContext = ExecutionContext.global
+    )
 }
 
 sealed trait NettyTransport extends Product with Serializable
