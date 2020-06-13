@@ -11,7 +11,7 @@ import io.netty.util.AttributeKey
 import org.http4s.{Request, Response}
 import org.http4s.client.RequestKey
 
-class Http4sHandler[F[_]](
+private[netty] class Http4sHandler[F[_]](
     request: Request[F],
     key: RequestKey,
     cb: (Either[Throwable, (Channel, (Response[F], Channel => F[Unit]))]) => Unit)(implicit

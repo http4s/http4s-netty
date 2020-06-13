@@ -13,7 +13,7 @@ import fs2.Stream
 import cats.effect.{ConcurrentEffect, IO}
 import fs2.interop.reactivestreams._
 
-class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F]) {
+private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F]) {
   private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
   private[this] val logger = org.log4s.getLogger
 
