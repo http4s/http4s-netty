@@ -14,8 +14,8 @@ Test / scalacOptions ++= Seq("-release", "11")
 
 val http4sVersion = "0.21.4"
 
-val netty         = "4.1.50.Final"
-val munit         = "0.7.9"
+val netty = "4.1.50.Final"
+val munit = "0.7.9"
 
 lazy val core = project.settings(
   libraryDependencies ++= List(
@@ -30,22 +30,26 @@ lazy val core = project.settings(
   )
 )
 
-lazy val server = project.dependsOn(core).settings(
-  libraryDependencies ++= List(
-    "org.http4s" %% "http4s-server" % http4sVersion,
-    "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-    "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
-    "org.scalameta" %% "munit" % munit % Test,
-    "org.scalameta" %% "munit-scalacheck" % munit % Test,
-    "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-    "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
+lazy val server = project
+  .dependsOn(core)
+  .settings(
+    libraryDependencies ++= List(
+      "org.http4s" %% "http4s-server" % http4sVersion,
+      "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
+      "org.scalameta" %% "munit" % munit % Test,
+      "org.scalameta" %% "munit-scalacheck" % munit % Test,
+      "org.http4s" %% "http4s-circe" % http4sVersion % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
+    )
   )
-)
 
-lazy val client = project.dependsOn(core).settings(
-  libraryDependencies ++= List(
-    "org.http4s" %% "http4s-client" % http4sVersion,
-    "org.scalameta" %% "munit" % munit % Test,
-    "ch.qos.logback" % "logback-classic" % "1.2.3" % Test
+lazy val client = project
+  .dependsOn(core)
+  .settings(
+    libraryDependencies ++= List(
+      "org.http4s" %% "http4s-client" % http4sVersion,
+      "org.scalameta" %% "munit" % munit % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test
+    )
   )
-)
