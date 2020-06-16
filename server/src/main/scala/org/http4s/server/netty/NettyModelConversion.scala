@@ -3,8 +3,8 @@ package org.http4s.server.netty
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 
-import cats.implicits._
 import cats.effect.{ConcurrentEffect, IO, Sync}
+import cats.implicits._
 import com.typesafe.netty.http._
 import fs2.interop.reactivestreams._
 import fs2.{Chunk, Stream}
@@ -283,7 +283,7 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
         response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
       case None =>
         if (minorVersionIs0) //Close by default for Http 1.0
-          response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaders.Values.CLOSE)
+          response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
     }
 
     response
