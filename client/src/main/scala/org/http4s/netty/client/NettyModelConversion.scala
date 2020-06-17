@@ -1,4 +1,4 @@
-package org.http4s.client.netty
+package org.http4s.netty.client
 
 import java.util.concurrent.atomic.AtomicBoolean
 
