@@ -1,4 +1,4 @@
-package org.http4s.client.netty
+package org.http4s.netty.client
 
 import cats.effect.{ContextShift, IO, Timer}
 

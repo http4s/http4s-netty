@@ -1,4 +1,4 @@
-package org.http4s.server.netty
+package org.http4s.netty.server
 
 import cats.effect.{ExitCode, IO, IOApp}
 import org.http4s.HttpRoutes

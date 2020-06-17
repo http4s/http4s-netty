@@ -1,4 +1,4 @@
-package org.http4s.client.netty
+package org.http4s.netty.client
 
 import java.net.ConnectException
 
@@ -18,7 +18,6 @@ import io.netty.handler.timeout.IdleStateHandler
 import javax.net.ssl.SSLContext
 import org.http4s.{Request, Response}
 import org.http4s.Uri.Scheme
-import org.http4s.client.netty.NettyClientBuilder.SSLContextOption
 import org.http4s.client.{Client, RequestKey}
 import org.http4s.netty.{NettyChannelOptions, NettyTransport}
 
@@ -34,7 +33,7 @@ class NettyClientBuilder[F[_]](
     maxHeaderSize: Int,
     maxChunkSize: Int,
     transport: NettyTransport,
-    sslContext: SSLContextOption,
+    sslContext: NettyClientBuilder.SSLContextOption,
     nettyChannelOptions: NettyChannelOptions,
     executionContext: ExecutionContext
 )(implicit F: ConcurrentEffect[F]) {
@@ -49,7 +48,7 @@ class NettyClientBuilder[F[_]](
       maxHeaderSize: Int = maxHeaderSize,
       maxChunkSize: Int = maxChunkSize,
       transport: NettyTransport = transport,
-      sslContext: SSLContextOption = sslContext,
+      sslContext: NettyClientBuilder.SSLContextOption = sslContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       executionContext: ExecutionContext = executionContext
   ): NettyClientBuilder[F] =
@@ -127,7 +126,7 @@ class NettyClientBuilder[F[_]](
           new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
         (
           Option(channel.attr(Http4sHandler.attributeKey).get()),
-          SSLContextOption.toMaybeSSLContext(sslContext)) match {
+          NettyClientBuilder.SSLContextOption.toMaybeSSLContext(sslContext)) match {
           case (Some(RequestKey(Scheme.https, _)), Some(context)) =>
             logger.trace("Creating SSL engine")
             val engine = context.createSSLEngine()

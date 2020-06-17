@@ -1,4 +1,4 @@
-package org.http4s.server.netty
+package org.http4s.netty.server
 
 import java.io.ByteArrayInputStream
 import java.security.cert.{CertificateFactory, X509Certificate}
