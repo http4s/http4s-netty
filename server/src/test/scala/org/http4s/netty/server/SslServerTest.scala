@@ -5,20 +5,22 @@ import java.net.http.HttpClient
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 
-import cats.effect.{ConcurrentEffect, IO}
+import cats.effect.{ConcurrentEffect, IO, Resource}
 import fs2.io.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
+import org.http4s.client.Client
 import org.http4s.client.jdkhttpclient.JdkHttpClient
 import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
+import org.http4s.netty.client.NettyClientBuilder
 import org.http4s.server.{SecureSession, ServerRequestKeys}
 import scodec.bits.ByteVector
 
 import scala.util.Try
 
-class SslServerTest extends IOSuite {
+abstract class SslServerTest extends IOSuite {
   lazy val sslContext: SSLContext = SslServerTest.sslContext
 
   implicit val x509Encoder: Encoder[X509Certificate] = Encoder.encodeString.contramap { x =>
@@ -63,11 +65,11 @@ class SslServerTest extends IOSuite {
     "mtlsServer"
   )
 
-  val client = JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())
+  def client: Fixture[Client[IO]]
 
   test("GET Root over TLS") {
     val s = server()
-    client.expect[String](s.baseUri).map { res =>
+    client().expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }
@@ -78,14 +80,14 @@ class SslServerTest extends IOSuite {
 
     val s = server()
     val uri = s.baseUri / "cert-info"
-    client.expect[SecureSession](uri).map { res =>
+    client().expect[SecureSession](uri).map { res =>
       assert(res.X509Certificate.isEmpty)
     }
   }
 
   test("mtls GET Root") {
     val s = mutualTlsServerRequired()
-    client.expect[String](s.baseUri).map { res =>
+    client().expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }
@@ -96,10 +98,24 @@ class SslServerTest extends IOSuite {
 
     val s = mutualTlsServerRequired()
     val uri = s.baseUri / "cert-info"
-    client.expect[SecureSession](uri).map { res =>
+    client().expect[SecureSession](uri).map { res =>
       assert(res.X509Certificate.nonEmpty)
     }
   }
+}
+
+class JDKSslServerTest extends SslServerTest {
+  val client = resourceFixture(
+    Resource.pure[IO, Client[IO]](
+      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
+    "client")
+}
+
+class NettyClientSslServerTest extends SslServerTest {
+  val client = resourceFixture(
+    NettyClientBuilder[IO].withSSLContext(sslContext).resource,
+    "client"
+  )
 }
 
 object SslServerTest {

@@ -3,16 +3,18 @@ package org.http4s.netty.server
 import java.net.http.HttpClient
 
 import cats.implicits._
-import cats.effect.{IO, Timer}
+import cats.effect.{IO, Resource, Timer}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
+import org.http4s.client.Client
 import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.netty.client.NettyClientBuilder
 
 import scala.concurrent.duration._
 
-class ServerTest extends IOSuite {
+abstract class ServerTest extends IOSuite {
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
@@ -24,16 +26,17 @@ class ServerTest extends IOSuite {
       .resource,
     "server"
   )
-  val client = JdkHttpClient[IO](HttpClient.newHttpClient())
+
+  def client: Fixture[Client[IO]]
 
   test("simple") {
     val uri = server().baseUri / "simple"
-    client.expect[String](uri).map(body => assertEquals(body, "simple path"))
+    client().expect[String](uri).map(body => assertEquals(body, "simple path"))
   }
 
   test("no-content") {
     val uri = server().baseUri / "no-content"
-    client.statusFromUri(uri).map { status =>
+    client().statusFromUri(uri).map { status =>
       assertEquals(status, NoContent)
     }
   }
@@ -41,14 +44,14 @@ class ServerTest extends IOSuite {
   test("delayed") {
     val uri = server().baseUri / "delayed"
 
-    client.expect[String](uri).map { body =>
+    client().expect[String](uri).map { body =>
       assertEquals(body, "delayed path")
     }
   }
   test("chunked") {
     val uri = server().baseUri / "chunked"
 
-    client.run(Request[IO](POST, uri).withEntity("hello")).use { res =>
+    client().run(Request[IO](POST, uri).withEntity("hello")).use { res =>
       res.as[String].map { body =>
         assert(res.isChunked)
         assertEquals(res.status, Ok)
@@ -58,8 +61,21 @@ class ServerTest extends IOSuite {
   }
   test("timeout") {
     val uri = server().baseUri / "timeout"
-    client.expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
+    client().expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
   }
+}
+
+class JDKServerTest extends ServerTest {
+  val client = resourceFixture(
+    Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())),
+    "client")
+}
+
+class NettyClientServerTest extends ServerTest {
+  val client = resourceFixture(
+    NettyClientBuilder[IO].resource,
+    "client"
+  )
 }
 
 object ServerTest {

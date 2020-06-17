@@ -31,7 +31,7 @@ lazy val core = project.settings(
 )
 
 lazy val server = project
-  .dependsOn(core)
+  .dependsOn(core, client % Test)
   .settings(
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
