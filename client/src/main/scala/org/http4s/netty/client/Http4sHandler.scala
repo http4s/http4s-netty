@@ -2,6 +2,7 @@ package org.http4s.netty.client
 
 import java.io.IOException
 
+import org.http4s.netty.NettyModelConversion
 import cats.implicits._
 import cats.effect.{ConcurrentEffect, IO}
 import io.netty.channel.{Channel, ChannelHandlerContext, ChannelInboundHandlerAdapter}

@@ -215,8 +215,7 @@ object Http4sNettyHandler {
       F: ConcurrentEffect[F]
   ) extends Http4sNettyHandler[F](ec) {
 
-    private[this] val converter: NettyModelConversion[F] =
-      new NettyModelConversion[F]
+    private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
 
     override def handle(
         channel: Channel,
@@ -244,8 +243,7 @@ object Http4sNettyHandler {
       F: ConcurrentEffect[F]
   ) extends Http4sNettyHandler[F](ec) {
 
-    private[this] val converter: NettyModelConversion[F] =
-      new NettyModelConversion[F]()
+    private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]()
 
     override def handle(
         channel: Channel,
