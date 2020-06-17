@@ -159,11 +159,10 @@ class NettyClientBuilder[F[_]](
           })
           (channel, (res, cleanup)) <- Resource.liftF(
             F.delay {
-                logger.trace(s"Connecting to $key, $port")
-                val channelFuture = bs.connect(host, port)
-                channelFuture.channel()
-              }
-              .flatMap(channel => responseCallback(channel, req, key)))
+              logger.trace(s"Connecting to $key, $port")
+              val channelFuture = bs.connect(host, port)
+              channelFuture.channel()
+            }.flatMap(channel => responseCallback(channel, req, key)))
           there <- Resource.make(F.pure(res))(_ =>
             cleanup(channel) *> F.delay(channel.pipeline().remove(key.toString())).void)
 

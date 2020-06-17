@@ -32,9 +32,8 @@ private[netty] class Http4sHandler[F[_]](
     msg match {
       case h: HttpResponse if ctx.channel().attr(Http4sHandler.attributeKey).get() == key =>
         F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
-            IO(cb(either.tupleLeft(ctx.channel())))
-          }
-          .unsafeRunSync()
+          IO(cb(either.tupleLeft(ctx.channel())))
+        }.unsafeRunSync()
       case _ => super.channelRead(ctx, msg)
     }
 

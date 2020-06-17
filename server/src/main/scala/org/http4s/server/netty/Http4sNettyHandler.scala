@@ -94,19 +94,18 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
           Promise[(HttpResponse, Channel => F[Unit])]
         //Start execution of the handler.
         F.runAsync(handle(ctx.channel(), req, cachedDateString)) {
-            case Left(error) =>
-              IO {
-                logger.error(error)("Exception caught in channelRead future")
-                p.complete(Failure(error)); ()
-              }
+          case Left(error) =>
+            IO {
+              logger.error(error)("Exception caught in channelRead future")
+              p.complete(Failure(error)); ()
+            }
 
-            case Right(r) =>
-              IO {
-                p.complete(Success(r)); ()
-              }
+          case Right(r) =>
+            IO {
+              p.complete(Success(r)); ()
+            }
 
-          }
-          .unsafeRunSync()
+        }.unsafeRunSync()
 
         //This attaches all writes sequentially using
         //LastResponseSent as a queue. `trampoline` ensures we do not

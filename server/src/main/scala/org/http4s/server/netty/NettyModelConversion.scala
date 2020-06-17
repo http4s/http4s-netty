@@ -32,7 +32,6 @@ import scala.collection.mutable.ListBuffer
   * Adapted from NettyModelConversion.scala
   * in
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
-  *
   */
 private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F]) {
 
@@ -117,7 +116,6 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
     }
 
   /** Create the source for the request body
-    *
     */
   private[this] def convertRequestBody(
       request: HttpRequest): (Stream[F, Byte], Channel => F[Unit]) =
@@ -369,39 +367,34 @@ private[netty] final class NettyModelConversion[F[_]](implicit F: ConcurrentEffe
       val factory = new WebSocketServerHandshakerFactory(wsUrl, "*", true, maxPayloadLength)
       StreamSubscriber[F, WebSocketFrame].flatMap { subscriber =>
         F.delay {
-            val processor = new Processor[WSFrame, WSFrame] {
-              def onError(t: Throwable): Unit = subscriber.onError(t)
+          val processor = new Processor[WSFrame, WSFrame] {
+            def onError(t: Throwable): Unit = subscriber.onError(t)
 
-              def onComplete(): Unit = subscriber.onComplete()
+            def onComplete(): Unit = subscriber.onComplete()
 
-              def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
+            def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
 
-              def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
+            def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
 
-              def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-                wsContext.webSocket.send.map(wsbitsToNetty).toUnicastPublisher().subscribe(s)
-            }
-
-            F.runAsync {
-                subscriber
-                  .stream(Sync[F].unit)
-                  .through(wsContext.webSocket.receive)
-                  .compile
-                  .drain
-              }(_ => IO.unit)
-              .unsafeRunSync()
-            val resp: DefaultHttpResponse =
-              new DefaultWebSocketHttpResponse(
-                httpVersion,
-                HttpResponseStatus.OK,
-                processor,
-                factory)
-            wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
-            resp
+            def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
+              wsContext.webSocket.send.map(wsbitsToNetty).toUnicastPublisher().subscribe(s)
           }
-          .handleErrorWith(_ =>
-            wsContext.failureResponse.map(
-              toNonWSResponse(httpRequest, _, httpVersion, dateString, true)))
+
+          F.runAsync {
+            subscriber
+              .stream(Sync[F].unit)
+              .through(wsContext.webSocket.receive)
+              .compile
+              .drain
+          }(_ => IO.unit)
+            .unsafeRunSync()
+          val resp: DefaultHttpResponse =
+            new DefaultWebSocketHttpResponse(httpVersion, HttpResponseStatus.OK, processor, factory)
+          wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
+          resp
+        }.handleErrorWith(_ =>
+          wsContext.failureResponse.map(
+            toNonWSResponse(httpRequest, _, httpVersion, dateString, true)))
       }
     } else
       F.pure(toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, true))

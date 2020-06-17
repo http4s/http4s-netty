@@ -15,7 +15,7 @@ private[netty] object CertificateInfo {
   /**
     * Return X509 certificates for the session.
     *
-   * @param sslSession Session from which certificate to be read
+    * @param sslSession Session from which certificate to be read
     * @return Empty array if no certificates can be read from {{{sslSession}}}
     */
   def getPeerCertChain(sslSession: SSLSession): List[X509Certificate] =
@@ -32,13 +32,13 @@ private[netty] object CertificateInfo {
     * cipher key strength. i.e. How much entropy material is in the key material being fed into the
     * encryption routines.
     *
-   * This is based on the information on effective key lengths in RFC 2246 - The TLS Protocol
+    * This is based on the information on effective key lengths in RFC 2246 - The TLS Protocol
     * Version 1.0, Appendix C. CipherSuite definitions:
     * <pre>
     *                         Effective
     *     Cipher       Type    Key Bits
     *
-   *     NULL       * Stream     0
+    *     NULL       * Stream     0
     *     IDEA_CBC     Block    128
     *     RC2_CBC_40 * Block     40
     *     RC4_40     * Stream    40
@@ -48,7 +48,7 @@ private[netty] object CertificateInfo {
     *     3DES_EDE_CBC Block    168
     * </pre>
     *
-   * @param cipherSuite String name of the TLS cipher suite.
+    * @param cipherSuite String name of the TLS cipher suite.
     * @return int indicating the effective key entropy bit-length.
     */
   def deduceKeyLength(cipherSuite: String): Int =

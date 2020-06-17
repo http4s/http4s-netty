@@ -7,13 +7,13 @@ import io.netty.channel.ChannelOption
   */
 sealed abstract class NettyChannelOptions {
 
-  /** Prepend to the channel options **/
+  /** Prepend to the channel options * */
   def prepend[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions
 
-  /** Append to the channel options **/
+  /** Append to the channel options * */
   def append[O](channelOption: ChannelOption[O], value: O): NettyChannelOptions
 
-  /** Remove a channel option, if present **/
+  /** Remove a channel option, if present * */
   def remove[O](channelOption: ChannelOption[O]): NettyChannelOptions
 
   private[http4s] def foldLeft[O](initial: O)(f: (O, (ChannelOption[Any], Any)) => O): O
