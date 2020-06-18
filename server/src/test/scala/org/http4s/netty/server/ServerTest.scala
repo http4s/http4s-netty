@@ -19,6 +19,7 @@ abstract class ServerTest extends IOSuite {
   val server = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
+      .withEventLoopThreads(10)
       .withIdleTimeout(2.seconds)
       .withExecutionContext(munitExecutionContext)
       .withoutBanner
@@ -46,6 +47,14 @@ abstract class ServerTest extends IOSuite {
 
     client().expect[String](uri).map { body =>
       assertEquals(body, "delayed path")
+    }
+  }
+
+  test("echo") {
+    val uri = server().baseUri / "echo"
+
+    client().expect[String](Request[IO](POST, uri).withEntity("hello")).map { body =>
+      assertEquals(body, "hello")
     }
   }
   test("chunked") {
@@ -93,6 +102,8 @@ object ServerTest {
           timer.sleep(1.second) *>
             Ok("delayed path")
         case GET -> Root / "no-content" => NoContent()
+        case r @ POST -> Root / "echo" =>
+          Ok(r.as[String])
         case GET -> Root / "not-found" => NotFound("not found")
         case GET -> Root / "empty-not-found" => NotFound()
         case GET -> Root / "internal-error" => InternalServerError()

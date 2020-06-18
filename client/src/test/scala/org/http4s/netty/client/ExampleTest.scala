@@ -1,5 +1,6 @@
 package org.http4s.netty.client
 
+import cats.implicits._
 import cats.effect.{ContextShift, IO, Timer}
 
 class ExampleTest extends munit.FunSuite {
@@ -11,13 +12,18 @@ class ExampleTest extends munit.FunSuite {
       "IO",
       { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
 
-  test("Get example.com") {
+  /*test("Get example.com") {
     val builder = NettyClientBuilder[IO].resource
-    builder.use(_.expect[String]("http://example.com")).flatMap(s => IO(println(s)))
-  }
-  test("TLS Get example.com") {
+    builder.use(_.expect[String]("http://example.com")).map(s => assert(s.nonEmpty))
+  }*/
+  test("TLS Get nrk.no") {
     val builder = NettyClientBuilder[IO].resource
-    builder.use(_.expect[String]("https://www.nrk.no")).flatMap(s => IO(println(s)))
+    builder.use { client =>
+      val r =
+        for (_ <- 0 until 10)
+          yield client.expect[String]("https://www.nrk.no").map(s => assert(s.nonEmpty))
+      r.toList.sequence
+    }
   }
 
 }

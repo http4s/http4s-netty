@@ -69,7 +69,8 @@ abstract class SslServerTest extends IOSuite {
 
   test("GET Root over TLS") {
     val s = server()
-    client().expect[String](s.baseUri).map { res =>
+    val c = client()
+    c.expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }

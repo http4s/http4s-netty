@@ -2,40 +2,50 @@ package org.http4s.netty.client
 
 import java.io.IOException
 
-import org.http4s.netty.NettyModelConversion
 import cats.implicits._
-import cats.effect.{ConcurrentEffect, IO}
-import io.netty.channel.{Channel, ChannelHandlerContext, ChannelInboundHandlerAdapter}
+import cats.effect.{ConcurrentEffect, IO, Resource}
+import io.netty.channel.pool.SimpleChannelPool
+import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import io.netty.util.AttributeKey
-import org.http4s.{Request, Response}
-import org.http4s.client.RequestKey
+import org.http4s.Response
+import org.http4s.netty.NettyModelConversion
 
-private[netty] class Http4sHandler[F[_]](
-    request: Request[F],
-    key: RequestKey,
-    cb: (Either[Throwable, (Channel, (Response[F], Channel => F[Unit]))]) => Unit)(implicit
-    F: ConcurrentEffect[F])
+private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
     extends ChannelInboundHandlerAdapter {
   private[this] val logger = org.log4s.getLogger
   val modelConversion = new NettyModelConversion[F]()
+  var callback: Option[(Either[Throwable, Resource[F, Response[F]]]) => Unit] =
+    None
 
-  override def channelActive(ctx: ChannelHandlerContext): Unit = {
-    val channel = ctx.channel()
+  def withCallback(cb: (Either[Throwable, Resource[F, Response[F]]]) => Unit) =
+    callback = Some(cb)
 
-    channel.writeAndFlush(modelConversion.toNettyRequest(request))
-    ctx.read()
-    ()
-  }
+  override def isSharable: Boolean = true
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
     msg match {
-      case h: HttpResponse if ctx.channel().attr(Http4sHandler.attributeKey).get() == key =>
+      case h: HttpResponse if callback.isDefined =>
+        val POOL_KEY: AttributeKey[SimpleChannelPool] =
+          AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
+
+        val maybePool = Option(ctx.channel().attr(POOL_KEY).get())
         F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
-          IO(cb(either.tupleLeft(ctx.channel())))
+          IO {
+            callback.get(either.map {
+              case (res, cleanup) =>
+                Resource.make(F.pure(res))(_ =>
+                  cleanup(ctx.channel()).flatMap(_ =>
+                    F.delay(maybePool.foreach { pool =>
+                      pool.release(ctx.channel())
+                    })))
+            })
+          }
         }.unsafeRunSync()
-      case _ => super.channelRead(ctx, msg)
+      case x =>
+        println("handler ... " + x)
+        super.channelRead(ctx, msg)
     }
 
   @SuppressWarnings(Array("deprecation"))
@@ -43,13 +53,13 @@ private[netty] class Http4sHandler[F[_]](
     cause match {
       // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
       // sending/receiving the response.
-      case e: IOException =>
+      case e: IOException if callback.isDefined =>
         logger.trace(e)("Benign IO exception caught in Netty")
-        cb(Left(e))
+        callback.get.apply(Left(e))
         ctx.channel().close(); ()
-      case e =>
+      case e if callback.isDefined =>
         logger.error(e)("Exception caught in Netty")
-        cb(Left(e))
+        callback.get.apply(Left(e))
         ctx.channel().close(); ()
     }
 
@@ -61,8 +71,4 @@ private[netty] class Http4sHandler[F[_]](
       case _ => super.userEventTriggered(ctx, evt)
     }
 
-}
-
-object Http4sHandler {
-  val attributeKey = AttributeKey.newInstance[RequestKey](classOf[RequestKey].getName)
 }
