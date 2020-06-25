@@ -19,7 +19,7 @@ val munit = "0.7.9"
 
 lazy val core = project.settings(
   libraryDependencies ++= List(
-    "co.fs2" %% "fs2-reactive-streams" % "2.3.0",
+    "co.fs2" %% "fs2-reactive-streams" % "2.4.2",
     ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.4")
       .exclude("io.netty", "netty-codec-http")
       .exclude("io.netty", "netty-handler"),
