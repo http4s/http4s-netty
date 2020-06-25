@@ -28,7 +28,7 @@ class Http4sChannelPoolMap[F[_]](
     handler: Http4sHandler[F])
     extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
-  private var onConnection: (Channel) => Unit = _ => ()
+  private var onConnection: (Channel) => Unit = (_: Channel) => ()
   def withOnConnection(cb: (Channel) => Unit) = onConnection = cb
 
   override def newPool(key: RequestKey): FixedChannelPool =
@@ -119,7 +119,7 @@ class Http4sChannelPoolMap[F[_]](
 object Http4sChannelPoolMap {
   val attr = AttributeKey.valueOf[RequestKey](classOf[RequestKey], "key")
 
-  case class Config(
+  final case class Config(
       maxInitialLength: Int,
       maxHeaderSize: Int,
       maxChunkSize: Int,
