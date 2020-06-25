@@ -12,7 +12,7 @@ inThisBuild(
 Compile / scalacOptions ++= Seq("-release", "8")
 Test / scalacOptions ++= Seq("-release", "11")
 
-val http4sVersion = "0.21.4"
+val http4sVersion = "0.21.5"
 
 val netty = "4.1.50.Final"
 val munit = "0.7.9"
