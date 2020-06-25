@@ -1,25 +1,18 @@
 package org.http4s.netty.client
 
-import java.net.ConnectException
-
 import cats.implicits._
 import cats.effect.{Async, ConcurrentEffect, Resource}
-import com.typesafe.netty.http.HttpStreamsClientHandler
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChannel}
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.channel.{Channel, ChannelInitializer, ChannelOption, MultithreadEventLoopGroup}
-import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponseDecoder}
-import io.netty.handler.ssl.SslHandler
-import io.netty.handler.timeout.IdleStateHandler
+import io.netty.channel.{Channel, ChannelOption, MultithreadEventLoopGroup}
 import javax.net.ssl.SSLContext
-import org.http4s.{Request, Response}
-import org.http4s.Uri.Scheme
+import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
-import org.http4s.netty.{NettyChannelOptions, NettyTransport}
+import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -32,12 +25,14 @@ class NettyClientBuilder[F[_]](
     maxInitialLength: Int,
     maxHeaderSize: Int,
     maxChunkSize: Int,
+    maxConnectionsPerKey: Int,
     transport: NettyTransport,
     sslContext: NettyClientBuilder.SSLContextOption,
     nettyChannelOptions: NettyChannelOptions,
     executionContext: ExecutionContext
 )(implicit F: ConcurrentEffect[F]) {
   private[this] val logger = org.log4s.getLogger
+  private[this] val nettyConverter = new NettyModelConversion[F]
 
   type Self = NettyClientBuilder[F]
 
@@ -47,6 +42,7 @@ class NettyClientBuilder[F[_]](
       maxInitialLength: Int = maxInitialLength,
       maxHeaderSize: Int = maxHeaderSize,
       maxChunkSize: Int = maxChunkSize,
+      maxConnectionsPerKey: Int = maxConnectionsPerKey,
       transport: NettyTransport = transport,
       sslContext: NettyClientBuilder.SSLContextOption = sslContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
@@ -58,6 +54,7 @@ class NettyClientBuilder[F[_]](
       maxInitialLength,
       maxHeaderSize,
       maxChunkSize,
+      maxConnectionsPerKey,
       transport,
       sslContext,
       nettyChannelOptions,
@@ -70,6 +67,7 @@ class NettyClientBuilder[F[_]](
   def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
+  def withMaxConnectionsPerKey(size: Int): Self = copy(maxConnectionsPerKey = size)
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   def withSSLContext(sslContext: SSLContext): Self =
@@ -106,92 +104,59 @@ class NettyClientBuilder[F[_]](
         }
     }
 
-  def setup: Bootstrap = {
-    val bootstrap = new Bootstrap()
-    getEventLoop.configure(bootstrap)
-    nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) => boot.option(opt, value) }
-
-    bootstrap.handler(new ChannelInitializer[SocketChannel] {
-      override def initChannel(channel: SocketChannel): Unit = {
-        logger.trace(s"Initializing $channel")
-
-        val pipeline = channel.pipeline()
-        if (idleTimeout.isFinite && idleTimeout.length > 0)
-          pipeline
-            .addFirst("timeout", new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
-        pipeline.addFirst("streaming-handler", new HttpStreamsClientHandler)
-        pipeline.addFirst("request-encoder", new HttpRequestEncoder)
-        pipeline.addFirst(
-          "response-decoder",
-          new HttpResponseDecoder(maxInitialLength, maxHeaderSize, maxChunkSize))
-        (
-          Option(channel.attr(Http4sHandler.attributeKey).get()),
-          NettyClientBuilder.SSLContextOption.toMaybeSSLContext(sslContext)) match {
-          case (Some(RequestKey(Scheme.https, _)), Some(context)) =>
-            logger.trace("Creating SSL engine")
-            val engine = context.createSSLEngine()
-            engine.setUseClientMode(true)
-            pipeline.addFirst("ssl", new SslHandler(engine))
-            ()
-          case (_, _) => ()
-        }
+  private def createBootstrap: Resource[F, Bootstrap] =
+    Resource.make(F.delay {
+      val bootstrap = new Bootstrap()
+      getEventLoop.configure(bootstrap)
+      nettyChannelOptions.foldLeft(bootstrap) {
+        case (boot, (opt, value)) => boot.option(opt, value)
       }
-    })
-  }
+      bootstrap
+    })(bs => F.delay(bs.config().group().shutdownGracefully()).void)
 
   def resource: Resource[F, Client[F]] =
-    Resource.liftF(F.delay(setup)).map { bs =>
-      Client[F] { req =>
-        for {
-          (key, host, port) <- Resource.liftF(F.delay {
-            val key = RequestKey.fromRequest(req)
-            val host = key.authority.host.value
-            val port = (key.scheme, key.authority.port) match {
-              case (Scheme.http, None) => 80
-              case (Scheme.https, None) => 443
-              case (_, Some(port)) => port
-              case (_, None) =>
-                throw new ConnectException(
-                  s"Not possible to find any port to connect to for key $key")
-            }
-            (key, host, port)
-          })
-          (channel, (res, cleanup)) <- Resource.liftF(
-            F.delay {
-              logger.trace(s"Connecting to $key, $port")
-              val channelFuture = bs.connect(host, port)
-              channelFuture.channel()
-            }.flatMap(channel => responseCallback(channel, req, key)))
-          there <- Resource.make(F.pure(res))(_ =>
-            cleanup(channel) *> F.delay(channel.pipeline().remove(key.toString())).void)
-
-        } yield there
-      }
-
+    createBootstrap.map { bs =>
+      val http4sHandler = new Http4sHandler[F]
+      val config = Http4sChannelPoolMap.Config(
+        maxInitialLength,
+        maxHeaderSize,
+        maxChunkSize,
+        maxConnectionsPerKey,
+        idleTimeout,
+        sslContext)
+      mkClient(new Http4sChannelPoolMap[F](bs, config, http4sHandler), http4sHandler)
     }
 
-  private def responseCallback(channel: Channel, request: Request[F], key: RequestKey) =
-    Async.shift(executionContext) *> F.async[(Channel, (Response[F], Channel => F[Unit]))] { cb =>
-      channel.attr(Http4sHandler.attributeKey).set(key)
-      channel
-        .pipeline()
-        .addLast(key.toString(), new Http4sHandler[F](request, key, cb))
-      ()
+  private def mkClient(pool: Http4sChannelPoolMap[F], handler: Http4sHandler[F]) =
+    Client[F] { req =>
+      for {
+        resource <- Resource.liftF(
+          Async.shift(executionContext) *> F
+            .async[Resource[F, Response[F]]] { cb =>
+              val key = RequestKey.fromRequest(req)
+              pool.get(key).acquire()
+              pool.withOnConnection { (c: Channel) =>
+                logger.trace("Sending request")
+                c.writeAndFlush(nettyConverter.toNettyRequest(req)); ()
+                logger.trace("After request")
+              }
+              handler.withCallback(cb)
+              ()
+            })
+        res <- resource
+      } yield res
     }
 
   case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
-    def shutdown(): Unit = {
-      eventLoop.shutdownGracefully()
-      ()
-    }
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
     def configure(bootstrap: Bootstrap) =
       bootstrap
         .group(eventLoop)
         .channel(runtimeClass)
-        .option(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
+        .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
+        .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
   }
 }
 
@@ -203,14 +168,15 @@ object NettyClientBuilder {
       maxInitialLength = 4096,
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
+      maxConnectionsPerKey = 10,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
       nettyChannelOptions = NettyChannelOptions.empty,
       executionContext = ExecutionContext.global
     )
 
-  private sealed trait SSLContextOption extends Product with Serializable
-  private object SSLContextOption {
+  private[client] sealed trait SSLContextOption extends Product with Serializable
+  private[client] object SSLContextOption {
     case object NoSSL extends SSLContextOption
     case object TryDefaultSSLContext extends SSLContextOption
     final case class Provided(sslContext: SSLContext) extends SSLContextOption

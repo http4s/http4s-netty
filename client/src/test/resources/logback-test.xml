@@ -5,7 +5,7 @@
         </encoder>
     </appender>
 
-    <logger name="org.http4s.client.netty" level="trace"/>
+    <logger name="org.http4s.netty.client" level="warn"/>
     <root level="warn">
         <appender-ref ref="STDOUT"/>
     </root>

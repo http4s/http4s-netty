@@ -31,7 +31,7 @@ lazy val core = project.settings(
 )
 
 lazy val server = project
-  .dependsOn(core)
+  .dependsOn(core, client % Test)
   .settings(
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
@@ -50,6 +50,7 @@ lazy val client = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test
+      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
+      "org.gaul" % "httpbin" % "1.3.0" % Test
     )
   )

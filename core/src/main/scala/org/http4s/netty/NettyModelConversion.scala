@@ -34,6 +34,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
   private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
   def toNettyRequest(request: Request[F]): HttpRequest = {
+    logger.trace(s"Converting request $request")
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
     val uri = request.uri.renderString
@@ -41,8 +42,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     val req =
       if (notAllowedWithBody.contains(request.method))
         new DefaultFullHttpRequest(version, method, uri)
-      else
-        new DefaultStreamedHttpRequest(
+      else {
+        val streamedReq = new DefaultStreamedHttpRequest(
           version,
           method,
           uri,
@@ -50,14 +51,16 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
             .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))
             .toUnicastPublisher
         )
-    req
-      .headers()
-      .add(request.headers.foldLeft(new DefaultHttpHeaders(): HttpHeaders)((hdrs, header) =>
-        hdrs.add(header.name, header.value)))
+        transferEncoding(request.headers, false, streamedReq)
+        streamedReq
+      }
+
+    request.headers.foreach(appendSomeToNetty(_, req.headers()))
     req
   }
 
   def fromNettyResponse(response: HttpResponse): F[(Response[F], (Channel) => F[Unit])] = {
+    logger.trace(s"converting response: $response")
     val (body, drain) = convertHttpBody(response)
     val res = for {
       status <- Status.fromInt(response.status().code())
@@ -293,9 +296,17 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
           .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))
           .toUnicastPublisher()
       )
-    httpResponse.headers.foreach(appendSomeToNetty(_, response.headers()))
-    val transferEncoding = `Transfer-Encoding`.from(httpResponse.headers)
-    `Content-Length`.from(httpResponse.headers) match {
+    transferEncoding(httpResponse.headers, minorIs0, response)
+    response
+  }
+
+  private def transferEncoding(
+      headers: Headers,
+      minorIs0: Boolean,
+      response: StreamedHttpMessage): Unit = {
+    headers.foreach(appendSomeToNetty(_, response.headers()))
+    val transferEncoding = `Transfer-Encoding`.from(headers)
+    `Content-Length`.from(headers) match {
       case Some(clenHeader) if transferEncoding.forall(!_.hasChunked) || minorIs0 =>
         // HTTP 1.1: we have a length and no chunked encoding
         // HTTP 1.0: we have a length
@@ -328,7 +339,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       //Especially considering it would make it hyper easy to crash http4s-netty apps
       //By just spamming http 1.0 Requests, forcing in-memory buffering and OOM.
     }
-    response
+    ()
   }
 
   /** Convert a Chunk to a Netty ByteBuf. */
