@@ -1,20 +1,18 @@
 import sbt._, Keys._
 import com.jsuereth.sbtpgp.PgpKeys
-import aether.SignedAetherPlugin.autoImport._
 import sbtrelease.ReleasePlugin.autoImport._
 
 object CommonSettings {
-  val settings = overridePublishSignedSettings ++ Seq(
+  val settings = Seq(
     Compile / compile / scalacOptions ++= Seq("-release", "8"),
     Test / scalacOptions ++= Seq("-release", "11"),
-    releaseCrossBuild := true,
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value,
     publishTo := {
       if (isSnapshot.value)
         Some(Opts.resolver.sonatypeSnapshots)
       else
         Some(Opts.resolver.sonatypeStaging)
     },
+    releasePublishArtifactsAction := PgpKeys.publishSigned.value,
     packageOptions += {
       val title = name.value
       val ver = version.value

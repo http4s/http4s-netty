@@ -64,5 +64,10 @@ lazy val root =
   project
     .in(file("."))
     .settings(CommonSettings.settings)
-    .settings(publishArtifact := false)
+    .settings(
+      name := "http4s-netty",
+      publishArtifact := false,
+      releaseCrossBuild := true,
+      releaseVersionBump := sbtrelease.Version.Bump.Minor
+    )
     .aggregate(core, client, server)
