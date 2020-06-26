@@ -1,6 +1,3 @@
-overridePublishSignedSettings
-overridePublishLocalSettings
-
 publishArtifact := false
 releaseCrossBuild := true
 releasePublishArtifactsAction := PgpKeys.publishSigned.value
@@ -60,4 +57,3 @@ inThisBuild(
     )
   )
 )
-

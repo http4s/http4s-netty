@@ -17,19 +17,21 @@ val http4sVersion = "0.21.5"
 val netty = "4.1.50.Final"
 val munit = "0.7.9"
 
-lazy val core = project.settings(
-  name := "http4s-netty-core",
-  libraryDependencies ++= List(
-    "co.fs2" %% "fs2-reactive-streams" % "2.4.2",
-    ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.4")
-      .exclude("io.netty", "netty-codec-http")
-      .exclude("io.netty", "netty-handler"),
-    "io.netty" % "netty-codec-http" % netty,
-    ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-    ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
-    "org.http4s" %% "http4s-core" % http4sVersion
+lazy val core = project
+  .settings(
+    name := "http4s-netty-core",
+    libraryDependencies ++= List(
+      "co.fs2" %% "fs2-reactive-streams" % "2.4.2",
+      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.4")
+        .exclude("io.netty", "netty-codec-http")
+        .exclude("io.netty", "netty-handler"),
+      "io.netty" % "netty-codec-http" % netty,
+      ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
+      ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
+      "org.http4s" %% "http4s-core" % http4sVersion
+    )
   )
-)
+  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
 lazy val server = project
   .dependsOn(core, client % Test)
@@ -45,6 +47,7 @@ lazy val server = project
       "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
     )
   )
+  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
 lazy val client = project
   .dependsOn(core)
@@ -57,3 +60,4 @@ lazy val client = project
       "org.gaul" % "httpbin" % "1.3.0" % Test
     )
   )
+  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
