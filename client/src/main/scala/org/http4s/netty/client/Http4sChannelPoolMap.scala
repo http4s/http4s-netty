@@ -78,9 +78,8 @@ class Http4sChannelPoolMap[F[_]](
       ()
     }
 
-    override def channelReleased(ch: Channel): Unit = {
+    override def channelReleased(ch: Channel): Unit =
       logger.trace(s"Releasing $ch")
-    }
 
     private def buildPipeline(channel: Channel) = {
       val pipeline = channel.pipeline()

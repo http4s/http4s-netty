@@ -1,9 +1,17 @@
-publishArtifact := false
+import sbt._, Keys._
+import com.jsuereth.sbtpgp.PgpKeys
+import aether.SignedAetherPlugin.autoImport._
+import sbtrelease.ReleasePlugin.autoImport._
 
-inThisBuild(
-  Seq(
+object CommonSettings {
+  val settings = overridePublishSignedSettings ++ Seq(
+    Compile / scalacOptions ++= Seq("-release", "8"),
+    Test / scalacOptions ++= Seq("-release", "11"),
+    releaseCrossBuild := true,
+    releasePublishArtifactsAction := PgpKeys.publishSigned.value,
+    publishArtifact := false,
     publishTo := {
-      if (version.value.endsWith("SNAPSHOT"))
+      if (isSnapshot.value)
         Some(Opts.resolver.sonatypeSnapshots)
       else
         Some(Opts.resolver.sonatypeStaging)
@@ -54,4 +62,4 @@ inThisBuild(
       )
     )
   )
-)
+}

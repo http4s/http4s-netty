@@ -9,8 +9,6 @@ inThisBuild(
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
   )
 )
-Compile / scalacOptions ++= Seq("-release", "8")
-Test / scalacOptions ++= Seq("-release", "11")
 
 val http4sVersion = "0.21.5"
 
@@ -18,6 +16,7 @@ val netty = "4.1.50.Final"
 val munit = "0.7.9"
 
 lazy val core = project
+  .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
@@ -29,14 +28,12 @@ lazy val core = project
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
-    ),
-    releaseCrossBuild := true,
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value
+    )
   )
-  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
 lazy val server = project
   .dependsOn(core, client % Test)
+  .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-server",
     libraryDependencies ++= List(
@@ -47,14 +44,12 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
-    ),
-    releaseCrossBuild := true,
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value
+    )
   )
-  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
 lazy val client = project
   .dependsOn(core)
+  .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-client",
     libraryDependencies ++= List(
@@ -62,8 +57,8 @@ lazy val client = project
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test
-    ),
-    releaseCrossBuild := true,
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value
+    )
   )
-  .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
+
+lazy val root =
+  project.in(file(".")).settings(CommonSettings.settings).aggregate(core, client, server)
