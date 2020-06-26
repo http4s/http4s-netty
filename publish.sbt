@@ -1,6 +1,4 @@
 publishArtifact := false
-releaseCrossBuild := true
-releasePublishArtifactsAction := PgpKeys.publishSigned.value
 
 inThisBuild(
   Seq(

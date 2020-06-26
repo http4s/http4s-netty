@@ -29,7 +29,9 @@ lazy val core = project
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
-    )
+    ),
+    releaseCrossBuild := true,
+    releasePublishArtifactsAction := PgpKeys.publishSigned.value
   )
   .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
@@ -45,7 +47,9 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
-    )
+    ),
+    releaseCrossBuild := true,
+    releasePublishArtifactsAction := PgpKeys.publishSigned.value
   )
   .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
 
@@ -58,6 +62,8 @@ lazy val client = project
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test
-    )
+    ),
+    releaseCrossBuild := true,
+    releasePublishArtifactsAction := PgpKeys.publishSigned.value
   )
   .settings(overridePublishSignedSettings ++ overridePublishLocalSettings)
