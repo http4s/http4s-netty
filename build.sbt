@@ -61,4 +61,8 @@ lazy val client = project
   )
 
 lazy val root =
-  project.in(file(".")).settings(CommonSettings.settings).aggregate(core, client, server)
+  project
+    .in(file("."))
+    .settings(CommonSettings.settings)
+    .settings(publishArtifact := false)
+    .aggregate(core, client, server)

@@ -9,7 +9,6 @@ object CommonSettings {
     Test / scalacOptions ++= Seq("-release", "11"),
     releaseCrossBuild := true,
     releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-    publishArtifact := false,
     publishTo := {
       if (isSnapshot.value)
         Some(Opts.resolver.sonatypeSnapshots)
