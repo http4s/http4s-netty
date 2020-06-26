@@ -18,6 +18,7 @@ val netty = "4.1.50.Final"
 val munit = "0.7.9"
 
 lazy val core = project.settings(
+  name := "http4s-netty-core",
   libraryDependencies ++= List(
     "co.fs2" %% "fs2-reactive-streams" % "2.4.2",
     ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.4")
@@ -33,6 +34,7 @@ lazy val core = project.settings(
 lazy val server = project
   .dependsOn(core, client % Test)
   .settings(
+    name := "http4s-netty-server",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
@@ -47,6 +49,7 @@ lazy val server = project
 lazy val client = project
   .dependsOn(core)
   .settings(
+    name := "http4s-netty-client",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
