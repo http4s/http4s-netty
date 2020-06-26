@@ -5,7 +5,7 @@ import sbtrelease.ReleasePlugin.autoImport._
 
 object CommonSettings {
   val settings = overridePublishSignedSettings ++ Seq(
-    Compile / scalacOptions ++= Seq("-release", "8"),
+    Compile / compile / scalacOptions ++= Seq("-release", "8"),
     Test / scalacOptions ++= Seq("-release", "11"),
     releaseCrossBuild := true,
     releasePublishArtifactsAction := PgpKeys.publishSigned.value,
