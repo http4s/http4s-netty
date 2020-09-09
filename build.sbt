@@ -12,7 +12,7 @@ inThisBuild(
 
 val http4sVersion = "0.21.6"
 
-val netty = "4.1.50.Final"
+val netty = "4.1.52.Final"
 val munit = "0.7.12"
 
 lazy val core = project
@@ -43,7 +43,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.3.0" % Test
+      "org.http4s" %% "http4s-jdk-http-client" % "0.3.1" % Test
     )
   )
 
