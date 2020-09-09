@@ -169,7 +169,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
         val isDrained = new AtomicBoolean(false)
         val stream =
           streamed
-            .toStream()
+            .toStream
             .flatMap(c => Stream.chunk(Chunk.bytes(bytebufToArray(c.content()))))
             .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
         (stream, drainBody(_, stream, isDrained))
@@ -294,7 +294,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
         HttpResponseStatus.valueOf(httpResponse.status.code),
         httpResponse.body.chunks
           .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))
-          .toUnicastPublisher()
+          .toUnicastPublisher
       )
     transferEncoding(httpResponse.headers, minorIs0, response)
     response

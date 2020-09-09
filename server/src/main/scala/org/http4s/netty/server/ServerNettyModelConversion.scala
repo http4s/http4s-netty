@@ -123,7 +123,7 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
             def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
 
             def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-              wsContext.webSocket.send.map(wsbitsToNetty).toUnicastPublisher().subscribe(s)
+              wsContext.webSocket.send.map(wsbitsToNetty).toUnicastPublisher.subscribe(s)
           }
 
           F.runAsync {
