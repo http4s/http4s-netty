@@ -168,8 +168,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       case streamed: StreamedHttpMessage =>
         val isDrained = new AtomicBoolean(false)
         val stream =
-          streamed
-            .toStream
+          streamed.toStream
             .flatMap(c => Stream.chunk(Chunk.bytes(bytebufToArray(c.content()))))
             .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
         (stream, drainBody(_, stream, isDrained))
