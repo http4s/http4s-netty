@@ -33,13 +33,12 @@ private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
         val maybePool = Option(ctx.channel().attr(POOL_KEY).get())
         F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
           IO {
-            callback.get(either.map {
-              case (res, cleanup) =>
-                Resource.make(F.pure(res))(_ =>
-                  cleanup(ctx.channel()).flatMap(_ =>
-                    F.delay(maybePool.foreach { pool =>
-                      pool.release(ctx.channel())
-                    })))
+            callback.get(either.map { case (res, cleanup) =>
+              Resource.make(F.pure(res))(_ =>
+                cleanup(ctx.channel()).flatMap(_ =>
+                  F.delay(maybePool.foreach { pool =>
+                    pool.release(ctx.channel())
+                  })))
             })
           }
         }.unsafeRunSync()

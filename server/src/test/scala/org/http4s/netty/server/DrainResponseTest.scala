@@ -16,9 +16,9 @@ class DrainResponseTest extends IOSuite {
   val ref = Deferred.unsafe[IO, Boolean]
   val server = resourceFixture(
     NettyServerBuilder[IO]
-      .withHttpApp(HttpRoutes
-        .of[IO] {
-          case GET -> Root =>
+      .withHttpApp(
+        HttpRoutes
+          .of[IO] { case GET -> Root =>
             Response[IO](Ok)
               .withEntity(
                 fs2.Stream
@@ -28,8 +28,8 @@ class DrainResponseTest extends IOSuite {
                   .take(1000)
                   .onFinalizeWeak[IO](ref.complete(true)))
               .pure[IO]
-        }
-        .orNotFound)
+          }
+          .orNotFound)
       .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()

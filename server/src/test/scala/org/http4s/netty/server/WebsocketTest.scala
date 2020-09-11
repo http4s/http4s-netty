@@ -13,13 +13,12 @@ import org.http4s.websocket.WebSocketFrame
 
 class WebsocketTest extends IOSuite {
   val queue = fs2.concurrent.Queue.bounded[IO, WebSocketFrame](1).unsafeRunSync()
-  val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case _ -> Root / "ws" =>
-      WebSocketBuilder[IO]
-        .build(
-          queue.dequeue,
-          _.evalMap(ws => queue.enqueue1(ws))
-        )
+  val routes: HttpRoutes[IO] = HttpRoutes.of[IO] { case _ -> Root / "ws" =>
+    WebSocketBuilder[IO]
+      .build(
+        queue.dequeue,
+        _.evalMap(ws => queue.enqueue1(ws))
+      )
   }
 
   val server = resourceFixture(

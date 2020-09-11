@@ -8,8 +8,8 @@ import org.http4s.implicits._
 object NettyTestServer extends IOApp {
   override def run(args: List[String]): IO[ExitCode] = {
     val app = HttpRoutes
-      .of[IO] {
-        case GET -> Root / "hello" => Ok("Hello World in " + Thread.currentThread().getName)
+      .of[IO] { case GET -> Root / "hello" =>
+        Ok("Hello World in " + Thread.currentThread().getName)
       }
       .orNotFound
 

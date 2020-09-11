@@ -112,23 +112,21 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
         //CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
-            .map[Unit] {
-              case (response, cleanup) =>
-                if (requestsInFlight.decrementAndGet() == 0)
-                  // Since we've now gone down to zero, we need to issue a
-                  // read, in case we ignored an earlier read complete
-                  ctx.read()
-                ctx
-                  .writeAndFlush(response)
-                  .addListener((future: ChannelFuture) =>
-                    ec.execute(() =>
-                      F.runAsync(cleanup(future.channel()))(_ => IO.unit).unsafeRunSync())); ()
+            .map[Unit] { case (response, cleanup) =>
+              if (requestsInFlight.decrementAndGet() == 0)
+                // Since we've now gone down to zero, we need to issue a
+                // read, in case we ignored an earlier read complete
+                ctx.read()
+              ctx
+                .writeAndFlush(response)
+                .addListener((future: ChannelFuture) =>
+                  ec.execute(() =>
+                    F.runAsync(cleanup(future.channel()))(_ => IO.unit).unsafeRunSync())); ()
 
             }(trampoline)
-            .recover[Unit] {
-              case NonFatal(e) =>
-                logger.warn(e)("Error caught during write action")
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
+            .recover[Unit] { case NonFatal(e) =>
+              logger.warn(e)("Error caught during write action")
+              sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
             }(trampoline)
         }(trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
@@ -225,11 +223,10 @@ object Http4sNettyHandler {
       logger.trace("Http request received by netty: " + request)
       Async.shift(ec) >> converter
         .fromNettyRequest(channel, request)
-        .flatMap {
-          case (req, cleanup) =>
-            F.suspend(app(req))
-              .recoverWith(serviceErrorHandler(req))
-              .map(response => (converter.toNettyResponse(req, response, dateString), cleanup))
+        .flatMap { case (req, cleanup) =>
+          F.suspend(app(req))
+            .recoverWith(serviceErrorHandler(req))
+            .map(response => (converter.toNettyResponse(req, response, dateString), cleanup))
         }
     }
   }
@@ -253,13 +250,11 @@ object Http4sNettyHandler {
       logger.trace("Http request received by netty: " + request)
       Async.shift(ec) >> converter
         .fromNettyRequest(channel, request)
-        .flatMap {
-          case (req, cleanup) =>
-            F.suspend(app(req))
-              .recoverWith(serviceErrorHandler(req))
-              .flatMap(
-                converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
-              .map((_, cleanup))
+        .flatMap { case (req, cleanup) =>
+          F.suspend(app(req))
+            .recoverWith(serviceErrorHandler(req))
+            .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
+            .map((_, cleanup))
         }
     }
   }
