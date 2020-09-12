@@ -13,6 +13,6 @@ object NettyTestServer extends IOApp {
       }
       .orNotFound
 
-    NettyServerBuilder[IO].withHttpApp(app).resource.use(_ => IO.never)
+    NettyServerBuilder2[IO].withHttpApp(app).resource.use(_ => IO.never)
   }
 }
