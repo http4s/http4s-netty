@@ -11,13 +11,13 @@ import fs2._
 import org.http4s.client.Client
 import org.http4s.client.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
-import org.http4s.server.Server
+//import org.http4s.server.Server
 
 import scala.concurrent.duration._
 
 abstract class ServerTest extends IOSuite {
 
-  resourceFixture(
+  val server = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withEventLoopThreads(10)
@@ -31,37 +31,38 @@ abstract class ServerTest extends IOSuite {
 
   def client: Fixture[Client[IO]]
 
-  test("simple") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "simple"
-    client.expect[String](uri).map(body => assertEquals(body, "simple path"))
+  test("simple") {/* (server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "simple"
+    client().expect[String](uri).map(body => assertEquals(body, "simple path"))
+
   }
 
-  test("no-content") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "no-content"
-    client.statusFromUri(uri).map { status =>
+  test("no-content") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "no-content"
+    client().statusFromUri(uri).map { status =>
       assertEquals(status, NoContent)
     }
   }
 
-  test("delayed") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "delayed"
+  test("delayed") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "delayed"
 
-    client.expect[String](uri).map { body =>
+    client().expect[String](uri).map { body =>
       assertEquals(body, "delayed path")
     }
   }
 
-  test("echo") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "echo"
+  test("echo") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "echo"
 
-    client.expect[String](Request[IO](POST, uri).withEntity("hello")).map { body =>
+    client().expect[String](Request[IO](POST, uri).withEntity("hello")).map { body =>
       assertEquals(body, "hello")
     }
   }
-  test("chunked") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "chunked"
+  test("chunked") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "chunked"
 
-    client.run(Request[IO](POST, uri).withEntity("hello")).use { res =>
+    client().run(Request[IO](POST, uri).withEntity("hello")).use { res =>
       res.as[String].map { body =>
         assert(res.isChunked)
         assertEquals(res.status, Ok)
@@ -69,9 +70,9 @@ abstract class ServerTest extends IOSuite {
       }
     }
   }
-  test("timeout") { (server: Server[IO], client: Client[IO]) =>
-    val uri = server.baseUri / "timeout"
-    client.expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
+  test("timeout") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val uri = server().baseUri / "timeout"
+    client().expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
   }
 }
 

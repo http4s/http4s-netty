@@ -58,22 +58,25 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   def server: Fixture[Server[IO]]
   def client: Fixture[Client[IO]]
 
-  test(s"GET Root over $typ") { (server: Server[IO], client: Client[IO]) =>
-    val s = server
-    val c = client
-    c.expect[String](s.baseUri).map { res =>
+  test(s"GET Root over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
+    val s = server()
+    client().expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }
 
-  test(s"GET Cert-Info over $typ") { (server: Server[IO], client: Client[IO]) =>
+  test(s"GET Cert-Info over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
     implicit val entityDecoder: EntityDecoder[IO, SecureSession] =
       org.http4s.circe.jsonOf[IO, SecureSession]
 
-    val s = server
+    val s = server()
     val uri = s.baseUri / "cert-info"
-    client.expect[SecureSession](uri).map { res =>
-      assert(res.X509Certificate.isEmpty)
+    client().expect[SecureSession](uri).map { res =>
+      typ match {
+        case "mTLS" => assert(res.X509Certificate.nonEmpty)
+        case _ => assert(res.X509Certificate.isEmpty)
+      }
+
     }
   }
 }
