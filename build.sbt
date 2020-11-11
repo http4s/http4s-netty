@@ -11,7 +11,7 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.21.8"
+val http4sVersion = "0.21.9"
 
 val netty = "4.1.54.Final"
 val munit = "0.7.14"
