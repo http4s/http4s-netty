@@ -25,26 +25,25 @@ private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
   override def isSharable: Boolean = true
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
-    msg match {
-      case h: HttpResponse if callback.isDefined =>
+    (msg, callback) match {
+      case (h: HttpResponse, Some(cb)) =>
         val POOL_KEY: AttributeKey[SimpleChannelPool] =
           AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
 
         val maybePool = Option(ctx.channel().attr(POOL_KEY).get())
         F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
           IO {
-            callback.foreach(cb =>
-              cb(either.map { case (res, cleanup) =>
-                Resource.make(F.pure(res))(_ =>
-                  cleanup(ctx.channel()).flatMap(_ =>
-                    F.delay(maybePool.foreach { pool =>
-                      pool.release(ctx.channel())
-                    })))
-              }))
-            //reset callback
-            callback = None
+            cb(either.map { case (res, cleanup) =>
+              Resource.make(F.pure(res))(_ =>
+                cleanup(ctx.channel()).flatMap(_ =>
+                  F.delay(maybePool.foreach { pool =>
+                    pool.release(ctx.channel())
+                  })))
+            })
           }
         }.unsafeRunSync()
+        //reset callback
+        callback = None
       case _ =>
         super.channelRead(ctx, msg)
     }
