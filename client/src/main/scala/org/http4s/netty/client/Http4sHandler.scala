@@ -14,12 +14,14 @@ import org.http4s.netty.NettyModelConversion
 
 private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
     extends ChannelInboundHandlerAdapter {
+  type CB = (Either[Throwable, Resource[F, Response[F]]]) => Unit
+
   private[this] val logger = org.log4s.getLogger
   val modelConversion = new NettyModelConversion[F]()
-  var callback: Option[(Either[Throwable, Resource[F, Response[F]]]) => Unit] =
+  var callback: Option[CB] =
     None
 
-  def withCallback(cb: (Either[Throwable, Resource[F, Response[F]]]) => Unit) =
+  def withCallback(cb: CB) =
     callback = Some(cb)
 
   override def isSharable: Boolean = true
@@ -50,16 +52,21 @@ private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
-    cause match {
+    (cause, callback) match {
       // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
       // sending/receiving the response.
-      case e: IOException if callback.isDefined =>
+      case (e: IOException, Some(cb)) =>
         logger.trace(e)("Benign IO exception caught in Netty")
-        callback.get.apply(Left(e))
+        cb(Left(e))
+        callback = None
         ctx.channel().close(); ()
-      case e if callback.isDefined =>
+      case (e, Some(cb)) =>
         logger.error(e)("Exception caught in Netty")
-        callback.get.apply(Left(e))
+        cb(Left(e))
+        callback = None
+        ctx.channel().close(); ()
+      case (e, None) =>
+        logger.error(e)("Exception caught in Netty, no callback registered")
         ctx.channel().close(); ()
     }
 
@@ -67,7 +74,7 @@ private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.close(); ()
+        ctx.channel().close(); ()
       case _ => super.userEventTriggered(ctx, evt)
     }
 

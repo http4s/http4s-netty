@@ -136,7 +136,7 @@ class NettyClientBuilder[F[_]](
               pool.get(key).acquire()
               pool.withOnConnection { (c: Channel) =>
                 logger.trace("Sending request")
-                c.writeAndFlush(nettyConverter.toNettyRequest(req)); ()
+                c.writeAndFlush(nettyConverter.toNettyRequest(req))
                 logger.trace("After request")
               }
               handler.withCallback(cb)
