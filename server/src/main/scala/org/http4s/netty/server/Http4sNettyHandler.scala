@@ -69,8 +69,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
 
   protected val logger = getLogger
 
-  /**
-    * Handle the given request.
+  /** Handle the given request.
     * Note: Handle implementations fork into user ExecutionContext
     * Returns the cleanup action along with the drain action
     */

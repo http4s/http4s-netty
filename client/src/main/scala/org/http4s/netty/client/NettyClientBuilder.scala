@@ -82,8 +82,7 @@ class NettyClientBuilder[F[_]](
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
 
-  /**
-    * Socket selector threads.
+  /** Socket selector threads.
     * @param nThreads number of selector threads. Use <code>0</code> for netty default
     * @return an updated builder
     */

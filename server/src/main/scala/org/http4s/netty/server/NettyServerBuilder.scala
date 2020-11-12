@@ -128,8 +128,7 @@ final class NettyServerBuilder[F[_]](
   def withoutSsl: Self =
     copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
 
-  /**
-    * Socket selector threads.
+  /** Socket selector threads.
     * @param nThreads number of selector threads. Use <code>0</code> for netty default
     * @return an updated builder
     */

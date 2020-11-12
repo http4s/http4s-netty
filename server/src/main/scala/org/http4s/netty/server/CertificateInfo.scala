@@ -7,13 +7,11 @@ import javax.net.ssl.SSLSession
 
 import scala.util.Try
 
-/**
-  * Based on org.http4s.server.blaze.SSLContextFactory
+/** Based on org.http4s.server.blaze.SSLContextFactory
   */
 private[netty] object CertificateInfo {
 
-  /**
-    * Return X509 certificates for the session.
+  /** Return X509 certificates for the session.
     *
     * @param sslSession Session from which certificate to be read
     * @return Empty array if no certificates can be read from {{{sslSession}}}
@@ -27,8 +25,7 @@ private[netty] object CertificateInfo {
       }
     }.toOption.getOrElse(Array.empty).toList
 
-  /**
-    * Given the name of a TLS/SSL cipher suite, return an int representing it effective stream
+  /** Given the name of a TLS/SSL cipher suite, return an int representing it effective stream
     * cipher key strength. i.e. How much entropy material is in the key material being fed into the
     * encryption routines.
     *

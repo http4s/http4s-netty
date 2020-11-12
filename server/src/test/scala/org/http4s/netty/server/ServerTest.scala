@@ -31,7 +31,7 @@ abstract class ServerTest extends IOSuite {
 
   def client: Fixture[Client[IO]]
 
-  test("simple") {/* (server: Server[IO], client: Client[IO]) =>*/
+  test("simple") { /* (server: Server[IO], client: Client[IO]) =>*/
     val uri = server().baseUri / "simple"
     client().expect[String](uri).map(body => assertEquals(body, "simple path"))
 

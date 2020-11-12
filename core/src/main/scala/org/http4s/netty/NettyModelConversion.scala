@@ -192,8 +192,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
           F.runAsync(f.compile.drain)(_ => IO.unit).unsafeRunSync()
     }
 
-  /**
-    * Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
+  /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
   private[this] def appendSomeToNetty(header: Header, nettyHeaders: HttpHeaders): Unit = {
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
