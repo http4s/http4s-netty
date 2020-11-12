@@ -1,7 +1,6 @@
 inThisBuild(
   Seq(
     organization := "org.http4s",
-    name := "http4s-netty",
     crossScalaVersions := Seq("2.13.2", "2.12.11"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
