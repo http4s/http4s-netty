@@ -95,6 +95,7 @@ class Http4sNettyHandler2[F[_]](httpApp: HttpApp[F], serviceErrorHandler: Servic
     } else {
       toEmptyResponse(response, request.method == Method.HEAD)
     }
+    println("Converted ")
     org.http4s.headers.Connection.from(request.headers) match {
       case Some(conn) => converted.headers().add(HttpHeaderNames.CONNECTION, conn.value)
       case None if request.httpVersion.minor == 0 =>
@@ -107,11 +108,14 @@ class Http4sNettyHandler2[F[_]](httpApp: HttpApp[F], serviceErrorHandler: Servic
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
     msg match {
       case msg: HttpRequest with StreamedNettyHttpMessage[F] =>
+        println("yeah yeah: " + msg.getClass)
         val action = for {
           req <- convertRequest(msg)
+          _ = println("converting...")
           res <- F.suspend(httpApp(req)).recoverWith(serviceErrorHandler(req))
         } yield convertResponse(req, res.putHeaders(Date(HttpDate.unsafeFromInstant(Instant.now))))
         ctx.unsafeRunSync(action.flatMap(res => ctx.delay(ctx.writeAndFlush(res)).void))
+        println("After write")
       case _ => println("unknown message: " + msg)
     }
 
@@ -127,11 +131,11 @@ class Http4sNettyHandler2[F[_]](httpApp: HttpApp[F], serviceErrorHandler: Servic
     ctx.read(); ()
   }
 
-  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
+/*  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         println("Closing connection due to idle timeout")
         ctx.close(); ()
       case _ => super.userEventTriggered(ctx, evt)
-    }
+    }*/
 }

@@ -18,7 +18,7 @@ import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
-import org.http4s.netty.{NettyChannelOptions, NettyTransport}
+import org.http4s.netty.{LoggingInboundHandlerAdapter, NettyChannelOptions, NettyTransport}
 import org.http4s.server.{Server, ServiceErrorHandler, defaults}
 
 import scala.collection.immutable
@@ -155,7 +155,9 @@ final class NettyServerBuilder2[F[_]](
               "idle-handler",
               new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           pipeline
+            .addLast("prelogger", new LoggingInboundHandlerAdapter("pre"))
             .addLast("serverStreamsHandler", new HttpServerHandler[F]())
+            .addLast("logger", new LoggingInboundHandlerAdapter("post-stream"))
             .addLast(
               "http4s",
               /*if (websocketsEnabled)

@@ -5,37 +5,44 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import cats.effect.ConcurrentEffect
 import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.{DefaultFullHttpResponse, HttpHeaderNames, HttpRequest, HttpResponse, HttpResponseStatus, HttpUtil}
+import io.netty.handler.codec.http.{
+  DefaultFullHttpResponse,
+  HttpHeaderNames,
+  HttpRequest,
+  HttpResponse,
+  HttpResponseStatus,
+  HttpUtil
+}
 
-class HttpServerHandler[F[_]: ConcurrentEffect] extends HttpStreamsHandler[F, HttpRequest, HttpResponse] {
-  private val inflight                         = new AtomicInteger(0)
-  private var continueExpected: Boolean        = false
-  private var sendContinue: Boolean            = false
-  private var close                            = false
+class HttpServerHandler[F[_]: ConcurrentEffect]
+    extends HttpStreamsHandler[F, HttpRequest, HttpResponse] {
+  private val inflight = new AtomicInteger(0)
+  private var continueExpected: Boolean = false
+  private var sendContinue: Boolean = false
+  private var close = false
   private var lastRequest: Option[HttpRequest] = None
 
-  /**
-    * Whether the given incoming message has a body.
+  /** Whether the given incoming message has a body.
     */
-  override protected def hasBody(request: HttpRequest): Boolean = {
+  override protected def hasBody(request: HttpRequest): Boolean =
     HttpUtil.getContentLength(request, 0) != 0 || HttpUtil.isTransferEncodingChunked(request)
-  }
 
-  /**
-    * Create a streamed incoming message with the given stream.
+  /** Create a streamed incoming message with the given stream.
     */
-  override protected def createStreamedMessage(request: HttpRequest, stream: fs2.Stream[F, Byte]): HttpRequest =
+  override protected def createStreamedMessage(
+      request: HttpRequest,
+      stream: fs2.Stream[F, Byte]): HttpRequest with StreamedNettyHttpMessage[F] =
     new DelegateStreamedHttpRequest[F](request, stream)
 
-  override protected def receivedInMessage(ctx: ChannelHandlerContext): Unit = {
+  override protected def receivedInMessage(ctx: ChannelHandlerContext): Unit =
     discard(inflight.incrementAndGet())
-  }
 
   override protected def sentOutMessage(ctx: ChannelHandlerContext): Unit = {
     val inflight = this.inflight.decrementAndGet()
     if (inflight == 1 && continueExpected && sendContinue) {
       lastRequest.foreach { lastRequest =>
-        ctx.writeAndFlush(new DefaultFullHttpResponse(lastRequest.protocolVersion, HttpResponseStatus.CONTINUE))
+        ctx.writeAndFlush(
+          new DefaultFullHttpResponse(lastRequest.protocolVersion, HttpResponseStatus.CONTINUE))
         sendContinue = false
         continueExpected = false
       }
@@ -52,7 +59,7 @@ class HttpServerHandler[F[_]: ConcurrentEffect] extends HttpStreamsHandler[F, Ht
       case request: HttpRequest =>
         lastRequest = Some(request)
         if (HttpUtil.is100ContinueExpected(request)) continueExpected = true
-      case _ =>
+      case _ => println("Some other message")
     }
     super.channelRead(ctx, msg)
   }
@@ -86,7 +93,8 @@ class HttpServerHandler[F[_]: ConcurrentEffect] extends HttpStreamsHandler[F, Ht
   }
 
   private def shouldClose(out: Outgoing) =
-    !HttpUtil.isContentLengthSet(out.message) && !HttpUtil.isTransferEncodingChunked(out.message) && !HttpServerHandler.noBody(
+    !HttpUtil.isContentLengthSet(out.message) && !HttpUtil.isTransferEncodingChunked(
+      out.message) && !HttpServerHandler.noBody(
       out.message.status
     )
 
@@ -129,7 +137,8 @@ class HttpServerHandler[F[_]: ConcurrentEffect] extends HttpStreamsHandler[F, Ht
   override protected def onPull(ctx: ChannelHandlerContext) = ctx.delay {
     if (continueExpected) if (inflight.get() == 1) {
       lastRequest.foreach { lastRequest =>
-        ctx.writeAndFlush(new DefaultFullHttpResponse(lastRequest.protocolVersion, HttpResponseStatus.CONTINUE))
+        ctx.writeAndFlush(
+          new DefaultFullHttpResponse(lastRequest.protocolVersion, HttpResponseStatus.CONTINUE))
       }
       continueExpected = false
     } else sendContinue = true

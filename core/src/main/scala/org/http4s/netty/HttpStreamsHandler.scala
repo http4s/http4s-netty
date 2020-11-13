@@ -33,8 +33,7 @@ abstract class HttpStreamsHandler[
 
   private val outgoing = new mutable.Queue[Outgoing]()
 
-  /**
-    * The incoming message that is currently being streamed out to a subscriber.
+  /** The incoming message that is currently being streamed out to a subscriber.
     *
     * This is tracked so that if its subscriber cancels, we can go into a mode where we ignore the rest of the body.
     * Since subscribers may cancel as many times as they like, including well after they've received all their content,
@@ -43,62 +42,55 @@ abstract class HttpStreamsHandler[
     */
   protected var currentlyStreamedMessage: Option[In] = None
 
-  /**
-    * Ignore the remaining reads for the incoming message.
+  /** Ignore the remaining reads for the incoming message.
     *
     * This is used in conjunction with currentlyStreamedMessage, as well as in situations where we have received the
     * full body, but still might be expecting a last http content message.
     */
   private var ignoreBodyRead = false
 
-  /**
-    * Whether a LastHttpContent message needs to be written once the incoming publisher completes.
+  /** Whether a LastHttpContent message needs to be written once the incoming publisher completes.
     *
     * Since the publisher may itself publish a LastHttpContent message, we need to track this fact, because if it
     * doesn't, then we need to write one ourselves.
     */
   private var sendLastHttpContent = false
 
-  /**
-    * Whether the given incoming message has a body.
+  /** Whether the given incoming message has a body.
     */
   protected def hasBody(in: In): Boolean
 
-  /**
-    * Create a streamed incoming message with the given stream.
+  /** Create a streamed incoming message with the given stream.
     */
-  protected def createStreamedMessage(in: In, stream: Stream[F, Byte]): In
+  protected def createStreamedMessage(
+      in: In,
+      stream: Stream[F, Byte]): In with StreamedNettyHttpMessage[F]
 
-  /**
-    * Invoked when an incoming message is first received.
+  /** Invoked when an incoming message is first received.
     *
     * Overridden by sub classes for state tracking.
     */
   protected def receivedInMessage(ctx: ChannelHandlerContext): Unit = {}
 
-  /**
-    * Invoked when an incoming message is fully consumed.
+  /** Invoked when an incoming message is fully consumed.
     *
     * Overridden by sub classes for state tracking.
     */
   protected def consumedInMessage(ctx: ChannelHandlerContext): Unit = {}
 
-  /**
-    * Invoked when an outgoing message is first received.
+  /** Invoked when an outgoing message is first received.
     *
     * Overridden by sub classes for state tracking.
     */
   protected def receivedOutMessage(ctx: ChannelHandlerContext): Unit = {}
 
-  /**
-    * Invoked when an outgoing message is fully sent.
+  /** Invoked when an outgoing message is fully sent.
     *
     * Overridden by sub classes for state tracking.
     */
   protected def sentOutMessage(ctx: ChannelHandlerContext): Unit = {}
 
-  /**
-    * Subscribe the given subscriber to the given streamed message.
+  /** Subscribe the given subscriber to the given streamed message.
     *
     * Provided so that the client subclass can intercept this to hold off sending the body of an expect 100 continue
     * request.
@@ -107,21 +99,23 @@ abstract class HttpStreamsHandler[
     msg.subscribe(subscriber)
   }*/
 
-  /**
-    * Invoked every time a read of the incoming body is requested by the subscriber.
+  /** Invoked every time a read of the incoming body is requested by the subscriber.
     *
     * Provided so that the server subclass can intercept this to send a 100 continue response.
     */
   protected def onPull(ctx: ChannelHandlerContext): F[Unit] = Applicative[F].unit
 
-  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
+  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = {
+    println("read stream")
+
     msg match {
       case msg: In with FullHttpMessage =>
+        println("Full")
         receivedInMessage(ctx)
         ctx.fireChannelRead(
           createStreamedMessage(
             msg,
-            Stream.evalUnChunk(HttpContentStream.chunk(ctx, new DefaultHttpContent(msg.content())))
+            Stream.evalUnChunk(HttpContentStream.chunk(msg))
           )
         )
         consumedInMessage(ctx)
@@ -130,21 +124,22 @@ abstract class HttpStreamsHandler[
         ctx.fireChannelRead(createStreamedMessage(msg, Stream.empty))
         ignoreBodyRead = true
       case msg: In =>
+        println("msg class " + msg.getClass)
         receivedInMessage(ctx)
         currentlyStreamedMessage = Some(msg)
-        val streamer = HttpContentStream.register[F](ctx)
-        discard(
-          ctx.fireChannelRead(
-            createStreamedMessage(
-              msg,
-              streamer.stream(ctx).evalTap(_ => onPull(ctx)).onFinalizeCaseWeak {
-                case ExitCase.Canceled => handleCancelled(ctx, msg)
-                case _ => Applicative[F].unit
-              })
-          ))
+        //val streamer = HttpContentStream.stream[F](ctx, "http4s")
+        println("WAAAAT")
+        val stream = Stream.chunk(Chunk.array("test".getBytes)).evalTap(_ => onPull(ctx)).onFinalizeCaseWeak {
+          case ExitCase.Canceled => handleCancelled(ctx, msg)
+          case _ => Applicative[F].unit
+        }
+        discard(ctx.fireChannelRead(createStreamedMessage(msg, stream)))
+
       case msg: HttpContent =>
+        println("stream content")
         handleReadHttpContent(ctx, msg)
     }
+  }
 
   override def channelReadComplete(ctx: ChannelHandlerContext): Unit = {
     if (ignoreBodyRead) ctx.read() else ctx.fireChannelReadComplete
@@ -185,7 +180,7 @@ abstract class HttpStreamsHandler[
           if (content.content.readableBytes > 0 || !last.trailingHeaders.isEmpty) { // It has data or trailing headers, send them
             ctx.fireChannelRead(content)
           } else ReferenceCountUtil.release(content)
-          HttpContentStream.unregister(ctx)
+          HttpContentStream.unregister(ctx, "http4s")
           currentlyStreamedMessage = None
           consumedInMessage(ctx)
         case _ => ctx.fireChannelRead(content)
@@ -194,7 +189,7 @@ abstract class HttpStreamsHandler[
       ReferenceCountUtil.release(content)
       if (content.isInstanceOf[LastHttpContent]) {
         ignoreBodyRead = false
-        currentlyStreamedMessage.foreach(_ => HttpContentStream.unregister(ctx))
+        currentlyStreamedMessage.foreach(_ => HttpContentStream.unregister(ctx, "http4s"))
         currentlyStreamedMessage = None
       }
     }
