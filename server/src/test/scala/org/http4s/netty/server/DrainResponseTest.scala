@@ -30,7 +30,6 @@ class DrainResponseTest extends IOSuite {
               .pure[IO]
           }
           .orNotFound)
-      .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()
       .resource,

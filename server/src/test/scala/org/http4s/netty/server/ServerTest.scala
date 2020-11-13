@@ -11,6 +11,8 @@ import fs2._
 import org.http4s.client.Client
 import org.http4s.client.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
+
+import scala.concurrent.ExecutionContext
 //import org.http4s.server.Server
 
 import scala.concurrent.duration._
@@ -22,7 +24,7 @@ abstract class ServerTest extends IOSuite {
       .withHttpApp(ServerTest.routes)
       .withEventLoopThreads(10)
       .withIdleTimeout(2.seconds)
-      .withExecutionContext(munitExecutionContext)
+      .withExecutionContext(ExecutionContext.global)
       .withoutBanner
       .bindAny()
       .resource,

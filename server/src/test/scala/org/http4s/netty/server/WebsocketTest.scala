@@ -24,7 +24,6 @@ class WebsocketTest extends IOSuite {
   val server = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)
-      .withExecutionContext(munitExecutionContext)
       .withWebsockets
       .withoutBanner
       .bindAny()
