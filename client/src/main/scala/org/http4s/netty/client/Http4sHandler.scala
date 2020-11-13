@@ -44,6 +44,8 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: Co
         }.unsafeRunSync()
       case _ =>
         super.channelRead(ctx, msg)
+        ctx.pipeline().remove(this)
+        ()
     }
 
   @SuppressWarnings(Array("deprecation"))
