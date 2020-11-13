@@ -155,9 +155,7 @@ final class NettyServerBuilder2[F[_]](
               "idle-handler",
               new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           pipeline
-            .addLast("prelogger", new LoggingInboundHandlerAdapter("pre"))
             .addLast("serverStreamsHandler", new HttpServerHandler[F]())
-            .addLast("logger", new LoggingInboundHandlerAdapter("post-stream"))
             .addLast(
               "http4s",
               /*if (websocketsEnabled)
