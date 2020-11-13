@@ -22,10 +22,7 @@ import org.http4s.client.RequestKey
 
 import scala.concurrent.duration.Duration
 
-class Http4sChannelPoolMap[F[_]](
-    bootstrap: Bootstrap,
-    config: Http4sChannelPoolMap.Config,
-    handler: Http4sHandler[F])
+class Http4sChannelPoolMap[F[_]](bootstrap: Bootstrap, config: Http4sChannelPoolMap.Config)
     extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
   private var onConnection: (Channel) => Unit = (_: Channel) => ()
@@ -34,7 +31,7 @@ class Http4sChannelPoolMap[F[_]](
   override def newPool(key: RequestKey): FixedChannelPool =
     new MyFixedChannelPool(
       bootstrap,
-      new WrappedChannelPoolHandler(key, config, handler),
+      new WrappedChannelPoolHandler(key, config),
       config.maxConnections,
       key)
 
@@ -61,8 +58,7 @@ class Http4sChannelPoolMap[F[_]](
 
   class WrappedChannelPoolHandler(
       key: RequestKey,
-      config: Http4sChannelPoolMap.Config,
-      handler: Http4sHandler[F]
+      config: Http4sChannelPoolMap.Config
   ) extends AbstractChannelPoolHandler {
 
     override def channelAcquired(ch: Channel): Unit = {
@@ -110,7 +106,7 @@ class Http4sChannelPoolMap[F[_]](
           .addLast(
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
-      pipeline.addLast("http4s", handler)
+      //pipeline.addLast("http4s", handler)
     }
   }
 }

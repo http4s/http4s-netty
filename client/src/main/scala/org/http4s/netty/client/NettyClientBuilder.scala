@@ -115,7 +115,6 @@ class NettyClientBuilder[F[_]](
 
   def resource: Resource[F, Client[F]] =
     createBootstrap.map { bs =>
-      val http4sHandler = new Http4sHandler[F]
       val config = Http4sChannelPoolMap.Config(
         maxInitialLength,
         maxHeaderSize,
@@ -123,10 +122,10 @@ class NettyClientBuilder[F[_]](
         maxConnectionsPerKey,
         idleTimeout,
         sslContext)
-      mkClient(new Http4sChannelPoolMap[F](bs, config, http4sHandler), http4sHandler)
+      mkClient(new Http4sChannelPoolMap[F](bs, config))
     }
 
-  private def mkClient(pool: Http4sChannelPoolMap[F], handler: Http4sHandler[F]) =
+  private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
       for {
         resource <- Resource.liftF(
@@ -135,11 +134,12 @@ class NettyClientBuilder[F[_]](
               val key = RequestKey.fromRequest(req)
               pool.get(key).acquire()
               pool.withOnConnection { (c: Channel) =>
+                val http4sHandler = new Http4sHandler[F](cb)
+                c.pipeline().addLast(s"http4s-${key}", http4sHandler)
                 logger.trace("Sending request")
                 c.writeAndFlush(nettyConverter.toNettyRequest(req))
                 logger.trace("After request")
               }
-              handler.withCallback(cb)
               ()
             })
         res <- resource
