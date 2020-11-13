@@ -26,7 +26,7 @@ class HttpBinTest extends munit.FunSuite {
       { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
 
   def withClient[A](theTest: (Client[IO]) => IO[A]) = {
-    val builder = NettyClientBuilder[IO].withExecutionContext(munitExecutionContext).resource
+    val builder = NettyClientBuilder[IO].resource
     builder.use(theTest)
   }
 

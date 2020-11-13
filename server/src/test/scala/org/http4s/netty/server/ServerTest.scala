@@ -84,7 +84,7 @@ class JDKServerTest extends ServerTest {
 
 class NettyClientServerTest extends ServerTest {
   val client = resourceFixture(
-    NettyClientBuilder[IO].withExecutionContext(munitExecutionContext).resource,
+    NettyClientBuilder[IO].resource,
     "client"
   )
 }

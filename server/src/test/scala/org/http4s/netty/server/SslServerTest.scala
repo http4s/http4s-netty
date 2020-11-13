@@ -109,7 +109,6 @@ class NettyClientSslServerTest extends SslServerTest() {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
-      .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
   )
@@ -123,7 +122,6 @@ class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
-      .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
   )

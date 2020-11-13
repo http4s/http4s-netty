@@ -1,7 +1,7 @@
 package org.http4s.netty.client
 
 import cats.implicits._
-import cats.effect.{Async, ConcurrentEffect, Resource}
+import cats.effect.{ConcurrentEffect, Resource}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChannel}
@@ -14,7 +14,6 @@ import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
 import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
@@ -28,8 +27,7 @@ class NettyClientBuilder[F[_]](
     maxConnectionsPerKey: Int,
     transport: NettyTransport,
     sslContext: NettyClientBuilder.SSLContextOption,
-    nettyChannelOptions: NettyChannelOptions,
-    executionContext: ExecutionContext
+    nettyChannelOptions: NettyChannelOptions
 )(implicit F: ConcurrentEffect[F]) {
   private[this] val logger = org.log4s.getLogger
   private[this] val nettyConverter = new NettyModelConversion[F]
@@ -45,8 +43,7 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey: Int = maxConnectionsPerKey,
       transport: NettyTransport = transport,
       sslContext: NettyClientBuilder.SSLContextOption = sslContext,
-      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      executionContext: ExecutionContext = executionContext
+      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -57,13 +54,11 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey,
       transport,
       sslContext,
-      nettyChannelOptions,
-      executionContext
+      nettyChannelOptions
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
-  def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
   def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
@@ -128,20 +123,18 @@ class NettyClientBuilder[F[_]](
   private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
       for {
-        resource <- Resource.liftF(
-          Async.shift(executionContext) *> F
-            .async[Resource[F, Response[F]]] { cb =>
-              val key = RequestKey.fromRequest(req)
-              pool.get(key).acquire()
-              pool.withOnConnection { (c: Channel) =>
-                val http4sHandler = new Http4sHandler[F](cb)
-                c.pipeline().addLast(s"http4s-${key}", http4sHandler)
-                logger.trace("Sending request")
-                c.writeAndFlush(nettyConverter.toNettyRequest(req))
-                logger.trace("After request")
-              }
-              ()
-            })
+        resource <- Resource.liftF(F.async[Resource[F, Response[F]]] { cb =>
+          val key = RequestKey.fromRequest(req)
+          pool.get(key).acquire()
+          pool.withOnConnection { (c: Channel) =>
+            val http4sHandler = new Http4sHandler[F](cb)
+            c.pipeline().addLast(s"http4s-${key}", http4sHandler)
+            logger.trace("Sending request")
+            c.writeAndFlush(nettyConverter.toNettyRequest(req))
+            logger.trace("After request")
+          }
+          ()
+        })
         res <- resource
       } yield res
     }
@@ -170,8 +163,7 @@ object NettyClientBuilder {
       maxConnectionsPerKey = 10,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
-      nettyChannelOptions = NettyChannelOptions.empty,
-      executionContext = ExecutionContext.global
+      nettyChannelOptions = NettyChannelOptions.empty
     )
 
   private[client] sealed trait SSLContextOption extends Product with Serializable
