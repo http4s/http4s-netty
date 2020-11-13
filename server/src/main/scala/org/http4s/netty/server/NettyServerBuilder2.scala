@@ -18,7 +18,7 @@ import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
-import org.http4s.netty.{LoggingInboundHandlerAdapter, NettyChannelOptions, NettyTransport}
+import org.http4s.netty.{NettyChannelOptions, NettyTransport}
 import org.http4s.server.{Server, ServiceErrorHandler, defaults}
 
 import scala.collection.immutable
