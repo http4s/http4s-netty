@@ -90,7 +90,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
       case req: HttpRequest =>
         requestsInFlight.incrementAndGet()
         val p: Promise[(HttpResponse, Channel => F[Unit])] =
-          Promise[(HttpResponse, Channel => F[Unit])]
+          Promise[(HttpResponse, Channel => F[Unit])]()
         //Start execution of the handler.
         F.runAsync(handle(ctx.channel(), req, cachedDateString)) {
           case Left(error) =>
