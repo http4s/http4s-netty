@@ -17,7 +17,6 @@ import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import javax.net.ssl.{SSLContext, SSLEngine}
-import nettyfs2.HttpServerHandler
 import org.http4s.HttpApp
 import org.http4s.netty.{NettyChannelOptions, NettyTransport}
 import org.http4s.server.{Server, ServiceErrorHandler, defaults}

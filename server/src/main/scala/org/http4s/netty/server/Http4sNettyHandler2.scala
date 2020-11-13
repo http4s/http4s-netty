@@ -1,4 +1,5 @@
-package org.http4s.netty.server
+package org.http4s.netty
+package server
 
 import java.time.Instant
 
@@ -18,7 +19,6 @@ import io.netty.handler.codec.http.{
   HttpVersion
 }
 import io.netty.handler.timeout.IdleStateEvent
-import nettyfs2._
 import org.http4s.headers.Date
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.{

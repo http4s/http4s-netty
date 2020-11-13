@@ -1,3 +1,5 @@
+import io.github.davidgregory084.TpolecatPlugin.autoImport.filterConsoleScalacOptions
+
 import sbt._, Keys._
 import com.jsuereth.sbtpgp.PgpKeys
 import sbtrelease.ReleasePlugin.autoImport._
@@ -6,6 +8,7 @@ object CommonSettings {
   val settings = Seq(
     Compile / compile / scalacOptions ++= Seq("-release", "8"),
     Test / scalacOptions ++= Seq("-release", "11"),
+    scalacOptions ~= filterConsoleScalacOptions,
     publishTo := {
       if (isSnapshot.value)
         Some(Opts.resolver.sonatypeSnapshots)

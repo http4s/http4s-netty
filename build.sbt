@@ -38,7 +38,6 @@ lazy val server = project
     name := "http4s-netty-server",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
-      "net.hamnaberg" %% "fs2-http-netty" % "0.1.0-SNAPSHOT",
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
       "org.scalameta" %% "munit" % munit % Test,
