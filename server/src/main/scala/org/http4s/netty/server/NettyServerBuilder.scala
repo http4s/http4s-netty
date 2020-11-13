@@ -38,7 +38,6 @@ final class NettyServerBuilder[F[_]](
     maxChunkSize: Int,
     transport: NettyTransport,
     banner: immutable.Seq[String],
-    executionContext: ExecutionContext,
     nettyChannelOptions: NettyChannelOptions,
     sslConfig: NettyServerBuilder.SslConfig[F],
     websocketsEnabled: Boolean,
@@ -58,7 +57,6 @@ final class NettyServerBuilder[F[_]](
       maxChunkSize: Int = maxChunkSize,
       transport: NettyTransport = transport,
       banner: immutable.Seq[String] = banner,
-      executionContext: ExecutionContext = executionContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       sslConfig: NettyServerBuilder.SslConfig[F] = sslConfig,
       websocketsEnabled: Boolean = websocketsEnabled,
@@ -75,7 +73,6 @@ final class NettyServerBuilder[F[_]](
       maxChunkSize,
       transport,
       banner,
-      executionContext,
       nettyChannelOptions,
       sslConfig,
       websocketsEnabled,
@@ -98,7 +95,6 @@ final class NettyServerBuilder[F[_]](
     }
 
   def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = httpApp)
-  def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
   def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host): Self =
@@ -143,6 +139,8 @@ final class NettyServerBuilder[F[_]](
       else socketAddress
     val loop = getEventLoop
     val server = new ServerBootstrap()
+    val executionContext = ExecutionContext.fromExecutorService(loop.eventLoop.next())
+
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
@@ -249,7 +247,6 @@ object NettyServerBuilder {
       maxChunkSize = 8192,
       transport = NettyTransport.Native,
       banner = org.http4s.server.defaults.Banner,
-      executionContext = ExecutionContext.global,
       nettyChannelOptions = NettyChannelOptions.empty,
       sslConfig = new NettyServerBuilder.NoSsl[F],
       websocketsEnabled = false,
