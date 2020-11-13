@@ -12,15 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Cache Coursier
-      uses: actions/cache@v1
-      with:
-        path: ~/.cache/coursier
-        key: ${{ runner.os }}-sbt-cache-${{ hashFiles('**/build.sbt') }}
-    - name: Cache Sbt
-      uses: actions/cache@v1
-      with:
-        path: ~/.sbt
-        key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+      uses: coursier/cache-action@v3
     - name: Set up JDK
       uses: actions/setup-java@v1
       with:
