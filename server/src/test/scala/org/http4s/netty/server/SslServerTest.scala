@@ -109,6 +109,7 @@ class NettyClientSslServerTest extends SslServerTest() {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
+      .withEventLoopThreads(2)
       .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
