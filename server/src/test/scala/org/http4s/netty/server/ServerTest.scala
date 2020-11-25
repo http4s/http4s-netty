@@ -1,17 +1,14 @@
 package org.http4s.netty.server
 
-import java.net.http.HttpClient
-
 import cats.implicits._
-import cats.effect.{IO, Resource, Timer}
+import cats.effect.{IO, Timer}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
 import org.http4s.client.Client
-import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.netty.client.NettyClientBuilder
-//import org.http4s.server.Server
 
 import scala.concurrent.duration._
 
@@ -76,9 +73,9 @@ abstract class ServerTest extends IOSuite {
   }
 }
 
-class JDKServerTest extends ServerTest {
+class BlazeServerTest extends ServerTest {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())),
+    BlazeClientBuilder[IO](munitExecutionContext).resource,
     "client")
 }
 
