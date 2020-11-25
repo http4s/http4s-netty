@@ -96,7 +96,6 @@ object ServerTest {
   def routes(implicit timer: Timer[IO]) =
     HttpRoutes
       .of[IO] {
-        case req @ _ -> Root / "echo" => Ok(req.as[String])
         case GET -> Root / "simple" => Ok("simple path")
         case req @ POST -> Root / "chunked" =>
           Response[IO](Ok)
