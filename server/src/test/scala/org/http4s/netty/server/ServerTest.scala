@@ -74,9 +74,7 @@ abstract class ServerTest extends IOSuite {
 }
 
 class BlazeServerTest extends ServerTest {
-  val client = resourceFixture(
-    BlazeClientBuilder[IO](munitExecutionContext).resource,
-    "client")
+  val client = resourceFixture(BlazeClientBuilder[IO](munitExecutionContext).resource, "client")
 }
 
 class NettyClientServerTest extends ServerTest {
