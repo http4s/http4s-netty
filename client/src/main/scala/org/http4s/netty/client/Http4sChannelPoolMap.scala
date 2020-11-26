@@ -88,10 +88,8 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
 
     private def buildPipeline(channel: Channel) = {
       val pipeline = channel.pipeline()
-      (
-        Option(channel.attr(Http4sChannelPoolMap.attr).get()),
-        NettyClientBuilder.SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
-        case (Some(RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort))), Some(context)) =>
+      (key, NettyClientBuilder.SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
+        case (RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort)), Some(context)) =>
           logger.trace("Creating SSL engine")
 
           val port = mayBePort.getOrElse(443)
