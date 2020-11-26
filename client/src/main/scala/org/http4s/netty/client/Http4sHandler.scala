@@ -26,13 +26,8 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: Co
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
     msg match {
       case h: HttpResponse =>
-        val maybePool = Option(ctx.channel().attr(POOL_KEY).get())
         val responseResourceF = modelConversion.fromNettyResponse(h).map { case (res, cleanup) =>
-          Resource.make(F.pure(res))(_ =>
-            cleanup(ctx.channel()).flatMap(_ =>
-              F.delay(maybePool.foreach { pool =>
-                pool.release(ctx.channel())
-              })))
+          Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
         }
 
         F.runAsync(responseResourceF) { either =>

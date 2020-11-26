@@ -2,6 +2,8 @@ package org.http4s.netty.client
 
 import java.net.ConnectException
 
+import cats.implicits._
+import cats.effect.{Async, Resource}
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import fs2.io.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
@@ -16,17 +18,25 @@ import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponseDecoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AttributeKey
+import io.netty.util.concurrent.Future
 import org.http4s.Uri
 import org.http4s.Uri.Scheme
 import org.http4s.client.RequestKey
 
 import scala.concurrent.duration.Duration
 
-class Http4sChannelPoolMap[F[_]](bootstrap: Bootstrap, config: Http4sChannelPoolMap.Config)
+class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChannelPoolMap.Config)
     extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
-  private var onConnection: (Channel) => Unit = (_: Channel) => ()
-  def withOnConnection(cb: (Channel) => Unit) = onConnection = cb
+
+  def resource(key: RequestKey): Resource[F, Channel] = {
+    val pool = get(key)
+
+    Resource
+      .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
+        Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
+      }
+  }
 
   override def newPool(key: RequestKey): FixedChannelPool =
     new MyFixedChannelPool(
@@ -64,7 +74,6 @@ class Http4sChannelPoolMap[F[_]](bootstrap: Bootstrap, config: Http4sChannelPool
     override def channelAcquired(ch: Channel): Unit = {
       logger.trace(s"Connected to $ch")
       ch.attr(Http4sChannelPoolMap.attr).set(key)
-      onConnection(ch)
     }
 
     override def channelCreated(ch: Channel): Unit = {
@@ -106,7 +115,6 @@ class Http4sChannelPoolMap[F[_]](bootstrap: Bootstrap, config: Http4sChannelPool
           .addLast(
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
-      //pipeline.addLast("http4s", handler)
     }
   }
 }
@@ -121,4 +129,12 @@ object Http4sChannelPoolMap {
       maxConnections: Int,
       idleTimeout: Duration,
       sslConfig: NettyClientBuilder.SSLContextOption)
+
+  def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
+    Async[F].async { callback =>
+      future
+        .addListener((f: Future[A]) =>
+          if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause())))
+      ()
+    }
 }
