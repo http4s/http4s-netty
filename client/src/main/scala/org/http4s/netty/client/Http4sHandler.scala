@@ -12,63 +12,54 @@ import io.netty.util.AttributeKey
 import org.http4s.Response
 import org.http4s.netty.NettyModelConversion
 
-private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
+private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: ConcurrentEffect[F])
     extends ChannelInboundHandlerAdapter {
-  type CB = (Either[Throwable, Resource[F, Response[F]]]) => Unit
+
+  val POOL_KEY: AttributeKey[SimpleChannelPool] =
+    AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
 
   private[this] val logger = org.log4s.getLogger
   val modelConversion = new NettyModelConversion[F]()
-  var callback: Option[CB] =
-    None
 
-  def withCallback(cb: CB) =
-    callback = Some(cb)
-
-  override def isSharable: Boolean = true
+  override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
-    (msg, callback) match {
-      case (h: HttpResponse, Some(cb)) =>
-        val POOL_KEY: AttributeKey[SimpleChannelPool] =
-          AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
+    msg match {
+      case h: HttpResponse =>
+        val responseResourceF = modelConversion.fromNettyResponse(h).map { case (res, cleanup) =>
+          Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
+        }
 
-        val maybePool = Option(ctx.channel().attr(POOL_KEY).get())
-        F.runAsync(modelConversion.fromNettyResponse(h)) { either =>
+        F.runAsync(responseResourceF) { either =>
           IO {
-            cb(either.map { case (res, cleanup) =>
-              Resource.make(F.pure(res))(_ =>
-                cleanup(ctx.channel()).flatMap(_ =>
-                  F.delay(maybePool.foreach { pool =>
-                    pool.release(ctx.channel())
-                  })))
-            })
+            cb(either)
+            ctx.pipeline().remove(this)
+            ()
           }
         }.unsafeRunSync()
-        //reset callback
-        callback = None
       case _ =>
         super.channelRead(ctx, msg)
     }
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
-    (cause, callback) match {
+    cause match {
       // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
       // sending/receiving the response.
-      case (e: IOException, Some(cb)) =>
+      case e: IOException =>
         logger.trace(e)("Benign IO exception caught in Netty")
-        cb(Left(e))
-        callback = None
-        ctx.channel().close(); ()
-      case (e, Some(cb)) =>
+        onException(ctx, e)
+      case e =>
         logger.error(e)("Exception caught in Netty")
-        cb(Left(e))
-        callback = None
-        ctx.channel().close(); ()
-      case (e, None) =>
-        logger.error(e)("Exception caught in Netty, no callback registered")
-        ctx.channel().close(); ()
+        onException(ctx, e)
     }
+
+  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = {
+    cb(Left(e))
+    ctx.channel().close();
+    ctx.pipeline().remove(this)
+    ()
+  }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
     evt match {
@@ -77,5 +68,8 @@ private[netty] class Http4sHandler[F[_]](implicit F: ConcurrentEffect[F])
         ctx.channel().close(); ()
       case _ => super.userEventTriggered(ctx, evt)
     }
+}
 
+object Http4sHandler {
+  type CB[F[_]] = (Either[Throwable, Resource[F, Response[F]]]) => Unit
 }

@@ -8,7 +8,7 @@ import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChanne
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.channel.{Channel, ChannelOption, MultithreadEventLoopGroup}
+import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
 import javax.net.ssl.SSLContext
 import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
@@ -115,7 +115,6 @@ class NettyClientBuilder[F[_]](
 
   def resource: Resource[F, Client[F]] =
     createBootstrap.map { bs =>
-      val http4sHandler = new Http4sHandler[F]
       val config = Http4sChannelPoolMap.Config(
         maxInitialLength,
         maxHeaderSize,
@@ -123,27 +122,35 @@ class NettyClientBuilder[F[_]](
         maxConnectionsPerKey,
         idleTimeout,
         sslContext)
-      mkClient(new Http4sChannelPoolMap[F](bs, config, http4sHandler), http4sHandler)
+      mkClient(new Http4sChannelPoolMap[F](bs, config))
     }
 
-  private def mkClient(pool: Http4sChannelPoolMap[F], handler: Http4sHandler[F]) =
+  private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
+      val key = RequestKey.fromRequest(req)
+      val pipelineKey = s"http4s-${key}"
+
       for {
-        resource <- Resource.liftF(
-          Async.shift(executionContext) *> F
-            .async[Resource[F, Response[F]]] { cb =>
-              val key = RequestKey.fromRequest(req)
-              pool.get(key).acquire()
-              pool.withOnConnection { (c: Channel) =>
+        channel <- pool.resource(key)
+        responseResource <- Resource
+          .liftF(
+            Async.shift(executionContext) *> F
+              .async[Resource[F, Response[F]]] { cb =>
+                val http4sHandler = new Http4sHandler[F](cb)
+                channel.pipeline().addLast(pipelineKey, http4sHandler)
+                logger.trace("Sending request")
+                channel.writeAndFlush(nettyConverter.toNettyRequest(req))
+                logger.trace("After request")
+              })
+        /*pool.withOnConnection { (c: Channel) =>
+                val http4sHandler = new Http4sHandler[F](cb)
+                c.pipeline().addLast(pipelineKey, http4sHandler)
                 logger.trace("Sending request")
                 c.writeAndFlush(nettyConverter.toNettyRequest(req))
                 logger.trace("After request")
-              }
-              handler.withCallback(cb)
-              ()
-            })
-        res <- resource
-      } yield res
+              }*/
+        response <- responseResource
+      } yield response
     }
 
   case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit

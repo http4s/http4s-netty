@@ -1,16 +1,15 @@
 package org.http4s.netty.server
 
 import java.io.ByteArrayInputStream
-import java.net.http.HttpClient
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 
-import cats.effect.{ConcurrentEffect, IO, Resource}
+import cats.effect.{ConcurrentEffect, IO}
 import fs2.io.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
-import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
@@ -81,10 +80,9 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   }
 }
 
-class JDKSslServerTest extends SslServerTest() {
+class BlazeSslServerTest extends SslServerTest() {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](
-      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
+    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
     "client")
 
   val server = resourceFixture(
@@ -93,10 +91,9 @@ class JDKSslServerTest extends SslServerTest() {
   )
 }
 
-class JDKMTLSServerTest extends SslServerTest("mTLS") {
+class BlazeMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](
-      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
+    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
     "client")
 
   val server = resourceFixture(
@@ -109,6 +106,7 @@ class NettyClientSslServerTest extends SslServerTest() {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
+      .withEventLoopThreads(2)
       .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
@@ -161,6 +159,7 @@ object SslServerTest {
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)
+      .withEventLoopThreads(10)
       .withoutBanner
       .bindAny()
       .withSslContext(ctx, parameters)

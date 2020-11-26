@@ -1,17 +1,14 @@
 package org.http4s.netty.server
 
-import java.net.http.HttpClient
-
 import cats.implicits._
-import cats.effect.{IO, Resource, Timer}
+import cats.effect.{IO, Timer}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
 import org.http4s.client.Client
-import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.netty.client.NettyClientBuilder
-//import org.http4s.server.Server
 
 import scala.concurrent.duration._
 
@@ -76,15 +73,16 @@ abstract class ServerTest extends IOSuite {
   }
 }
 
-class JDKServerTest extends ServerTest {
-  val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())),
-    "client")
+class BlazeServerTest extends ServerTest {
+  val client = resourceFixture(BlazeClientBuilder[IO](munitExecutionContext).resource, "client")
 }
 
 class NettyClientServerTest extends ServerTest {
   val client = resourceFixture(
-    NettyClientBuilder[IO].withExecutionContext(munitExecutionContext).resource,
+    NettyClientBuilder[IO]
+      .withEventLoopThreads(2)
+      .withExecutionContext(munitExecutionContext)
+      .resource,
     "client"
   )
 }
@@ -93,7 +91,6 @@ object ServerTest {
   def routes(implicit timer: Timer[IO]) =
     HttpRoutes
       .of[IO] {
-        case req @ _ -> Root / "echo" => Ok(req.as[String])
         case GET -> Root / "simple" => Ok("simple path")
         case req @ POST -> Root / "chunked" =>
           Response[IO](Ok)
