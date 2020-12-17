@@ -12,7 +12,7 @@ inThisBuild(
 
 val http4sVersion = "0.21.13"
 
-val netty = "4.1.55.Final"
+val netty = "4.1.56.Final"
 val munit = "0.7.19"
 
 lazy val core = project
