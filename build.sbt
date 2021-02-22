@@ -10,17 +10,17 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.21.17"
+val http4sVersion = "0.21.19"
 
 val netty = "4.1.58.Final"
-val munit = "0.7.21"
+val munit = "0.7.22"
 
 lazy val core = project
   .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "2.5.0",
+      "co.fs2" %% "fs2-reactive-streams" % "2.5.3",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
