@@ -1,7 +1,7 @@
 inThisBuild(
   Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.4", "2.12.13"),
+    crossScalaVersions := Seq("2.13.5", "2.12.13"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
     addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.11.3").cross(CrossVersion.full)),
@@ -10,10 +10,10 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.21.19"
+val http4sVersion = "0.21.20"
 
 
-val netty = "4.1.59.Final"
+val netty = "4.1.60.Final"
 val munit = "0.7.22"
 
 lazy val core = project
