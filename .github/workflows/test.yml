@@ -21,6 +21,6 @@ jobs:
     - name: Scalafmt Check
       run: sbt scalafmtCheckAll
     - name: "2.13 Test"
-      run: sbt "++ 2.13.4 test"
+      run: sbt "++ 2.13.5 test"
     - name: "2.12 Test"
-      run: sbt "++ 2.12.12 test"
+      run: sbt "++ 2.12.13 test"
