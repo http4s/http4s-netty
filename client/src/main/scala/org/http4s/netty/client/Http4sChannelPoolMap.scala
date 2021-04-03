@@ -51,19 +51,23 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
       maxConnections: Int,
       key: RequestKey)
       extends FixedChannelPool(bs, handler, maxConnections) {
-    override def connectChannel(bs: Bootstrap): ChannelFuture = {
-      val host = key.authority.host.value
-      val port = (key.scheme, key.authority.port) match {
-        case (Scheme.http, None) => 80
-        case (Scheme.https, None) => 443
-        case (_, Some(port)) => port
-        case (_, None) =>
-          throw new ConnectException(s"Not possible to find any port to connect to for key $key")
-      }
-      logger.trace(s"Connecting to $key, $port")
+    override def connectChannel(bs: Bootstrap): ChannelFuture =
+      if (bs.config().remoteAddress() == null) {
+        val host = key.authority.host.value
+        val port = (key.scheme, key.authority.port) match {
+          case (Scheme.http, None) => 80
+          case (Scheme.https, None) => 443
+          case (_, Some(port)) => port
+          case (_, None) =>
+            throw new ConnectException(s"Not possible to find any port to connect to for key $key")
+        }
+        logger.trace(s"Connecting to $key, $port")
 
-      bs.connect(host, port)
-    }
+        bs.connect(host, port)
+      } else {
+        logger.trace(s"Connecting using pre-defined remote address: ${bs.config().remoteAddress()}")
+        bs.connect()
+      }
   }
 
   class WrappedChannelPoolHandler(

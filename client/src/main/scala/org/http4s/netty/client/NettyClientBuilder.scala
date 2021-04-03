@@ -1,19 +1,21 @@
 package org.http4s.netty.client
 
-import cats.implicits._
 import cats.effect.{Async, ConcurrentEffect, Resource}
+import cats.implicits._
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChannel}
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
+import io.netty.channel.unix.DomainSocketAddress
 import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
-import javax.net.ssl.SSLContext
 import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
 import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
 
+import java.net.SocketAddress
+import javax.net.ssl.SSLContext
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
@@ -91,15 +93,31 @@ class NettyClientBuilder[F[_]](
   private def getEventLoop: EventLoopHolder[_ <: SocketChannel] =
     transport match {
       case NettyTransport.Nio =>
-        EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[NioSocketChannel](Option.empty, new NioEventLoopGroup(eventLoopThreads))
       case NettyTransport.Native =>
         if (Epoll.isAvailable)
-          EventLoopHolder[EpollSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[EpollSocketChannel](
+            Option.empty,
+            new EpollEventLoopGroup(eventLoopThreads))
         else if (KQueue.isAvailable)
-          EventLoopHolder[KQueueSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[KQueueSocketChannel](
+            Option.empty,
+            new KQueueEventLoopGroup(eventLoopThreads))
         else {
           logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[NioSocketChannel](Option.empty, new NioEventLoopGroup(eventLoopThreads))
+        }
+      case NettyTransport.UnixSocket(path) =>
+        if (Epoll.isAvailable)
+          EventLoopHolder[EpollSocketChannel](
+            Option(new DomainSocketAddress(path.toFile)),
+            new EpollEventLoopGroup(eventLoopThreads))
+        else if (KQueue.isAvailable)
+          EventLoopHolder[KQueueSocketChannel](
+            Option(new DomainSocketAddress(path.toFile)),
+            new KQueueEventLoopGroup(eventLoopThreads))
+        else {
+          throw new Exception
         }
     }
 
@@ -153,16 +171,21 @@ class NettyClientBuilder[F[_]](
       } yield response
     }
 
-  case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit
+  case class EventLoopHolder[A <: SocketChannel](
+      socketAddress: Option[SocketAddress],
+      eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
-    def configure(bootstrap: Bootstrap) =
-      bootstrap
+    def configure(bootstrap: Bootstrap) = {
+      val bs = bootstrap
         .group(eventLoop)
         .channel(runtimeClass)
         .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
         .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
+      socketAddress.foreach(bs.remoteAddress)
+    }
+
   }
 }
 
