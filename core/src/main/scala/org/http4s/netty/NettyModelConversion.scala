@@ -1,25 +1,23 @@
 package org.http4s
 package netty
 
-import cats.implicits._
 import cats.effect._
-
-import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicBoolean
+import cats.implicits._
 import com.typesafe.netty.http._
+import fs2.interop.reactivestreams._
+import fs2.{Chunk, Stream, io => _}
 import io.chrisdavenport.vault.Vault
+import io.netty.buffer.{ByteBuf, ByteBufUtil, Unpooled}
 import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
-
-import javax.net.ssl.SSLEngine
-import fs2.{Chunk, Stream, io => _}
-import fs2.interop.reactivestreams._
-import io.netty.buffer.{ByteBuf, ByteBufUtil, Unpooled}
-import io.netty.util.{ReferenceCountUtil, ReferenceCounted}
-import org.http4s.{Request, Response, HttpVersion => HV}
+import io.netty.util.ReferenceCountUtil
 import org.http4s.headers.{`Content-Length`, `Transfer-Encoding`, Connection => ConnHeader}
+import org.http4s.{HttpVersion => HV}
 
+import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.ssl.SSLEngine
 import scala.collection.mutable.ListBuffer
 
 /** Helpers for converting http4s request/response
