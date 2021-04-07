@@ -133,7 +133,7 @@ class NettyClientBuilder[F[_]](
       for {
         channel <- pool.resource(key)
         responseResource <- Resource
-          .liftF(
+          .eval(
             Async.shift(executionContext) *> F
               .async[Resource[F, Response[F]]] { cb =>
                 val http4sHandler = new Http4sHandler[F](cb)

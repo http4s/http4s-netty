@@ -35,7 +35,7 @@ object CommonSettings {
       Credentials(Path.userHome / ".sbt" / ".credentials")
     ),
     publishMavenStyle := true,
-    publishArtifact in Test := false,
+    Test / publishArtifact := false,
     pomIncludeRepository := { _ =>
       false
     },
