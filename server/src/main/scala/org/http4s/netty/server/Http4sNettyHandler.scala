@@ -1,11 +1,12 @@
 package org.http4s.netty.server
 
+import cats.Defer
+
 import java.io.IOException
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-
 import cats.effect.{Async, ConcurrentEffect, Effect, IO}
 import cats.syntax.all._
 import io.netty.channel.{ChannelInboundHandlerAdapter, _}
@@ -209,7 +210,8 @@ object Http4sNettyHandler {
       app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       ec: ExecutionContext)(implicit
-      F: ConcurrentEffect[F]
+      F: ConcurrentEffect[F],
+      D: Defer[F]
   ) extends Http4sNettyHandler[F](ec) {
 
     private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
@@ -223,7 +225,7 @@ object Http4sNettyHandler {
       Async.shift(ec) >> converter
         .fromNettyRequest(channel, request)
         .flatMap { case (req, cleanup) =>
-          F.suspend(app(req))
+          D.defer(app(req))
             .recoverWith(serviceErrorHandler(req))
             .map(response => (converter.toNettyResponse(req, response, dateString), cleanup))
         }
@@ -236,7 +238,8 @@ object Http4sNettyHandler {
       maxWSPayloadLength: Int,
       ec: ExecutionContext
   )(implicit
-      F: ConcurrentEffect[F]
+      F: ConcurrentEffect[F],
+      D: Defer[F]
   ) extends Http4sNettyHandler[F](ec) {
 
     private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]()
@@ -250,7 +253,7 @@ object Http4sNettyHandler {
       Async.shift(ec) >> converter
         .fromNettyRequest(channel, request)
         .flatMap { case (req, cleanup) =>
-          F.suspend(app(req))
+          D.defer(app(req))
             .recoverWith(serviceErrorHandler(req))
             .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
             .map((_, cleanup))

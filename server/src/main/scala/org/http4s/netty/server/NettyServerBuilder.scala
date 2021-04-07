@@ -179,7 +179,7 @@ final class NettyServerBuilder[F[_]](
 
   def resource: Resource[F, Server[F]] =
     for {
-      maybeEngine <- Resource.liftF(createSSLEngine)
+      maybeEngine <- Resource.eval(createSSLEngine)
       bound <- Resource.make(Sync[F].delay(bind(maybeEngine))) {
         case Bound(address, loop, channel) =>
           Sync[F].delay {
