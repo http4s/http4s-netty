@@ -6,14 +6,14 @@ inThisBuild(
     testFrameworks += new TestFramework("munit.Framework"),
     addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.11.3").cross(CrossVersion.full)),
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
-    fork in Test := true
+    Test/fork := true
   )
 )
 
-val http4sVersion = "0.21.20"
+val http4sVersion = "0.21.22"
 
+val netty = "4.1.63.Final"
 
-val netty = "4.1.60.Final"
 val munit = "0.7.23"
 
 lazy val core = project
@@ -21,7 +21,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "2.5.3",
+      "co.fs2" %% "fs2-reactive-streams" % "2.5.4",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
