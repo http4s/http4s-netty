@@ -7,7 +7,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-import cats.effect.{Async, ConcurrentEffect, Effect, IO}
+import cats.effect.{Async, ConcurrentEffect, Effect, IO, Resource}
 import cats.syntax.all._
 import io.netty.channel.{ChannelInboundHandlerAdapter, _}
 import io.netty.handler.codec.TooLongFrameException
@@ -77,7 +77,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
   def handle(
       channel: Channel,
       request: HttpRequest,
-      dateString: String): F[(DefaultHttpResponse, Channel => F[Unit])]
+      dateString: String): Resource[F, DefaultHttpResponse]
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
@@ -90,10 +90,10 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
     msg match {
       case req: HttpRequest =>
         requestsInFlight.incrementAndGet()
-        val p: Promise[(HttpResponse, Channel => F[Unit])] =
-          Promise[(HttpResponse, Channel => F[Unit])]()
+        val p: Promise[(HttpResponse, F[Unit])] =
+          Promise[(HttpResponse, F[Unit])]()
         //Start execution of the handler.
-        F.runAsync(handle(ctx.channel(), req, cachedDateString)) {
+        F.runAsync(handle(ctx.channel(), req, cachedDateString).allocated) {
           case Left(error) =>
             IO {
               logger.error(error)("Exception caught in channelRead future")
@@ -119,9 +119,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
                 ctx.read()
               ctx
                 .writeAndFlush(response)
-                .addListener((future: ChannelFuture) =>
-                  ec.execute(() =>
-                    F.runAsync(cleanup(future.channel()))(_ => IO.unit).unsafeRunSync())); ()
+                .addListener((_: ChannelFuture) =>
+                  ec.execute(() => F.runAsync(cleanup)(_ => IO.unit).unsafeRunSync())); ()
 
             }(trampoline)
             .recover[Unit] { case NonFatal(e) =>
@@ -220,14 +219,15 @@ object Http4sNettyHandler {
         channel: Channel,
         request: HttpRequest,
         dateString: String
-    ): F[(DefaultHttpResponse, Channel => F[Unit])] = {
+    ): Resource[F, DefaultHttpResponse] = {
       logger.trace("Http request received by netty: " + request)
-      Async.shift(ec) >> converter
+      converter
         .fromNettyRequest(channel, request)
-        .flatMap { case (req, cleanup) =>
-          D.defer(app(req))
+        .evalMap { req =>
+          Async.shift(ec) *> D
+            .defer(app(req))
             .recoverWith(serviceErrorHandler(req))
-            .map(response => (converter.toNettyResponse(req, response, dateString), cleanup))
+            .map(response => (converter.toNettyResponse(req, response, dateString)))
         }
     }
   }
@@ -248,15 +248,15 @@ object Http4sNettyHandler {
         channel: Channel,
         request: HttpRequest,
         dateString: String
-    ): F[(DefaultHttpResponse, Channel => F[Unit])] = {
+    ): Resource[F, DefaultHttpResponse] = {
       logger.trace("Http request received by netty: " + request)
-      Async.shift(ec) >> converter
+      converter
         .fromNettyRequest(channel, request)
-        .flatMap { case (req, cleanup) =>
-          D.defer(app(req))
+        .evalMap { req =>
+          Async.shift(ec) >> D
+            .defer(app(req))
             .recoverWith(serviceErrorHandler(req))
             .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
-            .map((_, cleanup))
         }
     }
   }

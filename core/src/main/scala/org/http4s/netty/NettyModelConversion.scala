@@ -89,15 +89,14 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     * @param request the netty http request impl
     * @return Http4s request
     */
-  def fromNettyRequest(
-      channel: Channel,
-      request: HttpRequest): F[(Request[F], Channel => F[Unit])] = {
+  def fromNettyRequest(channel: Channel, request: HttpRequest): Resource[F, Request[F]] = {
     val attributeMap = requestAttributes(
       Option(channel.pipeline().get(classOf[SslHandler])).map(_.engine()),
       channel)
 
     if (request.decoderResult().isFailure)
-      F.raiseError(ParseFailure("Malformed request", "Netty codec parsing unsuccessful"))
+      Resource.eval(
+        F.raiseError(ParseFailure("Malformed request", "Netty codec parsing unsuccessful")))
     else {
       val (requestBody, cleanup) = convertHttpBody(request)
       val uri: ParseResult[Uri] = Uri.fromString(request.uri())
@@ -125,8 +124,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
         requestBody,
         attributeMap
       )) match {
-        case Right(http4sRequest) => F.pure((http4sRequest, cleanup))
-        case Left(err) => F.raiseError(err)
+        case Right(http4sRequest) => Resource(F.pure((http4sRequest, cleanup(channel))))
+        case Left(err) => Resource.eval(F.raiseError(err))
       }
     }
   }
