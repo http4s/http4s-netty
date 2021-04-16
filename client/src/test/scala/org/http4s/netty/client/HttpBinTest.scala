@@ -1,17 +1,14 @@
 package org.http4s.netty.client
 
 import java.net.URI
-
 import cats.implicits._
-import cats.effect.{ContextShift, IO, Timer}
+import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 import org.gaul.httpbin.HttpBin
 import org.http4s.{Method, Request, Status, Uri}
 import org.http4s.client.Client
 
 class HttpBinTest extends munit.FunSuite {
-  implicit val context: ContextShift[IO] = IO.contextShift(munitExecutionContext)
-  implicit val timer: Timer[IO] = IO.timer(munitExecutionContext)
-
   FunFixture[HttpBin](
     _ => {
       val bin = new HttpBin(URI.create("http:localhost:0"))
@@ -26,7 +23,7 @@ class HttpBinTest extends munit.FunSuite {
       { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
 
   def withClient[A](theTest: (Client[IO]) => IO[A]) = {
-    val builder = NettyClientBuilder[IO].withExecutionContext(munitExecutionContext).resource
+    val builder = NettyClientBuilder[IO].resource
     builder.use(theTest)
   }
 

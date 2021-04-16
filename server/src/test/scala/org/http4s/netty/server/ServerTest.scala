@@ -1,7 +1,7 @@
 package org.http4s.netty.server
 
 import cats.implicits._
-import cats.effect.{IO, Timer}
+import cats.effect.IO
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
@@ -81,14 +81,13 @@ class NettyClientServerTest extends ServerTest {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withEventLoopThreads(2)
-      .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
   )
 }
 
 object ServerTest {
-  def routes(implicit timer: Timer[IO]) =
+  def routes =
     HttpRoutes
       .of[IO] {
         case GET -> Root / "simple" => Ok("simple path")
@@ -98,7 +97,7 @@ object ServerTest {
             .pure[IO]
         case GET -> Root / "timeout" => IO.never
         case GET -> Root / "delayed" =>
-          timer.sleep(1.second) *>
+          IO.sleep(1.second) *>
             Ok("delayed path")
         case GET -> Root / "no-content" => NoContent()
         case r @ POST -> Root / "echo" =>

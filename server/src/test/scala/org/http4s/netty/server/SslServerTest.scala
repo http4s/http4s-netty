@@ -3,10 +3,11 @@ package org.http4s.netty.server
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
-
-import cats.effect.{ConcurrentEffect, IO}
-import fs2.io.tls.TLSParameters
+import cats.effect.IO
+import cats.effect.kernel.Async
+import fs2.io.net.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
+
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
 import org.http4s.client.blaze.BlazeClientBuilder
@@ -54,7 +55,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
         }
     }
 
-  def server: Fixture[Server[IO]]
+  def server: Fixture[Server]
   def client: Fixture[Client[IO]]
 
   test(s"GET Root over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
@@ -107,7 +108,6 @@ class NettyClientSslServerTest extends SslServerTest() {
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
       .withEventLoopThreads(2)
-      .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
   )
@@ -121,7 +121,6 @@ class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
-      .withExecutionContext(munitExecutionContext)
       .resource,
     "client"
   )
@@ -155,7 +154,7 @@ object SslServerTest {
       routes: HttpRoutes[IO],
       ctx: SSLContext,
       parameters: TLSParameters = TLSParameters.Default)(implicit
-      eff: ConcurrentEffect[IO]
+      eff: Async[IO]
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)

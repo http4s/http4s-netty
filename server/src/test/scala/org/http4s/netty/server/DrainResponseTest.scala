@@ -5,7 +5,7 @@ import java.net.http.HttpClient
 import org.http4s.implicits._
 import cats.implicits._
 import cats.effect.IO
-import cats.effect.concurrent.Deferred
+import cats.effect.Deferred
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.client.jdkhttpclient.JdkHttpClient
 import org.http4s.dsl.io._
@@ -26,7 +26,7 @@ class DrainResponseTest extends IOSuite {
                   .repeat
                   .covary[IO]
                   .take(1000)
-                  .onFinalizeWeak[IO](ref.complete(true)))
+                  .onFinalizeWeak[IO](ref.complete(true).void))
               .pure[IO]
           }
           .orNotFound)
@@ -37,16 +37,16 @@ class DrainResponseTest extends IOSuite {
     "server"
   )
 
-  val client = JdkHttpClient[IO](HttpClient.newHttpClient())
+  val client = resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
 
   test("drain") {
     val uri = server().baseUri
-    client.run(Request[IO](uri = uri)).use { res =>
+    client().run(Request[IO](uri = uri)).use { res =>
       IO {
         assertEquals(res.status, Ok)
       } *> IO
         .race(
-          timer.sleep(3.seconds).map(_ => fail("Unable to run the body before timeout")),
+          IO.sleep(3.seconds).map(_ => fail("Unable to run the body before timeout")),
           ref.get.map(assert(_)))
         .map(_.merge)
     }

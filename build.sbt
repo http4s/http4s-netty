@@ -10,7 +10,7 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.21.22"
+val http4sVersion = "1.0.0-M21"
 
 val netty = "4.1.63.Final"
 
@@ -21,7 +21,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "2.5.4",
+      "co.fs2" %% "fs2-reactive-streams" % "3.0.1",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -44,7 +44,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.3.6" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.5.0-M4" % Test,
       "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test
     )
   )

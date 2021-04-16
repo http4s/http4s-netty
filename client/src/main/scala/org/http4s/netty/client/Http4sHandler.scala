@@ -1,9 +1,10 @@
 package org.http4s.netty.client
 
-import java.io.IOException
+import cats.effect.std.Dispatcher
 
+import java.io.IOException
 import cats.implicits._
-import cats.effect.{ConcurrentEffect, IO, Resource}
+import cats.effect.{Async, Resource}
 import io.netty.channel.pool.SimpleChannelPool
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpResponse
@@ -12,31 +13,33 @@ import io.netty.util.AttributeKey
 import org.http4s.Response
 import org.http4s.netty.NettyModelConversion
 
-private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: ConcurrentEffect[F])
+private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
+    implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
   val POOL_KEY: AttributeKey[SimpleChannelPool] =
     AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
 
   private[this] val logger = org.log4s.getLogger
-  val modelConversion = new NettyModelConversion[F]()
+  val modelConversion = new NettyModelConversion[F](dispatcher)
 
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
     msg match {
       case h: HttpResponse =>
-        val responseResourceF = modelConversion.fromNettyResponse(h).map { case (res, cleanup) =>
-          Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
-        }
-
-        F.runAsync(responseResourceF) { either =>
-          IO {
-            cb(either)
-            ctx.pipeline().remove(this)
-            ()
+        val responseResourceF = modelConversion
+          .fromNettyResponse(h)
+          .map { case (res, cleanup) =>
+            Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
-        }.unsafeRunSync()
+          .attempt
+          .map { res =>
+            cb(res)
+            ctx.pipeline().remove(this)
+          }
+        dispatcher.unsafeRunAndForget(responseResourceF)
+        ()
       case _ =>
         super.channelRead(ctx, msg)
     }

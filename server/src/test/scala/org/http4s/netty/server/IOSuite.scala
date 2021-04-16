@@ -1,10 +1,10 @@
 package org.http4s.netty.server
 
-import cats.effect.{ContextShift, IO, Resource, Timer}
+import cats.effect.unsafe.implicits.global
+import cats.effect.{IO, Resource}
 
 abstract class IOSuite extends munit.FunSuite {
-  implicit val context: ContextShift[IO] = IO.contextShift(munitExecutionContext)
-  implicit val timer: Timer[IO] = IO.timer(munitExecutionContext)
+
   private val fixtures = List.newBuilder[Fixture[_]]
 
   class ResourceFixture[A](resource: Resource[IO, A], name: String) extends Fixture[A](name) {

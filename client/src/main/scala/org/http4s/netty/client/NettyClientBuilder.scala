@@ -1,7 +1,8 @@
 package org.http4s.netty.client
 
+import cats.effect.std.Dispatcher
 import cats.implicits._
-import cats.effect.{Async, ConcurrentEffect, Resource}
+import cats.effect.{Async, Resource}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
 import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChannel}
@@ -9,12 +10,12 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
+
 import javax.net.ssl.SSLContext
 import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
 import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
@@ -28,11 +29,10 @@ class NettyClientBuilder[F[_]](
     maxConnectionsPerKey: Int,
     transport: NettyTransport,
     sslContext: NettyClientBuilder.SSLContextOption,
-    nettyChannelOptions: NettyChannelOptions,
-    executionContext: ExecutionContext
-)(implicit F: ConcurrentEffect[F]) {
+    nettyChannelOptions: NettyChannelOptions
+)(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
-  private[this] val nettyConverter = new NettyModelConversion[F]
+  //private[this] val nettyConverter = new NettyModelConversion[F](dispatcher)
 
   type Self = NettyClientBuilder[F]
 
@@ -45,8 +45,7 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey: Int = maxConnectionsPerKey,
       transport: NettyTransport = transport,
       sslContext: NettyClientBuilder.SSLContextOption = sslContext,
-      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      executionContext: ExecutionContext = executionContext
+      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -57,13 +56,11 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey,
       transport,
       sslContext,
-      nettyChannelOptions,
-      executionContext
+      nettyChannelOptions
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
-  def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
   def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
@@ -114,34 +111,34 @@ class NettyClientBuilder[F[_]](
     })(bs => F.delay(bs.config().group().shutdownGracefully()).void)
 
   def resource: Resource[F, Client[F]] =
-    createBootstrap.map { bs =>
-      val config = Http4sChannelPoolMap.Config(
-        maxInitialLength,
-        maxHeaderSize,
-        maxChunkSize,
-        maxConnectionsPerKey,
-        idleTimeout,
-        sslContext)
-      mkClient(new Http4sChannelPoolMap[F](bs, config))
-    }
+    Dispatcher[F].flatMap(disp =>
+      createBootstrap.map { bs =>
+        val config = Http4sChannelPoolMap.Config(
+          maxInitialLength,
+          maxHeaderSize,
+          maxChunkSize,
+          maxConnectionsPerKey,
+          idleTimeout,
+          sslContext)
+        mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
+      })
 
-  private def mkClient(pool: Http4sChannelPoolMap[F]) =
+  private def mkClient(pool: Http4sChannelPoolMap[F], dispatcher: Dispatcher[F]) =
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
       val pipelineKey = s"http4s-${key}"
+      val nettyConverter = new NettyModelConversion[F](dispatcher)
 
       for {
         channel <- pool.resource(key)
         responseResource <- Resource
-          .eval(
-            Async.shift(executionContext) *> F
-              .async[Resource[F, Response[F]]] { cb =>
-                val http4sHandler = new Http4sHandler[F](cb)
-                channel.pipeline().addLast(pipelineKey, http4sHandler)
-                logger.trace("Sending request")
-                channel.writeAndFlush(nettyConverter.toNettyRequest(req))
-                logger.trace("After request")
-              })
+          .eval(F.async_[Resource[F, Response[F]]] { cb =>
+            val http4sHandler = new Http4sHandler[F](cb, dispatcher)
+            channel.pipeline().addLast(pipelineKey, http4sHandler)
+            logger.trace("Sending request")
+            channel.writeAndFlush(nettyConverter.toNettyRequest(req))
+            logger.trace("After request")
+          })
         /*pool.withOnConnection { (c: Channel) =>
                 val http4sHandler = new Http4sHandler[F](cb)
                 c.pipeline().addLast(pipelineKey, http4sHandler)
@@ -167,7 +164,7 @@ class NettyClientBuilder[F[_]](
 }
 
 object NettyClientBuilder {
-  def apply[F[_]](implicit F: ConcurrentEffect[F]): NettyClientBuilder[F] =
+  def apply[F[_]](implicit F: Async[F]): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout = 60.seconds,
       eventLoopThreads = 0,
@@ -177,8 +174,7 @@ object NettyClientBuilder {
       maxConnectionsPerKey = 10,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
-      nettyChannelOptions = NettyChannelOptions.empty,
-      executionContext = ExecutionContext.global
+      nettyChannelOptions = NettyChannelOptions.empty
     )
 
   private[client] sealed trait SSLContextOption extends Product with Serializable

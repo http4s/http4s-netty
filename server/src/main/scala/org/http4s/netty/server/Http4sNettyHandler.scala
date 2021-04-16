@@ -1,13 +1,14 @@
 package org.http4s.netty.server
 
 import cats.Defer
+import cats.effect.std.Dispatcher
 
 import java.io.IOException
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-import cats.effect.{Async, ConcurrentEffect, Effect, IO, Resource}
+import cats.effect.{Async, Resource}
 import cats.syntax.all._
 import io.netty.channel.{ChannelInboundHandlerAdapter, _}
 import io.netty.handler.codec.TooLongFrameException
@@ -15,12 +16,11 @@ import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
-import org.http4s.util.execution.trampoline
+import org.http4s.internal.Trampoline
 import org.log4s.getLogger
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{Future, Promise}
 import scala.util.control.{NoStackTrace, NonFatal}
-import scala.util.{Failure, Success}
 
 /** Netty request handler
   *
@@ -42,8 +42,8 @@ import scala.util.{Failure, Success}
   * P.s this class was named `MikuHandler`. Record of this will exist honor of the fallen glorious module name
   * `http4s-miku`, slain by a bolt of lightning thrown by Zeus during a battle of module naming.
   */
-private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(implicit
-    F: Effect[F]
+private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(implicit
+    F: Async[F]
 ) extends ChannelInboundHandlerAdapter {
   import Http4sNettyHandler.InvalidMessageException
 
@@ -92,20 +92,17 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
         requestsInFlight.incrementAndGet()
         val p: Promise[(HttpResponse, F[Unit])] =
           Promise[(HttpResponse, F[Unit])]()
+
+        val reqAndCleanup = handle(ctx.channel(), req, cachedDateString).allocated
+
         //Start execution of the handler.
-        F.runAsync(handle(ctx.channel(), req, cachedDateString).allocated) {
-          case Left(error) =>
-            IO {
-              logger.error(error)("Exception caught in channelRead future")
-              p.complete(Failure(error)); ()
+        disp.unsafeRunAndForget(
+          F.async_[(HttpResponse, F[Unit])] { cb =>
+            try cb(Right(disp.unsafeRunSync(reqAndCleanup)))
+            catch {
+              case e: Throwable => cb(Left(e))
             }
-
-          case Right(r) =>
-            IO {
-              p.complete(Success(r)); ()
-            }
-
-        }.unsafeRunSync()
+          }.map(p.success))
 
         //This attaches all writes sequentially using
         //LastResponseSent as a queue. `trampoline` ensures we do not
@@ -119,15 +116,14 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
                 ctx.read()
               ctx
                 .writeAndFlush(response)
-                .addListener((_: ChannelFuture) =>
-                  ec.execute(() => F.runAsync(cleanup)(_ => IO.unit).unsafeRunSync())); ()
-
-            }(trampoline)
+                .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
+              ()
+            }(Trampoline)
             .recover[Unit] { case NonFatal(e) =>
               logger.warn(e)("Error caught during write action")
               sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
-            }(trampoline)
-        }(trampoline)
+            }(Trampoline)
+        }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         //These are empty trailers... what do do???
         ()
@@ -208,12 +204,14 @@ object Http4sNettyHandler {
   private class DefaultHandler[F[_]](
       app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
-      ec: ExecutionContext)(implicit
-      F: ConcurrentEffect[F],
+      dispatcher: Dispatcher[F]
+  )(implicit
+      F: Async[F],
       D: Defer[F]
-  ) extends Http4sNettyHandler[F](ec) {
+  ) extends Http4sNettyHandler[F](dispatcher) {
 
-    private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
+    private[this] val converter: ServerNettyModelConversion[F] =
+      new ServerNettyModelConversion[F](dispatcher)
 
     override def handle(
         channel: Channel,
@@ -224,8 +222,7 @@ object Http4sNettyHandler {
       converter
         .fromNettyRequest(channel, request)
         .evalMap { req =>
-          Async.shift(ec) *> D
-            .defer(app(req))
+          D.defer(app(req))
             .recoverWith(serviceErrorHandler(req))
             .map(response => (converter.toNettyResponse(req, response, dateString)))
         }
@@ -236,13 +233,14 @@ object Http4sNettyHandler {
       app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
-      ec: ExecutionContext
+      dispatcher: Dispatcher[F]
   )(implicit
-      F: ConcurrentEffect[F],
+      F: Async[F],
       D: Defer[F]
-  ) extends Http4sNettyHandler[F](ec) {
+  ) extends Http4sNettyHandler[F](dispatcher) {
 
-    private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]()
+    private[this] val converter: ServerNettyModelConversion[F] =
+      new ServerNettyModelConversion[F](dispatcher)
 
     override def handle(
         channel: Channel,
@@ -253,7 +251,7 @@ object Http4sNettyHandler {
       converter
         .fromNettyRequest(channel, request)
         .evalMap { req =>
-          Async.shift(ec) >> D
+          D
             .defer(app(req))
             .recoverWith(serviceErrorHandler(req))
             .flatMap(converter.toNettyResponseWithWebsocket(req, _, dateString, maxWSPayloadLength))
@@ -261,20 +259,17 @@ object Http4sNettyHandler {
     }
   }
 
-  def default[F[_]](
+  def default[F[_]: Async](
       app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
-      ec: ExecutionContext)(implicit
-      F: ConcurrentEffect[F]
-  ): Http4sNettyHandler[F] = new DefaultHandler[F](app, serviceErrorHandler, ec)
+      dispatcher: Dispatcher[F]): Http4sNettyHandler[F] =
+    new DefaultHandler[F](app, serviceErrorHandler, dispatcher)
 
-  def websocket[F[_]](
+  def websocket[F[_]: Async](
       app: HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
-      ec: ExecutionContext
-  )(implicit
-      F: ConcurrentEffect[F]
+      dispatcher: Dispatcher[F]
   ): Http4sNettyHandler[F] =
-    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, ec)
+    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, dispatcher)
 }

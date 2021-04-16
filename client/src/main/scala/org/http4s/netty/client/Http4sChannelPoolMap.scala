@@ -5,7 +5,7 @@ import java.net.ConnectException
 import cats.implicits._
 import cats.effect.{Async, Resource}
 import com.typesafe.netty.http.HttpStreamsClientHandler
-import fs2.io.tls.TLSParameters
+import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.channel.pool.{
@@ -129,7 +129,7 @@ object Http4sChannelPoolMap {
       sslConfig: NettyClientBuilder.SSLContextOption)
 
   def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
-    Async[F].async { callback =>
+    Async[F].async_ { callback =>
       future
         .addListener((f: Future[A]) =>
           if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause())))
