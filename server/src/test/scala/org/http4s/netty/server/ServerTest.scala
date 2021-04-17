@@ -19,7 +19,6 @@ abstract class ServerTest extends IOSuite {
       .withHttpApp(ServerTest.routes)
       .withEventLoopThreads(10)
       .withIdleTimeout(2.seconds)
-      .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()
       .resource,

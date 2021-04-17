@@ -2,7 +2,6 @@ package org.http4s.netty.server
 
 import java.net.http.HttpClient
 import cats.effect.IO
-import cats.effect.unsafe.implicits.global
 
 import javax.net.ssl.SSLContext
 import org.http4s.client.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
@@ -25,7 +24,6 @@ class WebsocketTest extends IOSuite {
   val server = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)
-      .withExecutionContext(munitExecutionContext)
       .withWebsockets
       .withoutBanner
       .bindAny()

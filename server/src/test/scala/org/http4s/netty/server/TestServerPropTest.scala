@@ -18,7 +18,6 @@ class TestServerPropTest extends IOSuite with munit.ScalaCheckSuite {
       .withHttpApp(ServerTest.routes)
       .withIdleTimeout(2.seconds)
       .withEventLoopThreads(10)
-      .withExecutionContext(munitExecutionContext)
       .withoutBanner
       .bindAny()
       .resource,

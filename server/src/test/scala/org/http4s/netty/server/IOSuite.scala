@@ -1,35 +1,18 @@
 package org.http4s.netty.server
 
-import cats.effect.unsafe.implicits.global
 import cats.effect.{IO, Resource}
+import munit.CatsEffectSuite
 
-abstract class IOSuite extends munit.FunSuite {
+abstract class IOSuite extends CatsEffectSuite {
 
   private val fixtures = List.newBuilder[Fixture[_]]
 
-  class ResourceFixture[A](resource: Resource[IO, A], name: String) extends Fixture[A](name) {
-    private var value: Option[A] = None
-    private var cleanup: IO[Unit] = IO.unit
-    def apply() = value.get
-    override def beforeAll(): Unit = {
-      val result = resource.allocated.unsafeRunSync()
-      value = Some(result._1)
-      cleanup = result._2
-    }
-    override def afterAll(): Unit =
-      cleanup.unsafeRunSync()
-  }
   def resourceFixture[A](resource: Resource[IO, A], name: String): Fixture[A] = {
-    val fixture = new ResourceFixture[A](resource, name)
+    val fixture = ResourceSuiteLocalFixture(name, resource)
     fixtures += fixture
     fixture
   }
 
   override def munitFixtures: Seq[Fixture[_]] = fixtures.result()
-
-  override def munitValueTransforms: List[ValueTransform] =
-    new ValueTransform(
-      "IO",
-      { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
 
 }

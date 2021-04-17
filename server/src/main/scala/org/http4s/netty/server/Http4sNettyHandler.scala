@@ -94,16 +94,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
           Promise[(HttpResponse, F[Unit])]()
 
         val reqAndCleanup = handle(ctx.channel(), req, cachedDateString).allocated
-
         //Start execution of the handler.
-        disp.unsafeRunAndForget(
-          F.async_[(HttpResponse, F[Unit])] { cb =>
-            try cb(Right(disp.unsafeRunSync(reqAndCleanup)))
-            catch {
-              case e: Throwable => cb(Left(e))
-            }
-          }.map(p.success))
-
+        disp.unsafeRunAndForget(reqAndCleanup.attempt.flatMap {
+          case Right(result) => F.delay(p.success(result))
+          case Left(err) => F.delay(p.failure(err))
+        })
         //This attaches all writes sequentially using
         //LastResponseSent as a queue. `trampoline` ensures we do not
         //CTX switch the writes.
