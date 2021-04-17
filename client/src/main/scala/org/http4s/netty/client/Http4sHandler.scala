@@ -4,11 +4,9 @@ import java.io.IOException
 
 import cats.implicits._
 import cats.effect.{ConcurrentEffect, IO, Resource}
-import io.netty.channel.pool.SimpleChannelPool
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import io.netty.util.AttributeKey
 import org.http4s.Response
 import org.http4s.netty.NettyModelConversion
 
