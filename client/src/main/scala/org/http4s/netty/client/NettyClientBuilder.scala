@@ -10,6 +10,7 @@ import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
+import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringSocketChannel}
 
 import javax.net.ssl.SSLContext
 import org.http4s.Response
@@ -90,11 +91,16 @@ class NettyClientBuilder[F[_]](
       case NettyTransport.Nio =>
         EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
       case NettyTransport.Native =>
-        if (Epoll.isAvailable)
+        if (IOUring.isAvailable) {
+          logger.info("Using IOUring")
+          EventLoopHolder[IOUringSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
+        } else if (Epoll.isAvailable) {
+          logger.info("Using Epoll")
           EventLoopHolder[EpollSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
-        else if (KQueue.isAvailable)
+        } else if (KQueue.isAvailable) {
+          logger.info("Using KQueue")
           EventLoopHolder[KQueueSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
-        else {
+        } else {
           logger.info("Falling back to NIO EventLoopGroup")
           EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
         }

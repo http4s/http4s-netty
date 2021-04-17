@@ -18,6 +18,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
+import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringServerSocketChannel}
 
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
@@ -83,13 +84,19 @@ final class NettyServerBuilder[F[_]](
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
     transport match {
       case NettyTransport.Nio =>
+        logger.info("Using NIO EventLoopGroup")
         EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
       case NettyTransport.Native =>
-        if (Epoll.isAvailable)
+        if (IOUring.isAvailable) {
+          logger.info("Using IOUring")
+          EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
+        } else if (Epoll.isAvailable) {
+          logger.info("Using Epoll")
           EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
-        else if (KQueue.isAvailable)
+        } else if (KQueue.isAvailable) {
+          logger.info("Using KQueue")
           EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
-        else {
+        } else {
           logger.info("Falling back to NIO EventLoopGroup")
           EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
         }

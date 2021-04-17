@@ -2,12 +2,13 @@ package org.http4s.netty.client
 
 import java.net.URI
 import cats.syntax.all._
-import cats.effect.IO
-import cats.effect.kernel.Resource
+import cats.effect._
+
 import org.gaul.httpbin.HttpBin
 import org.http4s._
 
 class HttpBinTest extends IOSuite {
+
   val httpBin = resourceFixture(
     Resource(IO {
       val bin = new HttpBin(URI.create("http://localhost:0"))

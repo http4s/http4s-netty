@@ -5,20 +5,15 @@ import cats.effect.std.Dispatcher
 import java.io.IOException
 import cats.implicits._
 import cats.effect.{Async, Resource}
-import io.netty.channel.pool.SimpleChannelPool
 import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import io.netty.util.AttributeKey
 import org.http4s.Response
 import org.http4s.netty.NettyModelConversion
 
 private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
     implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
-
-  val POOL_KEY: AttributeKey[SimpleChannelPool] =
-    AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
 
   private[this] val logger = org.log4s.getLogger
   val modelConversion = new NettyModelConversion[F](dispatcher)
@@ -59,7 +54,7 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = {
     cb(Left(e))
-    ctx.channel().close();
+    ctx.channel().close()
     ctx.pipeline().remove(this)
     ()
   }

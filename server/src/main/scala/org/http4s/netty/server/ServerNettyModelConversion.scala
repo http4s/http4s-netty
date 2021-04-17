@@ -26,6 +26,7 @@ import io.netty.handler.codec.http.{
   HttpResponseStatus,
   HttpVersion
 }
+import org.http4s.internal.tls._
 
 import javax.net.ssl.SSLEngine
 import org.http4s.{Header, Request, Response, HttpVersion => HV}
@@ -58,8 +59,8 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
             (
               Option(session.getId).map(ByteVector(_).toHex),
               Option(session.getCipherSuite),
-              Option(session.getCipherSuite).map(CertificateInfo.deduceKeyLength),
-              Option(CertificateInfo.getPeerCertChain(session))
+              Option(session.getCipherSuite).map(deduceKeyLength),
+              Option(getCertChain(session))
             ).mapN(SecureSession.apply)
           }
       )
