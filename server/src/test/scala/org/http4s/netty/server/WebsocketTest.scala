@@ -9,21 +9,15 @@ import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebSocketFrame
 
 class WebsocketTest extends IOSuite {
-  val queue = cats.effect.std.Queue.bounded[IO, WebSocketFrame](1).unsafeRunSync()
-  val routes: HttpRoutes[IO] = HttpRoutes.of[IO] { case _ -> Root / "ws" =>
-    WebSocketBuilder[IO]
-      .build(
-        fs2.Stream.eval(queue.take),
-        _.evalMap(ws => queue.offer(ws))
-      )
+  val echoRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] { case _ -> Root / "ws" =>
+    WebSocketBuilder[IO].build(identity)
   }
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
-      .withHttpApp(routes.orNotFound)
+      .withHttpApp(echoRoutes.orNotFound)
       .withWebsockets
       .withoutBanner
       .bindAny()
@@ -33,7 +27,7 @@ class WebsocketTest extends IOSuite {
 
   val sslContext: SSLContext = SslServerTest.sslContext
   val tlsServer = resourceFixture(
-    SslServerTest.sslServer(routes, sslContext).withWebsockets.resource,
+    SslServerTest.sslServer(echoRoutes, sslContext).withWebsockets.resource,
     "tls-server"
   )
 
