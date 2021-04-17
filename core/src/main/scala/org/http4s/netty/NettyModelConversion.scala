@@ -37,7 +37,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     logger.trace(s"Converting request $request")
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
-    val uri = request.uri.renderString
+    val uri = request.uri.withoutFragment.copy(authority = None).renderString
 
     val req =
       if (notAllowedWithBody.contains(request.method))
@@ -56,6 +56,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       }
 
     request.headers.foreach(appendSomeToNetty(_, req.headers()))
+    req.headers().add("Host", request.uri.authority.map(_.renderString))
     req
   }
 

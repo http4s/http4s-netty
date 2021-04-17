@@ -46,7 +46,7 @@ class DrainResponseTest extends IOSuite {
         assertEquals(res.status, Ok)
       } *> IO
         .race(
-          timer.sleep(3.seconds).map(_ => fail("Unable to run the body before timeout")),
+          IO.sleep(3.seconds).map(_ => fail("Unable to run the body before timeout")),
           ref.get.map(assert(_)))
         .map(_.merge)
     }

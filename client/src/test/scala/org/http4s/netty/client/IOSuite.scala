@@ -1,4 +1,4 @@
-package org.http4s.netty.server
+package org.http4s.netty.client
 
 import cats.effect.{IO, Resource}
 import munit.CatsEffectSuite

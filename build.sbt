@@ -6,7 +6,7 @@ inThisBuild(
     testFrameworks += new TestFramework("munit.Framework"),
     addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.11.3").cross(CrossVersion.full)),
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
-    Test/fork := true
+    Test / fork := true
   )
 )
 
@@ -45,7 +45,8 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.3.6" % Test,
-      "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test
+      "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
+      "org.typelevel" %% "munit-cats-effect-2" % "1.0.1" % Test
     )
   )
 
@@ -58,7 +59,8 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
-      "org.gaul" % "httpbin" % "1.3.0" % Test
+      "org.gaul" % "httpbin" % "1.3.0" % Test,
+      "org.typelevel" %% "munit-cats-effect-2" % "1.0.1" % Test
     )
   )
 
