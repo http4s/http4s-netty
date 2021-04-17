@@ -1,49 +1,44 @@
 package org.http4s.netty.client
 
 import java.net.URI
-import cats.implicits._
+import cats.syntax.all._
 import cats.effect.IO
-import cats.effect.unsafe.implicits.global
+import cats.effect.kernel.Resource
 import org.gaul.httpbin.HttpBin
-import org.http4s.{Method, Request, Status, Uri}
-import org.http4s.client.Client
+import org.http4s._
 
-class HttpBinTest extends munit.FunSuite {
-  FunFixture[HttpBin](
-    _ => {
-      val bin = new HttpBin(URI.create("http:localhost:0"))
+class HttpBinTest extends IOSuite {
+  val httpBin = resourceFixture(
+    Resource(IO {
+      val bin = new HttpBin(URI.create("http://localhost:0"))
       bin.start()
-      bin
-    },
-    _.stop())
+      bin -> IO(bin.stop())
+    }),
+    "httpbin")
 
-  override def munitValueTransforms: List[ValueTransform] =
-    new ValueTransform(
-      "IO",
-      { case io: IO[_] => io.unsafeToFuture() }) :: super.munitValueTransforms
+  val client = resourceFixture(NettyClientBuilder[IO].resource, "client")
 
-  def withClient[A](theTest: (Client[IO]) => IO[A]) = {
-    val builder = NettyClientBuilder[IO].resource
-    builder.use(theTest)
+  test("status 200") {
+    val base = Uri.unsafeFromString(s"http://localhost:${httpBin().getPort}")
+    client().statusFromUri(base / "status" / "200").map(s => assertEquals(s, Status.Ok))
   }
 
-  test("http GET 10 times") { bin: HttpBin =>
-    val base = Uri.unsafeFromString(s"http://localhost:${bin.getPort}")
-    withClient { client =>
-      val r =
-        for (_ <- 0 until 10)
-          yield client.expect[String](base / "get").map(s => assert(s.nonEmpty))
-      r.toList.sequence
-    }
+  test("http GET 10 times") {
+    val base = Uri.unsafeFromString(s"http://localhost:${httpBin().getPort}")
+    val r =
+      for (_ <- 0 until 10)
+        yield client().expect[String](base / "get").map(s => assert(s.nonEmpty))
+    r.toList.sequence
   }
 
-  test("http POST") { bin: HttpBin =>
-    val baseUri = Uri.unsafeFromString(s"http://localhost:${bin.getPort}")
+  test("http POST") {
+    val baseUri = Uri.unsafeFromString(s"http://localhost:${httpBin().getPort}")
 
-    withClient { client =>
-      client
+    client()
+      .status(Request[IO](Method.POST, baseUri / "post"))
+      .map(s => assertEquals(s, Status.Ok)) *>
+      client()
         .status(Request[IO](Method.POST, baseUri / "status" / "204"))
         .map(s => assertEquals(s, Status.NoContent))
-    }
   }
 }
