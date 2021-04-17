@@ -15,9 +15,6 @@ import org.http4s.netty.NettyModelConversion
 private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: ConcurrentEffect[F])
     extends ChannelInboundHandlerAdapter {
 
-  val POOL_KEY: AttributeKey[SimpleChannelPool] =
-    AttributeKey.valueOf("io.netty.channel.pool.SimpleChannelPool")
-
   private[this] val logger = org.log4s.getLogger
   val modelConversion = new NettyModelConversion[F]()
 
@@ -56,7 +53,7 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F])(implicit F: Co
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = {
     cb(Left(e))
-    ctx.channel().close();
+    ctx.channel().close()
     ctx.pipeline().remove(this)
     ()
   }
