@@ -14,7 +14,7 @@ val http4sVersion = "1.0.0-M21"
 
 val netty = "4.1.63.Final"
 
-val munit = "0.7.23"
+val munit = "0.7.25"
 
 lazy val core = project
   .settings(CommonSettings.settings)
@@ -48,7 +48,7 @@ lazy val server = project
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.5.0-M4" % Test,
       "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.1" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.2" % Test
     )
   )
 
@@ -62,7 +62,7 @@ lazy val client = project
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.1" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.2" % Test
     )
   )
 
