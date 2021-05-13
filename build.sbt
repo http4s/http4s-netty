@@ -4,7 +4,7 @@ inThisBuild(
     crossScalaVersions := Seq("2.13.5", "2.12.13"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
-    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.11.3").cross(CrossVersion.full)),
+    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.12.0").cross(CrossVersion.full)),
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
     Test / fork := true
   )
