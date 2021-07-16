@@ -1,7 +1,7 @@
 inThisBuild(
   Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.13"),
+    crossScalaVersions := Seq("2.13.6", "2.12.14"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
     addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.13.0").cross(CrossVersion.full)),
@@ -14,20 +14,20 @@ val http4sVersion = "1.0.0-M21"
 
 val netty = "4.1.65.Final"
 
-val munit = "0.7.26"
+val munit = "0.7.27"
 
 lazy val core = project
   .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.0.4",
+      "co.fs2" %% "fs2-reactive-streams" % "3.0.6",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.5.Final")
+      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.8.Final")
         .classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
@@ -48,7 +48,7 @@ lazy val server = project
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.5.0-M4" % Test,
       "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.3" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.5" % Test
     )
   )
 
@@ -62,7 +62,7 @@ lazy val client = project
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.3" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.5" % Test
     )
   )
 
