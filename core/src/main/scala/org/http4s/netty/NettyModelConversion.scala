@@ -14,7 +14,7 @@ import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
-import org.http4s.headers.{`Content-Length`, `Transfer-Encoding`, Connection => ConnHeader}
+import org.http4s.headers.{Connection => ConnHeader, `Content-Length`, `Transfer-Encoding`}
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 
@@ -23,11 +23,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLEngine
 import scala.collection.mutable.ListBuffer
 
-/** Helpers for converting http4s request/response
-  * objects to and from the netty model
+/** Helpers for converting http4s request/response objects to and from the netty model
   *
-  * Adapted from NettyModelConversion.scala
-  * in
+  * Adapted from NettyModelConversion.scala in
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
   */
 private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: Async[F]) {
@@ -90,9 +88,12 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
 
   /** Turn a netty http request into an http4s request
     *
-    * @param channel the netty channel
-    * @param request the netty http request impl
-    * @return Http4s request
+    * @param channel
+    *   the netty channel
+    * @param request
+    *   the netty http request impl
+    * @return
+    *   Http4s request
     */
   def fromNettyRequest(channel: Channel, request: HttpRequest): Resource[F, Request[F]] = {
     val attributeMap = requestAttributes(
@@ -178,8 +179,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         (stream, drainBody(_, stream, isDrained))
     }
 
-  /** Return an action that will drain the channel stream
-    * in the case that it wasn't drained.
+  /** Return an action that will drain the channel stream in the case that it wasn't drained.
     */
   private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
     F.delay {
@@ -226,12 +226,16 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
 
   /** Translate an Http4s response to a Netty response.
     *
-    * @param httpRequest The incoming http4s request
-    * @param httpResponse The incoming http4s response
-    * @param httpVersion The netty http version.
-    * @param dateString The calculated date header. May not be used if set explicitly (infrequent)
-    * @param minorVersionIs0 Is the http version 1.0. Passed down to not calculate multiple
-    *                        times
+    * @param httpRequest
+    *   The incoming http4s request
+    * @param httpResponse
+    *   The incoming http4s response
+    * @param httpVersion
+    *   The netty http version.
+    * @param dateString
+    *   The calculated date header. May not be used if set explicitly (infrequent)
+    * @param minorVersionIs0
+    *   Is the http version 1.0. Passed down to not calculate multiple times
     * @return
     */
   protected def toNonWSResponse(
@@ -281,8 +285,8 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     response
   }
 
-  /** Translate an http4s request to an http request
-    * that is allowed a body based on the response status.
+  /** Translate an http4s request to an http request that is allowed a body based on the response
+    * status.
     */
   private[this] def canHaveBodyResponse(
       httpResponse: Response[F],
