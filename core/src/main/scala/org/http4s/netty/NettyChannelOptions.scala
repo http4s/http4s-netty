@@ -2,8 +2,8 @@ package org.http4s.netty
 
 import io.netty.channel.ChannelOption
 
-/** Ensure we construct our netty channel options in a typeful, immutable way, despite
-  * the underlying being disgusting
+/** Ensure we construct our netty channel options in a typeful, immutable way, despite the
+  * underlying being disgusting
   */
 sealed abstract class NettyChannelOptions {
 

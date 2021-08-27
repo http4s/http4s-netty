@@ -81,8 +81,10 @@ class NettyClientBuilder[F[_]](
     copy(nettyChannelOptions = opts)
 
   /** Socket selector threads.
-    * @param nThreads number of selector threads. Use <code>0</code> for netty default
-    * @return an updated builder
+    * @param nThreads
+    *   number of selector threads. Use <code>0</code> for netty default
+    * @return
+    *   an updated builder
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
@@ -132,7 +134,7 @@ class NettyClientBuilder[F[_]](
   private def mkClient(pool: Http4sChannelPoolMap[F], dispatcher: Dispatcher[F]) =
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
-      val pipelineKey = s"http4s-${key}"
+      val pipelineKey = s"http4s-$key"
       val nettyConverter = new NettyModelConversion[F](dispatcher)
 
       for {
