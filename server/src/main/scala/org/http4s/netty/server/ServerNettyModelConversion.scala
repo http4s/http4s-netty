@@ -17,8 +17,8 @@ import io.netty.handler.codec.http.websocketx.{
   PingWebSocketFrame,
   PongWebSocketFrame,
   TextWebSocketFrame,
-  WebSocketServerHandshakerFactory,
-  WebSocketFrame => WSFrame
+  WebSocketFrame => WSFrame,
+  WebSocketServerHandshakerFactory
 }
 import io.netty.handler.codec.http.{
   DefaultHttpResponse,
@@ -29,7 +29,7 @@ import io.netty.handler.codec.http.{
 import org.http4s.internal.tls._
 
 import javax.net.ssl.SSLEngine
-import org.http4s.{Header, Request, Response, HttpVersion => HV}
+import org.http4s.{Header, HttpVersion => HV, Request, Response}
 import org.http4s.netty.NettyModelConversion
 import org.http4s.server.{SecureSession, ServerRequestKeys}
 import org.http4s.websocket.{
@@ -97,14 +97,17 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
     }
   }
 
-  /** Render a websocket response, or if the handshake fails eventually, an error
-    * Note: This function is only invoked for http 1.1, as websockets
-    * aren't supported for http 1.0.
+  /** Render a websocket response, or if the handshake fails eventually, an error Note: This
+    * function is only invoked for http 1.1, as websockets aren't supported for http 1.0.
     *
-    * @param httpRequest The incoming request
-    * @param httpResponse The outgoing http4s reponse
-    * @param httpVersion The calculated netty http version
-    * @param wsContext the websocket context
+    * @param httpRequest
+    *   The incoming request
+    * @param httpResponse
+    *   The outgoing http4s reponse
+    * @param httpVersion
+    *   The calculated netty http version
+    * @param wsContext
+    *   the websocket context
     * @param dateString
     * @return
     */

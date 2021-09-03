@@ -133,8 +133,10 @@ final class NettyServerBuilder[F[_]](
     copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
 
   /** Socket selector threads.
-    * @param nThreads number of selector threads. Use <code>0</code> for netty default
-    * @return an updated builder
+    * @param nThreads
+    *   number of selector threads. Use <code>0</code> for netty default
+    * @return
+    *   an updated builder
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
@@ -190,7 +192,7 @@ final class NettyServerBuilder[F[_]](
           Sync[F].delay {
             channel.close().awaitUninterruptibly()
             loop.eventLoop.shutdownGracefully()
-            logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
+            logger.info(s"All channels shut down. Server bound at $address shut down gracefully")
           }
       }
     } yield {
