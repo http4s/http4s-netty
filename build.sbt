@@ -1,33 +1,33 @@
 inThisBuild(
   Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.5", "2.12.13"),
+    crossScalaVersions := Seq("2.13.6", "2.12.15"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
-    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.11.3").cross(CrossVersion.full)),
+    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)),
     addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
     Test / fork := true
   )
 )
 
-val http4sVersion = "0.21.22"
+val http4sVersion = "0.22.4"
 
-val netty = "4.1.63.Final"
+val netty = "4.1.68.Final"
 
-val munit = "0.7.25"
+val munit = "0.7.29"
 
 lazy val core = project
   .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "2.5.5",
+      "co.fs2" %% "fs2-reactive-streams" % "2.5.9",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.5.Final")
+      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.8.Final")
         .classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
@@ -42,13 +42,13 @@ lazy val server = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.6" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.3.6" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.4.0" % Test,
       "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
-      "org.typelevel" %% "munit-cats-effect-2" % "1.0.2" % Test
+      "org.typelevel" %% "munit-cats-effect-2" % "1.0.5" % Test
     )
   )
 

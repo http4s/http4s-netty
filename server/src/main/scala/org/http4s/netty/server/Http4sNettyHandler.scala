@@ -15,7 +15,7 @@ import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
-import org.http4s.util.execution.trampoline
+import org.http4s.internal.Trampoline
 import org.log4s.getLogger
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -122,12 +122,12 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
                 .addListener((_: ChannelFuture) =>
                   ec.execute(() => F.runAsync(cleanup)(_ => IO.unit).unsafeRunSync())); ()
 
-            }(trampoline)
+            }(Trampoline)
             .recover[Unit] { case NonFatal(e) =>
               logger.warn(e)("Error caught during write action")
               sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
-            }(trampoline)
-        }(trampoline)
+            }(Trampoline)
+        }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         //These are empty trailers... what do do???
         ()

@@ -108,10 +108,10 @@ final class NettyServerBuilder[F[_]](
   def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
-  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host): Self =
+  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.IPv4Host): Self =
     bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
-  def bindLocal(port: Int): Self = bindHttp(port, defaults.Host)
-  def bindAny(host: String = defaults.Host): Self = bindHttp(0, host)
+  def bindLocal(port: Int): Self = bindHttp(port, defaults.IPv4Host)
+  def bindAny(host: String = defaults.IPv4Host): Self = bindHttp(0, host)
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
@@ -184,7 +184,7 @@ final class NettyServerBuilder[F[_]](
     Bound(channel.localAddress().asInstanceOf[InetSocketAddress], loop, channel)
   }
 
-  def resource: Resource[F, Server[F]] =
+  def resource: Resource[F, Server] =
     for {
       maybeEngine <- Resource.eval(createSSLEngine)
       bound <- Resource.make(Sync[F].delay(bind(maybeEngine))) {
@@ -196,7 +196,7 @@ final class NettyServerBuilder[F[_]](
           }
       }
     } yield {
-      val server = new Server[F] {
+      val server = new Server {
         override def address: InetSocketAddress = bound.address
 
         override def isSecure: Boolean = sslConfig.isSecure
@@ -206,7 +206,7 @@ final class NettyServerBuilder[F[_]](
       server
     }
 
-  def allocated: F[(Server[F], F[Unit])] = resource.allocated
+  def allocated: F[(Server, F[Unit])] = resource.allocated
   def stream = fs2.Stream.resource(resource)
 
   private def createSSLEngine =
@@ -248,7 +248,7 @@ object NettyServerBuilder {
     new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
-      socketAddress = org.http4s.server.defaults.SocketAddress,
+      socketAddress = org.http4s.server.defaults.IPv4SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,
       eventLoopThreads = 0, //let netty decide
       maxInitialLineLength = 4096,

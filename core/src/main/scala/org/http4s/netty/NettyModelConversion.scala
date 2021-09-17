@@ -3,10 +3,11 @@ package netty
 
 import cats.effect._
 import cats.implicits._
+import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http._
 import fs2.interop.reactivestreams._
 import fs2.{Chunk, Stream, io => _}
-import io.chrisdavenport.vault.Vault
+import org.typelevel.vault.Vault
 import io.netty.buffer.{ByteBuf, ByteBufUtil, Unpooled}
 import io.netty.channel.{Channel, ChannelFuture}
 import io.netty.handler.codec.http._
@@ -14,6 +15,7 @@ import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
 import org.http4s.headers.{`Content-Length`, `Transfer-Encoding`, Connection => ConnHeader}
 import org.http4s.{HttpVersion => HV}
+import org.typelevel.ci.CIString
 
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
@@ -77,9 +79,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
   }
 
   def toHeaders(headers: HttpHeaders) = {
-    val buffer = List.newBuilder[Header]
+    val buffer = List.newBuilder[Header.Raw]
     headers.forEach { e =>
-      buffer += Header(e.getKey, e.getValue)
+      buffer += Header.Raw(CIString(e.getKey), e.getValue)
     }
     Headers(buffer.result())
   }
@@ -101,12 +103,12 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     else {
       val (requestBody, cleanup) = convertHttpBody(request)
       val uri: ParseResult[Uri] = Uri.fromString(request.uri())
-      val headerBuf = new ListBuffer[Header]
+      val headerBuf = new ListBuffer[Header.Raw]
       val headersIterator = request.headers().iteratorAsString()
       var mapEntry: java.util.Map.Entry[String, String] = null
       while (headersIterator.hasNext) {
         mapEntry = headersIterator.next()
-        headerBuf += Header(mapEntry.getKey, mapEntry.getValue)
+        headerBuf += Header.Raw(CIString(mapEntry.getKey), mapEntry.getValue)
       }
 
       val method: ParseResult[Method] =
@@ -138,8 +140,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
           .insert(
             Request.Keys.ConnectionInfo,
             Request.Connection(
-              local = local,
-              remote = remote,
+              local = SocketAddress.fromInetSocketAddress(local),
+              remote = SocketAddress.fromInetSocketAddress(remote),
               secure = optionalSslEngine.isDefined
             )
           )
@@ -194,9 +196,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
-  private[this] def appendSomeToNetty(header: Header, nettyHeaders: HttpHeaders): Unit = {
+  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit = {
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
-      nettyHeaders.add(header.name.toString(), header.value)
+      nettyHeaders.add(header.name.toString, header.value)
     ()
   }
 
@@ -250,8 +252,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
         //Note: Depending on the status of the response, this may be removed further
         //Down the netty pipeline by the HttpResponseEncoder
         if (httpRequest.method == Method.HEAD) {
-          val transferEncoding = `Transfer-Encoding`.from(httpResponse.headers)
-          val contentLength = `Content-Length`.from(httpResponse.headers)
+          val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
+          val contentLength = httpResponse.headers.get[`Content-Length`]
           (transferEncoding, contentLength) match {
             case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
               r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
@@ -266,10 +268,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     if (!response.headers().contains(HttpHeaderNames.DATE))
       response.headers().add(HttpHeaderNames.DATE, dateString)
 
-    ConnHeader
-      .from(httpRequest.headers) match {
+    httpRequest.headers.get[ConnHeader] match {
       case Some(conn) =>
-        response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
+        response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
       case None =>
         if (minorVersionIs0) //Close by default for Http 1.0
           response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
@@ -303,8 +304,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       minorIs0: Boolean,
       response: StreamedHttpMessage): Unit = {
     headers.foreach(appendSomeToNetty(_, response.headers()))
-    val transferEncoding = `Transfer-Encoding`.from(headers)
-    `Content-Length`.from(headers) match {
+    val transferEncoding = headers.get[`Transfer-Encoding`]
+    headers.get[`Content-Length`] match {
       case Some(clenHeader) if transferEncoding.forall(!_.hasChunked) || minorIs0 =>
         // HTTP 1.1: we have a length and no chunked encoding
         // HTTP 1.0: we have a length
