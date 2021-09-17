@@ -174,6 +174,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
             .flatMap(c => Stream.chunk(Chunk.bytes(bytebufToArray(c.content()))))
             .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
         (stream, drainBody(_, stream, isDrained))
+      case _ => (Stream.empty.covary[F], _ => F.unit)
     }
 
   /** Return an action that will drain the channel stream
