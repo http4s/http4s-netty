@@ -184,6 +184,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       case Continuation(data, last) =>
         new ContinuationWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
       case Close(data) => new CloseWebSocketFrame(true, 0, Unpooled.wrappedBuffer(data.toArray))
+      case _ => new CloseWebSocketFrame(true, 0)
     }
 
   private[this] def nettyWsToHttp4s(w: WSFrame): WebSocketFrame =
@@ -196,5 +197,6 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       case c: ContinuationWebSocketFrame =>
         Continuation(ByteVector(bytebufToArray(c.content())), c.isFinalFragment)
       case c: CloseWebSocketFrame => Close(ByteVector(bytebufToArray(c.content())))
+      case _ => Close(1000, "unknown ws packet").toOption.get
     }
 }

@@ -10,14 +10,15 @@ import io.circe.{Decoder, Encoder}
 
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
-import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
+import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
 import org.http4s.server.{SecureSession, Server, ServerRequestKeys}
 import scodec.bits.ByteVector
 
+import java.net.http.HttpClient
 import scala.util.Try
 
 abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
@@ -81,9 +82,10 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   }
 }
 
-class BlazeSslServerTest extends SslServerTest() {
+class JDKSslServerTest extends SslServerTest() {
   val client = resourceFixture(
-    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
+    Resource.pure[IO, Client[IO]](
+      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
     "client")
 
   val server = resourceFixture(
@@ -92,9 +94,10 @@ class BlazeSslServerTest extends SslServerTest() {
   )
 }
 
-class BlazeMTLSServerTest extends SslServerTest("mTLS") {
+class JDKMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
-    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
+    Resource.pure[IO, Client[IO]](
+      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
     "client")
 
   val server = resourceFixture(

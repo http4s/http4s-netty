@@ -6,6 +6,7 @@ import cats.effect.kernel.Async
 import cats.effect.std.Dispatcher
 import cats.effect.{Resource, Sync}
 import cats.implicits._
+import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
@@ -29,7 +30,7 @@ import scala.collection.immutable
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
 
-final class NettyServerBuilder[F[_]](
+final class NettyServerBuilder[F[_]] private(
     httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
@@ -105,10 +106,10 @@ final class NettyServerBuilder[F[_]](
   def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = httpApp)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
-  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.Host): Self =
+  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.IPv4Host): Self =
     bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
-  def bindLocal(port: Int): Self = bindHttp(port, defaults.Host)
-  def bindAny(host: String = defaults.Host): Self = bindHttp(0, host)
+  def bindLocal(port: Int): Self = bindHttp(port, defaults.IPv4Host)
+  def bindAny(host: String = defaults.IPv4Host): Self = bindHttp(0, host)
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
@@ -197,7 +198,7 @@ final class NettyServerBuilder[F[_]](
       }
     } yield {
       val server = new Server {
-        override def address: InetSocketAddress = bound.address
+        override def address = SocketAddress.fromInetSocketAddress(bound.address)
 
         override def isSecure: Boolean = sslConfig.isSecure
       }
@@ -248,7 +249,7 @@ object NettyServerBuilder {
     new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
-      socketAddress = org.http4s.server.defaults.SocketAddress,
+      socketAddress = org.http4s.server.defaults.IPv4SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,
       eventLoopThreads = 0, //let netty decide
       maxInitialLineLength = 4096,

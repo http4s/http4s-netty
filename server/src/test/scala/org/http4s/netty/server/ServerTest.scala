@@ -7,9 +7,10 @@ import org.http4s.implicits._
 import org.http4s.dsl.io._
 import fs2._
 import org.http4s.client.Client
-import org.http4s.client.blaze.BlazeClientBuilder
+import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
 
+import java.net.http.HttpClient
 import scala.concurrent.duration._
 
 abstract class ServerTest extends IOSuite {
@@ -72,8 +73,8 @@ abstract class ServerTest extends IOSuite {
   }
 }
 
-class BlazeServerTest extends ServerTest {
-  val client = resourceFixture(BlazeClientBuilder[IO](munitExecutionContext).resource, "client")
+class JDKServerTest extends ServerTest {
+  val client = resourceFixture(Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 }
 
 class NettyClientServerTest extends ServerTest {
