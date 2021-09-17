@@ -47,7 +47,6 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.4.0" % Test,
-      "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
       "org.typelevel" %% "munit-cats-effect-2" % "1.0.5" % Test
     )
   )
