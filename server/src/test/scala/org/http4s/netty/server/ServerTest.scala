@@ -1,7 +1,7 @@
 package org.http4s.netty.server
 
 import cats.implicits._
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._

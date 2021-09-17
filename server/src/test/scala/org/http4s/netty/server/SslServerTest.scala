@@ -3,7 +3,7 @@ package org.http4s.netty.server
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import cats.effect.kernel.Async
 import fs2.io.net.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
