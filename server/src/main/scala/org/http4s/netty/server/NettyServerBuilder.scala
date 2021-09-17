@@ -6,7 +6,6 @@ import cats.effect.kernel.Async
 import cats.effect.std.Dispatcher
 import cats.effect.{Resource, Sync}
 import cats.implicits._
-import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
@@ -198,7 +197,7 @@ final class NettyServerBuilder[F[_]] private(
       }
     } yield {
       val server = new Server {
-        override def address = SocketAddress.fromInetSocketAddress(bound.address)
+        override def address = bound.address
 
         override def isSecure: Boolean = sslConfig.isSecure
       }
