@@ -4,6 +4,17 @@ import sbtrelease.ReleasePlugin.autoImport._
 
 object CommonSettings {
   val settings = Seq(
+    organization := "org.http4s",
+    crossScalaVersions := Seq("2.13.6", "2.12.15", "3.0.2"),
+    scalaVersion := crossScalaVersions.value.head,
+    libraryDependencies ++= {
+      if (scalaBinaryVersion.value.startsWith("2")) {
+        Seq(
+          compilerPlugin(("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)),
+          compilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
+        )
+      } else Nil
+    },
     Compile / compile / scalacOptions ++= Seq("-release", "8"),
     Test / scalacOptions ++= Seq("-release", "11"),
     publishTo := {

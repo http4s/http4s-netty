@@ -1,11 +1,5 @@
 inThisBuild(
   Seq(
-    organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.15"),
-    scalaVersion := crossScalaVersions.value.head,
-    testFrameworks += new TestFramework("munit.Framework"),
-    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)),
-    addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
     Test / fork := true
   )
 )
@@ -59,9 +53,9 @@ lazy val client = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.3" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.6" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-2" % "1.0.2" % Test
+      "org.typelevel" %% "munit-cats-effect-2" % "1.0.5" % Test
     )
   )
 

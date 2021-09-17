@@ -28,7 +28,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
 
-final class NettyServerBuilder[F[_]](
+final class NettyServerBuilder[F[_]] private(
     httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
