@@ -1,8 +1,9 @@
 package org.http4s.netty.server
 
 import cats.implicits._
-import cats.effect.{ConcurrentEffect, IO, Sync}
+import cats.effect.{ConcurrentEffect, Sync}
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
+import fs2.Pipe
 import fs2.interop.reactivestreams._
 import org.typelevel.vault.Vault
 import io.netty.buffer.Unpooled
@@ -118,6 +119,19 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       val wsProtocol = if (httpRequest.isSecure.exists(identity)) "wss" else "ws"
       val wsUrl = s"$wsProtocol://${httpRequest.serverAddr}${httpRequest.pathInfo}"
       val factory = new WebSocketServerHandshakerFactory(wsUrl, "*", true, maxPayloadLength)
+      val receiveSend: Pipe[F, WebSocketFrame, WSFrame] =
+        wsContext.webSocket match {
+          case WebSocketSeparatePipe(send, receive, _) =>
+            incoming =>
+              send
+                .concurrently(
+                  incoming.through(receive).drain
+                )
+                .map(wsbitsToNetty) //We don't need to terminate if the send stream terminates.
+          case WebSocketCombinedPipe(receiveSend, _) =>
+            stream => receiveSend(stream).map(wsbitsToNetty)
+        }
+
       StreamSubscriber[F, WebSocketFrame].flatMap { subscriber =>
         F.delay {
           val processor = new Processor[WSFrame, WSFrame] {
@@ -130,21 +144,12 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
             def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
 
             def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-              wsContext.webSocket match {
-                case WebSocketSeparatePipe(send, receive, onClose) =>
-                  send.map(wsbitsToNetty).toUnicastPublisher.subscribe(s)
-
-                  F.runAsync {
-                    subscriber
-                      .stream(Sync[F].unit)
-                      .through(receive)
-                      .compile
-                      .drain >> onClose
-                  }(_ => IO.unit)
-                    .unsafeRunSync()
-                case WebSocketCombinedPipe(_, _) => ???
-              }
-            //wsContext.webSocket.send.map(wsbitsToNetty).toUnicastPublisher.subscribe(s)
+              subscriber
+                .stream(Sync[F].unit)
+                .through(receiveSend)
+                .onFinalizeWeak(wsContext.webSocket.onClose)
+                .toUnicastPublisher
+                .subscribe(s)
           }
           val resp: DefaultHttpResponse =
             new DefaultWebSocketHttpResponse(httpVersion, HttpResponseStatus.OK, processor, factory)
