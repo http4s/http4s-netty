@@ -27,7 +27,7 @@ lazy val core = project
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.8.Final")
+      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.9.Final")
         .classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
