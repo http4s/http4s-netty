@@ -250,7 +250,7 @@ object NettyServerBuilder {
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
       socketAddress = org.http4s.server.defaults.SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,
-      eventLoopThreads = 0, //let netty decide
+      eventLoopThreads = 0, // let netty decide
       maxInitialLineLength = 4096,
       maxHeaderSize = 8192,
       maxChunkSize = 8192,

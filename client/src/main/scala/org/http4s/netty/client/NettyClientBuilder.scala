@@ -33,7 +33,7 @@ class NettyClientBuilder[F[_]](
     nettyChannelOptions: NettyChannelOptions
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
-  //private[this] val nettyConverter = new NettyModelConversion[F](dispatcher)
+  // private[this] val nettyConverter = new NettyModelConversion[F](dispatcher)
 
   type Self = NettyClientBuilder[F]
 
