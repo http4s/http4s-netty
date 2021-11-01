@@ -1,7 +1,7 @@
 inThisBuild(
   Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.15"),
+    crossScalaVersions := Seq("2.13.7", "2.12.15"),
     scalaVersion := crossScalaVersions.value.head,
     testFrameworks += new TestFramework("munit.Framework"),
     addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)),
