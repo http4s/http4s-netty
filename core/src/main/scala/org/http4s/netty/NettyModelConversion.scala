@@ -168,7 +168,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
               .chunk(Chunk.array(arr))
               .covary[F],
             _ => F.unit
-          ) //No cleanup action needed
+          ) // No cleanup action needed
         }
       case streamed: StreamedHttpMessage =>
         val isDrained = new AtomicBoolean(false)
@@ -187,12 +187,12 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         if (c.isOpen) {
           logger.info("Response body not drained to completion. Draining and closing connection")
           c.close().addListener { (_: ChannelFuture) =>
-            //Drain the stream regardless. Some bytebufs often
-            //Remain in the buffers. Draining them solves this issue
+            // Drain the stream regardless. Some bytebufs often
+            // Remain in the buffers. Draining them solves this issue
             disp.unsafeRunAndForget(f.compile.drain)
           }; ()
         } else
-          //Drain anyway, don't close the channel
+          // Drain anyway, don't close the channel
           disp.unsafeRunAndForget(f.compile.drain)
     }
 
@@ -210,7 +210,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpResponse: Response[F],
       dateString: String
   ): DefaultHttpResponse = {
-    //Http version is 1.0. We can assume it's most likely not.
+    // Http version is 1.0. We can assume it's most likely not.
     var minorIs0 = false
     val httpVersion: HttpVersion =
       if (httpRequest.httpVersion == HV.`HTTP/1.1`)
@@ -254,9 +254,9 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           HttpResponseStatus.valueOf(httpResponse.status.code)
         )
         httpResponse.headers.foreach(appendSomeToNetty(_, r.headers()))
-        //Edge case: HEAD
-        //Note: Depending on the status of the response, this may be removed further
-        //Down the netty pipeline by the HttpResponseEncoder
+        // Edge case: HEAD
+        // Note: Depending on the status of the response, this may be removed further
+        // Down the netty pipeline by the HttpResponseEncoder
         if (httpRequest.method == Method.HEAD) {
           val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
           val contentLength = httpResponse.contentLength
@@ -270,7 +270,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         }
         r
       }
-    //Add the cached date if not present
+    // Add the cached date if not present
     if (!response.headers().contains(HttpHeaderNames.DATE))
       response.headers().add(HttpHeaderNames.DATE, dateString)
 
@@ -278,7 +278,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       case Some(conn) =>
         response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
       case None =>
-        if (minorVersionIs0) //Close by default for Http 1.0
+        if (minorVersionIs0) // Close by default for Http 1.0
           response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
     }
 
@@ -317,7 +317,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         // HTTP 1.1: we have a length and no chunked encoding
         // HTTP 1.0: we have a length
 
-        //Ignore transfer-encoding if it's not chunked
+        // Ignore transfer-encoding if it's not chunked
         response.headers().add(HttpHeaderNames.CONTENT_LENGTH, clenHeader.length)
 
       case _ =>
@@ -325,7 +325,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           transferEncoding match {
             case Some(tr) =>
               tr.values.map { v =>
-                //Necessary due to the way netty does transfer encoding checks.
+                // Necessary due to the way netty does transfer encoding checks.
                 if (v != TransferCoding.chunked)
                   response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
               }
@@ -333,17 +333,17 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
                 .headers()
                 .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
             case None =>
-              //Netty reactive streams transfers bodies as chunked transfer encoding anyway.
+              // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
               response
                 .headers()
                 .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
           }
-      //Http 1.0 without a content length means yolo mode. No guarantees on what may happen
-      //As the downstream codec takes control from here. There is one more option:
-      //Buffering the contents of a stream in an effect and serving them as one static chunk.
-      //However, this just to support http 1.0 doesn't seem like the right thing to do,
-      //Especially considering it would make it hyper easy to crash http4s-netty apps
-      //By just spamming http 1.0 Requests, forcing in-memory buffering and OOM.
+      // Http 1.0 without a content length means yolo mode. No guarantees on what may happen
+      // As the downstream codec takes control from here. There is one more option:
+      // Buffering the contents of a stream in an effect and serving them as one static chunk.
+      // However, this just to support http 1.0 doesn't seem like the right thing to do,
+      // Especially considering it would make it hyper easy to crash http4s-netty apps
+      // By just spamming http 1.0 Requests, forcing in-memory buffering and OOM.
     }
     ()
   }

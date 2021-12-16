@@ -51,8 +51,8 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       .requestAttributes(optionalSslEngine, channel)
       .insert(
         ServerRequestKeys.SecureSession,
-        //Create SSLSession object only for https requests and if current SSL session is not empty. Here, each
-        //condition is checked inside a "flatMap" to handle possible "null" values
+        // Create SSLSession object only for https requests and if current SSL session is not empty. Here, each
+        // condition is checked inside a "flatMap" to handle possible "null" values
         optionalSslEngine
           .flatMap(engine => Option(engine.getSession))
           .flatMap { session =>
@@ -72,7 +72,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       dateString: String,
       maxPayloadLength: Int
   ): F[DefaultHttpResponse] = {
-    //Http version is 1.0. We can assume it's most likely not.
+    // Http version is 1.0. We can assume it's most likely not.
     var minorIs0 = false
     val httpVersion: HttpVersion =
       if (httpRequest.httpVersion == HV.`HTTP/1.1`)
@@ -133,7 +133,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
                 .concurrently(
                   incoming.through(receive).drain
                 )
-                .map(wsbitsToNetty) //We don't need to terminate if the send stream terminates.
+                .map(wsbitsToNetty) // We don't need to terminate if the send stream terminates.
           case WebSocketCombinedPipe(receiveSend, _) =>
             stream => receiveSend(stream).map(wsbitsToNetty)
         }

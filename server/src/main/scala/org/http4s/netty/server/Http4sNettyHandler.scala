@@ -92,14 +92,14 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
           Promise[(HttpResponse, F[Unit])]()
 
         val reqAndCleanup = handle(ctx.channel(), req, cachedDateString).allocated
-        //Start execution of the handler.
+        // Start execution of the handler.
         disp.unsafeRunAndForget(reqAndCleanup.attempt.flatMap {
           case Right(result) => F.delay(p.success(result))
           case Left(err) => F.delay(p.failure(err))
         })
-        //This attaches all writes sequentially using
-        //LastResponseSent as a queue. `trampoline` ensures we do not
-        //CTX switch the writes.
+        // This attaches all writes sequentially using
+        // LastResponseSent as a queue. `trampoline` ensures we do not
+        // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
             .map[Unit] { case (response, cleanup) =>
@@ -118,7 +118,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
             }(Trampoline)
         }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
-        //These are empty trailers... what do do???
+        // These are empty trailers... what do do???
         ()
       case msg =>
         logger.error(s"Invalid message type received, ${msg.getClass}")
