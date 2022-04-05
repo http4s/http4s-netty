@@ -8,17 +8,17 @@ import org.http4s.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
 import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
-import org.http4s.server.websocket.WebSocketBuilder
+import org.http4s.server.websocket.WebSocketBuilder2
 
 class WebsocketTest extends IOSuite {
-  val echoRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] { case _ -> Root / "ws" =>
-    WebSocketBuilder[IO].build(identity)
+  def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
+    case _ -> Root / "ws" =>
+      ws.build(identity)
   }
 
   val server = resourceFixture(
     NettyServerBuilder[IO]
-      .withHttpApp(echoRoutes.orNotFound)
-      .withWebsockets
+      .withHttpWebSocketApp(echoRoutes(_).orNotFound)
       .withoutBanner
       .bindAny()
       .resource,
@@ -27,7 +27,7 @@ class WebsocketTest extends IOSuite {
 
   val sslContext: SSLContext = SslServerTest.sslContext
   val tlsServer = resourceFixture(
-    SslServerTest.sslServer(echoRoutes, sslContext).withWebsockets.resource,
+    SslServerTest.sslServer(echoRoutes, sslContext).resource,
     "tls-server"
   )
 
