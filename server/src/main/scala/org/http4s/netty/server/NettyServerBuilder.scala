@@ -139,8 +139,8 @@ final class NettyServerBuilder[F[_]] private (
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
   def withSslContext(
-                      sslContext: SSLContext,
-                      tlsParameters: TLSParameters = TLSParameters.Default): Self =
+      sslContext: SSLContext,
+      tlsParameters: TLSParameters = TLSParameters.Default): Self =
     copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, tlsParameters))
 
   def withoutSsl: Self =
@@ -149,9 +149,9 @@ final class NettyServerBuilder[F[_]] private (
   /** Socket selector threads.
     *
     * @param nThreads
-    * number of selector threads. Use <code>0</code> for netty default
+    *   number of selector threads. Use <code>0</code> for netty default
     * @return
-    * an updated builder
+    *   an updated builder
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
@@ -163,7 +163,8 @@ final class NettyServerBuilder[F[_]] private (
       key: Key[WebSocketContext[F]]) = {
     val resolvedAddress = {
       val unresolved = socketAddress.toInetSocketAddress
-      if (unresolved.isUnresolved) new InetSocketAddress(unresolved.getHostName, unresolved.getPort) else unresolved
+      if (unresolved.isUnresolved) new InetSocketAddress(unresolved.getHostName, unresolved.getPort)
+      else unresolved
     }
     val loop = getEventLoop
     val server = new ServerBootstrap()
@@ -237,7 +238,7 @@ final class NettyServerBuilder[F[_]] private (
       }))
 
   case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
-                                                                                       classTag: ClassTag[A]
+      classTag: ClassTag[A]
   ) {
     def shutdown(): Unit = {
       eventLoop.shutdownGracefully()
@@ -257,9 +258,9 @@ final class NettyServerBuilder[F[_]] private (
   }
 
   case class Bound(
-                    address: InetSocketAddress,
-                    holder: EventLoopHolder[_ <: ServerChannel],
-                    channel: Channel)
+      address: InetSocketAddress,
+      holder: EventLoopHolder[_ <: ServerChannel],
+      channel: Channel)
 }
 
 object NettyServerBuilder {
@@ -292,8 +293,8 @@ object NettyServerBuilder {
   }
 
   private class ContextWithParameters[F[_]](sslContext: SSLContext, tlsParameters: TLSParameters)(
-    implicit F: Applicative[F])
-    extends SslConfig[F] {
+      implicit F: Applicative[F])
+      extends SslConfig[F] {
     def makeContext = F.pure(sslContext.some)
 
     def configureEngine(engine: SSLEngine) = engine.setSSLParameters(tlsParameters.toSSLParameters)

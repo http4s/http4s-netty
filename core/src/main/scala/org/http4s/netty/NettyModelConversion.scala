@@ -89,11 +89,11 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
   /** Turn a netty http request into an http4s request
     *
     * @param channel
-    * the netty channel
+    *   the netty channel
     * @param request
-    * the netty http request impl
+    *   the netty http request impl
     * @return
-    * Http4s request
+    *   Http4s request
     */
   def fromNettyRequest(channel: Channel, request: HttpRequest): Resource[F, Request[F]] = {
     val attributeMap = requestAttributes(
@@ -169,11 +169,10 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           ) // No cleanup action needed
         }
       case streamed: StreamedHttpMessage =>
-        val length = {
-          Option(streamed.headers().get(HttpHeaderNames.CONTENT_LENGTH)).flatMap(header =>
-            `Content-Length`.parse(header).toOption
-          ).map(_.length)
-        }
+        val length =
+          Option(streamed.headers().get(HttpHeaderNames.CONTENT_LENGTH))
+            .flatMap(header => `Content-Length`.parse(header).toOption)
+            .map(_.length)
         val isDrained = new AtomicBoolean(false)
         val stream =
           streamed.toStream
@@ -200,7 +199,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           }
           ()
         } else
-        // Drain anyway, don't close the channel
+          // Drain anyway, don't close the channel
           disp.unsafeRunAndForget(f.compile.drain)
     }
 
@@ -214,10 +213,10 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
 
   /** Create a Netty response from the result */
   def toNettyResponse(
-                       httpRequest: Request[F],
-                       httpResponse: Response[F],
-                       dateString: String
-                     ): DefaultHttpResponse = {
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      dateString: String
+  ): DefaultHttpResponse = {
     // Http version is 1.0. We can assume it's most likely not.
     var minorIs0 = false
     val httpVersion: HttpVersion =
@@ -235,24 +234,24 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
   /** Translate an Http4s response to a Netty response.
     *
     * @param httpRequest
-    * The incoming http4s request
+    *   The incoming http4s request
     * @param httpResponse
-    * The incoming http4s response
+    *   The incoming http4s response
     * @param httpVersion
-    * The netty http version.
+    *   The netty http version.
     * @param dateString
-    * The calculated date header. May not be used if set explicitly (infrequent)
+    *   The calculated date header. May not be used if set explicitly (infrequent)
     * @param minorVersionIs0
-    * Is the http version 1.0. Passed down to not calculate multiple times
+    *   Is the http version 1.0. Passed down to not calculate multiple times
     * @return
     */
   protected def toNonWSResponse(
-                                 httpRequest: Request[F],
-                                 httpResponse: Response[F],
-                                 httpVersion: HttpVersion,
-                                 dateString: String,
-                                 minorVersionIs0: Boolean
-                               ): DefaultHttpResponse = {
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      dateString: String,
+      minorVersionIs0: Boolean
+  ): DefaultHttpResponse = {
     val response =
       if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD)
         canHaveBodyResponse(httpResponse, httpVersion, minorVersionIs0)
@@ -297,10 +296,10 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     * status.
     */
   private[this] def canHaveBodyResponse(
-                                         httpResponse: Response[F],
-                                         httpVersion: HttpVersion,
-                                         minorIs0: Boolean
-                                       ): DefaultHttpResponse = {
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      minorIs0: Boolean
+  ): DefaultHttpResponse = {
     val response =
       new DefaultStreamedHttpResponse(
         httpVersion,
@@ -315,9 +314,9 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
   }
 
   private def transferEncoding(
-                                headers: Headers,
-                                minorIs0: Boolean,
-                                response: StreamedHttpMessage): Unit = {
+      headers: Headers,
+      minorIs0: Boolean,
+      response: StreamedHttpMessage): Unit = {
     headers.foreach(appendSomeToNetty(_, response.headers()))
     val transferEncoding = headers.get[`Transfer-Encoding`]
     headers.get[`Content-Length`] match {
