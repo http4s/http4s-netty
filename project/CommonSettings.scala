@@ -1,11 +1,12 @@
-import sbt._, Keys._
+import io.github.davidgregory084.TpolecatPlugin.autoImport._
 import com.jsuereth.sbtpgp.PgpKeys
 import sbtrelease.ReleasePlugin.autoImport._
+import sbt._, Keys._
 
 object CommonSettings {
   val settings = Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.15", "3.0.2"),
+    crossScalaVersions := Seq("2.13.8", "2.12.15", "3.0.2"),
     scalaVersion := crossScalaVersions.value.head,
     libraryDependencies ++= {
       if (scalaBinaryVersion.value.startsWith("2")) {
@@ -16,6 +17,7 @@ object CommonSettings {
       } else Nil
     },
     Compile / compile / scalacOptions ++= Seq("-release", "8"),
+    Compile / compile / scalacOptions --= ScalacOptions.fatalWarnings.tokens,
     Test / scalacOptions ++= Seq("-release", "11"),
     publishTo := {
       if (isSnapshot.value)

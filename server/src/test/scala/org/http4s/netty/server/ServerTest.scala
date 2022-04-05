@@ -74,7 +74,9 @@ abstract class ServerTest extends IOSuite {
 }
 
 class JDKServerTest extends ServerTest {
-  val client = resourceFixture(Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
+  val client = resourceFixture(
+    Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())),
+    "client")
 }
 
 class NettyClientServerTest extends ServerTest {

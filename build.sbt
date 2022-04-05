@@ -4,9 +4,9 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.23.3"
+val http4sVersion = "0.23.11"
 
-val netty = "4.1.68.Final"
+val netty = "4.1.75.Final"
 
 val munit = "0.7.29"
 
@@ -21,7 +21,7 @@ lazy val core = project
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.8.Final")
+      ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.13.Final")
         .classifier("linux-x86_64"),
       ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64"),
       "org.http4s" %% "http4s-core" % http4sVersion
@@ -36,12 +36,12 @@ lazy val server = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.6" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.5.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.5" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     )
   )
 
@@ -53,9 +53,9 @@ lazy val client = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.6" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.5" % Test
+      "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     )
   )
 

@@ -118,7 +118,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
             }(Trampoline)
         }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
-        //These are empty trailers... what do do???
+        // These are empty trailers... what do do???
         ()
       case msg =>
         logger.error(s"Invalid message type received, ${msg.getClass}")
