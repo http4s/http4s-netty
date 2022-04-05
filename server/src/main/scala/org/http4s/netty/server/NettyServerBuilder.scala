@@ -1,10 +1,10 @@
 package org.http4s.netty.server
 
 import java.net.InetSocketAddress
-
 import cats.Applicative
 import cats.effect.{ConcurrentEffect, Resource, Sync}
 import cats.implicits._
+import com.comcast.ip4s.{IpAddress, IpLiteralSyntax, Port, SocketAddress}
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import fs2.io.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
@@ -14,15 +14,18 @@ import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueServerSocket
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
+import io.netty.channel.unix.DomainSocketAddress
 import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringServerSocketChannel}
+
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
-import org.http4s.netty.{NettyChannelOptions, NettyTransport}
-import org.http4s.server.{Server, ServiceErrorHandler, defaults}
+import org.http4s.netty.NettyChannelOptions
+import org.http4s.server.{Server, ServiceErrorHandler}
 
+import java.nio.file.Path
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
@@ -31,13 +34,12 @@ import scala.reflect.ClassTag
 final class NettyServerBuilder[F[_]] private (
     httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
-    socketAddress: InetSocketAddress,
     idleTimeout: Duration,
     eventLoopThreads: Int,
     maxInitialLineLength: Int,
     maxHeaderSize: Int,
     maxChunkSize: Int,
-    transport: NettyTransport,
+    transport: Bind,
     banner: immutable.Seq[String],
     executionContext: ExecutionContext,
     nettyChannelOptions: NettyChannelOptions,
@@ -51,13 +53,12 @@ final class NettyServerBuilder[F[_]] private (
   private def copy(
       httpApp: HttpApp[F] = httpApp,
       serviceErrorHandler: ServiceErrorHandler[F] = serviceErrorHandler,
-      socketAddress: InetSocketAddress = socketAddress,
       idleTimeout: Duration = idleTimeout,
       eventLoopThreads: Int = eventLoopThreads,
       maxInitialLineLength: Int = maxInitialLineLength,
       maxHeaderSize: Int = maxHeaderSize,
       maxChunkSize: Int = maxChunkSize,
-      transport: NettyTransport = transport,
+      transport: Bind = transport,
       banner: immutable.Seq[String] = banner,
       executionContext: ExecutionContext = executionContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
@@ -68,7 +69,6 @@ final class NettyServerBuilder[F[_]] private (
     new NettyServerBuilder[F](
       httpApp,
       serviceErrorHandler,
-      socketAddress,
       idleTimeout,
       eventLoopThreads,
       maxInitialLineLength,
@@ -85,36 +85,67 @@ final class NettyServerBuilder[F[_]] private (
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
     transport match {
-      case NettyTransport.Nio =>
-        logger.info("Using NIO EventLoopGroup")
-        EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
-      case NettyTransport.Native =>
-        if (IOUring.isAvailable) {
-          logger.info("Using IOUring")
-          EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
-        } else if (Epoll.isAvailable) {
+      case Bind.Network(address, forceNio) =>
+        val resolvedAddress = address.toInetSocketAddress
+        if (forceNio) {
+          EventLoopHolder[NioServerSocketChannel](
+            resolvedAddress,
+            new NioEventLoopGroup(eventLoopThreads))
+        } else {
+          if (IOUring.isAvailable) {
+            logger.info("Using IOUring")
+            EventLoopHolder[IOUringServerSocketChannel](
+              resolvedAddress,
+              new IOUringEventLoopGroup(eventLoopThreads))
+          } else if (Epoll.isAvailable) {
+            logger.info("Using Epoll")
+            EventLoopHolder[EpollServerSocketChannel](
+              resolvedAddress,
+              new EpollEventLoopGroup(eventLoopThreads))
+          } else if (KQueue.isAvailable) {
+            logger.info("Using KQueue")
+            EventLoopHolder[KQueueServerSocketChannel](
+              resolvedAddress,
+              new KQueueEventLoopGroup(eventLoopThreads))
+          } else {
+            logger.info("Falling back to NIO EventLoopGroup")
+            EventLoopHolder[NioServerSocketChannel](
+              resolvedAddress,
+              new NioEventLoopGroup(eventLoopThreads))
+          }
+        }
+      case Bind.NamedSocket(path) =>
+        if (Epoll.isAvailable) {
           logger.info("Using Epoll")
-          EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[EpollServerSocketChannel](
+            new DomainSocketAddress(path.toFile),
+            new EpollEventLoopGroup(eventLoopThreads))
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
-          EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[KQueueServerSocketChannel](
+            new DomainSocketAddress(path.toFile),
+            new KQueueEventLoopGroup(eventLoopThreads))
         } else {
-          logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+          val msg = "KQueue or Epoll must be available for named sockets to work"
+          logger.warn(msg)
+          throw new IllegalStateException(msg)
         }
     }
 
   def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = httpApp)
   def withExecutionContext(ec: ExecutionContext): Self = copy(executionContext = ec)
-  def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
-  def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.IPv4Host): Self =
-    bindSocketAddress(InetSocketAddress.createUnresolved(host, port))
-  def bindLocal(port: Int): Self = bindHttp(port, defaults.IPv4Host)
-  def bindAny(host: String = defaults.IPv4Host): Self = bindHttp(0, host)
+  def bindHttp(port: Port = port"8080", host: IpAddress = ip"127.0.0.1"): Self =
+    withNativeTransport(SocketAddress(host, port))
+  def bindLocal(port: Port): Self = bindHttp(port, ip"127.0.0.1")
+  def bindAny(host: IpAddress = ip"127.0.0.1"): Self =
+    bindHttp(port"0", host)
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
-  def withNioTransport: Self = copy(transport = NettyTransport.Nio)
+  def withNativeTransport(address: SocketAddress[IpAddress]): Self =
+    copy(transport = Bind.Network(address, forceNio = false))
+  def withNioTransport(address: SocketAddress[IpAddress]): Self =
+    copy(transport = Bind.Network(address, forceNio = true))
+  def withUnixTransport(socket: Path): Self = copy(transport = Bind.NamedSocket(socket))
   def withoutBanner: Self = copy(banner = Nil)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
@@ -146,12 +177,8 @@ final class NettyServerBuilder[F[_]] private (
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   private def bind(tlsEngine: Option[SSLEngine]) = {
-    val resolvedAddress =
-      if (socketAddress.isUnresolved)
-        new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
-      else socketAddress
-    val loop = getEventLoop
     val server = new ServerBootstrap()
+    val loop = getEventLoop
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
@@ -180,7 +207,7 @@ final class NettyServerBuilder[F[_]] private (
           ()
         }
       })
-      .bind(resolvedAddress)
+      .bind(loop.address)
       .await()
       .channel()
     Bound(channel.localAddress().asInstanceOf[InetSocketAddress], loop, channel)
@@ -220,7 +247,9 @@ final class NettyServerBuilder[F[_]] private (
         engine
       }))
 
-  case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
+  case class EventLoopHolder[A <: ServerChannel](
+      address: java.net.SocketAddress,
+      eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
     def shutdown(): Unit = {
@@ -250,13 +279,15 @@ object NettyServerBuilder {
     new NettyServerBuilder[F](
       httpApp = HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
-      socketAddress = org.http4s.server.defaults.IPv4SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,
       eventLoopThreads = 0, // let netty decide
       maxInitialLineLength = 4096,
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
-      transport = NettyTransport.Native,
+      transport = Bind.Network(
+        SocketAddress(ip"127.0.0.1", port"8080"),
+        forceNio = false
+      ),
       banner = org.http4s.server.defaults.Banner,
       executionContext = ExecutionContext.global,
       nettyChannelOptions = NettyChannelOptions.empty,

@@ -8,14 +8,16 @@ import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChanne
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
+import io.netty.channel.unix.DomainSocketAddress
 import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
 import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringSocketChannel}
 
 import javax.net.ssl.SSLContext
 import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
-import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
+import org.http4s.netty.{NettyChannelOptions, NettyModelConversion}
 
+import java.net.SocketAddress
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
@@ -95,20 +97,36 @@ class NettyClientBuilder[F[_]](
   private def getEventLoop: EventLoopHolder[_ <: SocketChannel] =
     transport match {
       case NettyTransport.Nio =>
-        EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[NioSocketChannel](None, new NioEventLoopGroup(eventLoopThreads))
       case NettyTransport.Native =>
         if (IOUring.isAvailable) {
           logger.info("Using IOUring")
-          EventLoopHolder[IOUringSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[IOUringSocketChannel](None, new IOUringEventLoopGroup(eventLoopThreads))
         } else if (Epoll.isAvailable) {
           logger.info("Using Epoll")
-          EventLoopHolder[EpollSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[EpollSocketChannel](None, new EpollEventLoopGroup(eventLoopThreads))
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
-          EventLoopHolder[KQueueSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[KQueueSocketChannel](None, new KQueueEventLoopGroup(eventLoopThreads))
         } else {
           logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[NioSocketChannel](None, new NioEventLoopGroup(eventLoopThreads))
+        }
+      case NettyTransport.NamedSocket(path) =>
+        if (Epoll.isAvailable) {
+          logger.info("Using Epoll")
+          EventLoopHolder[EpollSocketChannel](
+            Some(new DomainSocketAddress(path.toFile)),
+            new EpollEventLoopGroup(eventLoopThreads))
+        } else if (KQueue.isAvailable) {
+          logger.info("Using KQueue")
+          EventLoopHolder[KQueueSocketChannel](
+            Some(new DomainSocketAddress(path.toFile)),
+            new KQueueEventLoopGroup(eventLoopThreads))
+        } else {
+          val msg = "KQueue or Epoll must be available for named sockets to work"
+          logger.warn(msg)
+          throw new IllegalStateException(msg)
         }
     }
 
@@ -151,27 +169,25 @@ class NettyClientBuilder[F[_]](
                 channel.writeAndFlush(nettyConverter.toNettyRequest(req))
                 logger.trace("After request")
               })
-        /*pool.withOnConnection { (c: Channel) =>
-                val http4sHandler = new Http4sHandler[F](cb)
-                c.pipeline().addLast(pipelineKey, http4sHandler)
-                logger.trace("Sending request")
-                c.writeAndFlush(nettyConverter.toNettyRequest(req))
-                logger.trace("After request")
-              }*/
         response <- responseResource
       } yield response
     }
 
-  case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit
+  case class EventLoopHolder[A <: SocketChannel](
+      address: Option[SocketAddress],
+      eventLoop: MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
-    def configure(bootstrap: Bootstrap) =
-      bootstrap
+    def configure(bootstrap: Bootstrap) = {
+      val bs = bootstrap
         .group(eventLoop)
         .channel(runtimeClass)
         .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
         .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
+      address.foreach(bs.remoteAddress)
+      bs
+    }
   }
 }
 
