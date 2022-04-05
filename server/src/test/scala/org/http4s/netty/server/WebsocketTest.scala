@@ -2,17 +2,18 @@ package org.http4s.netty.server
 
 import java.net.http.HttpClient
 import cats.effect.IO
+import org.http4s.client.websocket._
 
 import javax.net.ssl.SSLContext
-import org.http4s.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
+import org.http4s.jdkhttpclient.JdkWSClient
 import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
-import org.http4s.server.websocket.WebSocketBuilder
+import org.http4s.server.websocket.{WebSocketBuilder, websocketKey}
 
 class WebsocketTest extends IOSuite {
   val echoRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] { case _ -> Root / "ws" =>
-    WebSocketBuilder[IO].build(identity)
+    WebSocketBuilder[IO](websocketKey).build(identity)
   }
 
   val server = resourceFixture(
@@ -34,7 +35,7 @@ class WebsocketTest extends IOSuite {
   private def runTest(client: HttpClient, wsUrl: Uri, text: WSFrame.Text) =
     JdkWSClient[IO](client).use {
       _.connectHighLevel(WSRequest(wsUrl)).use { highlevel =>
-        highlevel.send(text) *> highlevel.sendClose("closing") *>
+        highlevel.send(text) *> highlevel.closeFrame.get *>
           highlevel.receiveStream.compile.toList
             .map(list => assertEquals(list, List(text)))
       }

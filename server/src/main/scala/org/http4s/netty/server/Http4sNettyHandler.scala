@@ -16,7 +16,7 @@ import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
-import org.http4s.internal.Trampoline
+import org.http4s.netty.server.internal.Trampoline
 import org.log4s.getLogger
 
 import scala.concurrent.{Future, Promise}

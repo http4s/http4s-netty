@@ -108,7 +108,7 @@ final class NettyServerBuilder[F[_]] private(
   def bindSocketAddress(address: SocketAddress[IpAddress]): Self = copy(socketAddress = address)
 
   def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.IPv4Host): Self =
-    bindSocketAddress(SocketAddress.fromInetSocketAddress(InetSocketAddress.createUnresolved(host, port)))
+    bindSocketAddress(SocketAddress.fromInetSocketAddress(new InetSocketAddress(host, port)))
 
   def bindLocal(port: Int): Self = bindHttp(port, defaults.IPv4Host)
 
@@ -157,7 +157,10 @@ final class NettyServerBuilder[F[_]] private(
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   private def bind(tlsEngine: Option[SSLEngine], dispatcher: Dispatcher[F]) = {
-    val resolvedAddress = socketAddress.toInetSocketAddress
+    val resolvedAddress = {
+      val unresolved = socketAddress.toInetSocketAddress
+      if (unresolved.isUnresolved) new InetSocketAddress(unresolved.getHostName, unresolved.getPort) else unresolved
+    }
     val loop = getEventLoop
     val server = new ServerBootstrap()
     val channel = loop

@@ -44,7 +44,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
     )
 
   implicit val entityEncoder: EntityEncoder[IO, SecureSession] =
-    org.http4s.circe.jsonEncoderOf[IO, SecureSession]
+    org.http4s.circe.jsonEncoderOf[SecureSession]
   val routes: HttpRoutes[IO] = HttpRoutes
     .of[IO] {
       case GET -> Root => Ok("Hello from TLS")

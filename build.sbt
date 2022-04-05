@@ -4,7 +4,7 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "1.0.0-M30"
+val http4sVersion = "1.0.0-M32"
 
 val netty = "4.1.75.Final"
 
