@@ -28,7 +28,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.reflect.ClassTag
 
-final class NettyServerBuilder[F[_]] private(
+final class NettyServerBuilder[F[_]] private (
     httpApp: HttpApp[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
@@ -136,8 +136,10 @@ final class NettyServerBuilder[F[_]] private(
     copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
 
   /** Socket selector threads.
-    * @param nThreads number of selector threads. Use <code>0</code> for netty default
-    * @return an updated builder
+    * @param nThreads
+    *   number of selector threads. Use <code>0</code> for netty default
+    * @return
+    *   an updated builder
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
@@ -250,7 +252,7 @@ object NettyServerBuilder {
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
       socketAddress = org.http4s.server.defaults.IPv4SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,
-      eventLoopThreads = 0, //let netty decide
+      eventLoopThreads = 0, // let netty decide
       maxInitialLineLength = 4096,
       maxHeaderSize = 8192,
       maxChunkSize = 8192,

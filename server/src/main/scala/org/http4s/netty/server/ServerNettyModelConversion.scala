@@ -15,8 +15,8 @@ import io.netty.handler.codec.http.websocketx.{
   PingWebSocketFrame,
   PongWebSocketFrame,
   TextWebSocketFrame,
-  WebSocketServerHandshakerFactory,
-  WebSocketFrame => WSFrame
+  WebSocketFrame => WSFrame,
+  WebSocketServerHandshakerFactory
 }
 import io.netty.handler.codec.http.{
   DefaultHttpResponse,
@@ -27,7 +27,7 @@ import io.netty.handler.codec.http.{
 import org.http4s.internal.tls._
 
 import javax.net.ssl.SSLEngine
-import org.http4s.{Header, Request, Response, HttpVersion => HV}
+import org.http4s.{Header, HttpVersion => HV, Request, Response}
 import org.http4s.netty.NettyModelConversion
 import org.http4s.server.{SecureSession, ServerRequestKeys}
 import org.http4s.websocket.{
@@ -49,8 +49,8 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       .requestAttributes(optionalSslEngine, channel)
       .insert(
         ServerRequestKeys.SecureSession,
-        //Create SSLSession object only for https requests and if current SSL session is not empty. Here, each
-        //condition is checked inside a "flatMap" to handle possible "null" values
+        // Create SSLSession object only for https requests and if current SSL session is not empty. Here, each
+        // condition is checked inside a "flatMap" to handle possible "null" values
         optionalSslEngine
           .flatMap(engine => Option(engine.getSession))
           .flatMap { session =>
@@ -70,7 +70,7 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       dateString: String,
       maxPayloadLength: Int
   ): F[DefaultHttpResponse] = {
-    //Http version is 1.0. We can assume it's most likely not.
+    // Http version is 1.0. We can assume it's most likely not.
     var minorIs0 = false
     val httpVersion: HttpVersion =
       if (httpRequest.httpVersion == HV.`HTTP/1.1`)
@@ -95,14 +95,17 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
     }
   }
 
-  /** Render a websocket response, or if the handshake fails eventually, an error
-    * Note: This function is only invoked for http 1.1, as websockets
-    * aren't supported for http 1.0.
+  /** Render a websocket response, or if the handshake fails eventually, an error Note: This
+    * function is only invoked for http 1.1, as websockets aren't supported for http 1.0.
     *
-    * @param httpRequest The incoming request
-    * @param httpResponse The outgoing http4s reponse
-    * @param httpVersion The calculated netty http version
-    * @param wsContext the websocket context
+    * @param httpRequest
+    *   The incoming request
+    * @param httpResponse
+    *   The outgoing http4s reponse
+    * @param httpVersion
+    *   The calculated netty http version
+    * @param wsContext
+    *   the websocket context
     * @param dateString
     * @return
     */
@@ -127,7 +130,7 @@ final class ServerNettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
                 .concurrently(
                   incoming.through(receive).drain
                 )
-                .map(wsbitsToNetty) //We don't need to terminate if the send stream terminates.
+                .map(wsbitsToNetty) // We don't need to terminate if the send stream terminates.
           case WebSocketCombinedPipe(receiveSend, _) =>
             stream => receiveSend(stream).map(wsbitsToNetty)
         }

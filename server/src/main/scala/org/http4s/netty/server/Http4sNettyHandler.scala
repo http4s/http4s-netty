@@ -24,23 +24,22 @@ import scala.util.{Failure, Success}
 
 /** Netty request handler
   *
-  * Adapted from PlayRequestHandler.scala
-  * in
+  * Adapted from PlayRequestHandler.scala in
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
   *
   * Variables inside this handler are essentially local to a thread in the
   * MultithreadedEventLoopGroup, as they are not mutated anywhere else.
   *
-  * A note about "lastResponseSent" to help understand:
-  * By reassigning the variable with a `flatMap` (which doesn't require synchronization at all, since
-  * you can consider this handler essentially single threaded), this means that, we can run the
-  * `handle` action asynchronously by forking it into a thread in `handle`, all the while
-  * ensuring in-order writes for the handler thread by attaching the callback using `flatMap`.
-  * This ensures we can schedule more work asynchronously by streaming `lastResponseSent` like a
-  * FIFO asynchronous queue.
+  * A note about "lastResponseSent" to help understand: By reassigning the variable with a `flatMap`
+  * (which doesn't require synchronization at all, since you can consider this handler essentially
+  * single threaded), this means that, we can run the `handle` action asynchronously by forking it
+  * into a thread in `handle`, all the while ensuring in-order writes for the handler thread by
+  * attaching the callback using `flatMap`. This ensures we can schedule more work asynchronously by
+  * streaming `lastResponseSent` like a FIFO asynchronous queue.
   *
-  * P.s this class was named `MikuHandler`. Record of this will exist honor of the fallen glorious module name
-  * `http4s-miku`, slain by a bolt of lightning thrown by Zeus during a battle of module naming.
+  * P.s this class was named `MikuHandler`. Record of this will exist honor of the fallen glorious
+  * module name `http4s-miku`, slain by a bolt of lightning thrown by Zeus during a battle of module
+  * naming.
   */
 private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(implicit
     F: Effect[F]
@@ -70,9 +69,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
 
   protected val logger = getLogger
 
-  /** Handle the given request.
-    * Note: Handle implementations fork into user ExecutionContext
-    * Returns the cleanup action along with the drain action
+  /** Handle the given request. Note: Handle implementations fork into user ExecutionContext Returns
+    * the cleanup action along with the drain action
     */
   def handle(
       channel: Channel,
@@ -92,7 +90,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
         requestsInFlight.incrementAndGet()
         val p: Promise[(HttpResponse, F[Unit])] =
           Promise[(HttpResponse, F[Unit])]()
-        //Start execution of the handler.
+        // Start execution of the handler.
         F.runAsync(handle(ctx.channel(), req, cachedDateString).allocated) {
           case Left(error) =>
             IO {
@@ -107,9 +105,9 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
 
         }.unsafeRunSync()
 
-        //This attaches all writes sequentially using
-        //LastResponseSent as a queue. `trampoline` ensures we do not
-        //CTX switch the writes.
+        // This attaches all writes sequentially using
+        // LastResponseSent as a queue. `trampoline` ensures we do not
+        // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
             .map[Unit] { case (response, cleanup) =>
@@ -129,7 +127,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ec: ExecutionContext)(imp
             }(Trampoline)
         }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
-        //These are empty trailers... what do do???
+        // These are empty trailers... what do do???
         ()
       case msg =>
         logger.error(s"Invalid message type received, ${msg.getClass}")

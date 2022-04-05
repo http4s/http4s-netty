@@ -5,7 +5,7 @@ import sbtrelease.ReleasePlugin.autoImport._
 object CommonSettings {
   val settings = Seq(
     organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.15", "3.0.2"),
+    crossScalaVersions := Seq("2.13.8", "2.12.15", "3.0.2"),
     scalaVersion := crossScalaVersions.value.head,
     libraryDependencies ++= {
       if (scalaBinaryVersion.value.startsWith("2")) {
