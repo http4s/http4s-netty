@@ -4,7 +4,7 @@ import java.net.http.HttpClient
 import cats.effect.IO
 
 import javax.net.ssl.SSLContext
-import org.http4s.client.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
+import org.http4s.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
 import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
 import org.http4s.dsl.io._

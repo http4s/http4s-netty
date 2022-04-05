@@ -33,7 +33,6 @@ class NettyClientBuilder[F[_]](
     nettyChannelOptions: NettyChannelOptions
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
-  // private[this] val nettyConverter = new NettyModelConversion[F](dispatcher)
 
   type Self = NettyClientBuilder[F]
 
@@ -143,17 +142,10 @@ class NettyClientBuilder[F[_]](
           .eval(F.async_[Resource[F, Response[F]]] { cb =>
             val http4sHandler = new Http4sHandler[F](cb, dispatcher)
             channel.pipeline().addLast(pipelineKey, http4sHandler)
-            logger.trace("Sending request")
+            logger.trace(s"Sending request to $key")
             channel.writeAndFlush(nettyConverter.toNettyRequest(req))
-            logger.trace("After request")
+            logger.trace(s"After request to $key")
           })
-        /*pool.withOnConnection { (c: Channel) =>
-                val http4sHandler = new Http4sHandler[F](cb)
-                c.pipeline().addLast(pipelineKey, http4sHandler)
-                logger.trace("Sending request")
-                c.writeAndFlush(nettyConverter.toNettyRequest(req))
-                logger.trace("After request")
-              }*/
         response <- responseResource
       } yield response
     }

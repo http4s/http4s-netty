@@ -7,7 +7,7 @@ import cats.implicits._
 import cats.effect.IO
 import cats.effect.Deferred
 import org.http4s.{HttpRoutes, Request, Response}
-import org.http4s.client.jdkhttpclient.JdkHttpClient
+import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.dsl.io._
 
 import scala.concurrent.duration._

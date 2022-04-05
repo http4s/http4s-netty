@@ -1,16 +1,10 @@
 inThisBuild(
   Seq(
-    organization := "org.http4s",
-    crossScalaVersions := Seq("2.13.6", "2.12.15"),
-    scalaVersion := crossScalaVersions.value.head,
-    testFrameworks += new TestFramework("munit.Framework"),
-    addCompilerPlugin(("org.typelevel" % "kind-projector" % "0.13.2").cross(CrossVersion.full)),
-    addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1"),
     Test / fork := true
   )
 )
 
-val http4sVersion = "1.0.0-M21"
+val http4sVersion = "1.0.0-M30"
 
 val netty = "4.1.75.Final"
 
@@ -46,8 +40,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.5.0-M4" % Test,
-      "org.http4s" %% "http4s-blaze-client" % http4sVersion % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M1" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     )
   )

@@ -3,21 +3,21 @@ package org.http4s.netty.server
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
-import cats.effect.IO
-import cats.effect.kernel.Async
+import cats.effect.{IO, Async}
 import fs2.io.net.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
-import org.http4s.client.blaze.BlazeClientBuilder
 import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
+import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
 import org.http4s.server.{SecureSession, Server, ServerRequestKeys}
 import scodec.bits.ByteVector
 
+import java.net.http.HttpClient
 import scala.util.Try
 
 abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
@@ -48,7 +48,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   val routes: HttpRoutes[IO] = HttpRoutes
     .of[IO] {
       case GET -> Root => Ok("Hello from TLS")
-      case r @ GET -> Root / "cert-info" =>
+      case r@GET -> Root / "cert-info" =>
         r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
           case Some(value) => Ok(value)
           case None => BadRequest()
@@ -56,16 +56,19 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
     }
 
   def server: Fixture[Server]
+
   def client: Fixture[Client[IO]]
 
-  test(s"GET Root over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test(s"GET Root over $typ") {
+    /*(server: Server[IO], client: Client[IO]) =>*/
     val s = server()
     client().expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }
 
-  test(s"GET Cert-Info over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test(s"GET Cert-Info over $typ") {
+    /*(server: Server[IO], client: Client[IO]) =>*/
     implicit val entityDecoder: EntityDecoder[IO, SecureSession] =
       org.http4s.circe.jsonOf[IO, SecureSession]
 
@@ -81,9 +84,9 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   }
 }
 
-class BlazeSslServerTest extends SslServerTest() {
+class JDKSslServerTest extends SslServerTest() {
   val client = resourceFixture(
-    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
+    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
     "client")
 
   val server = resourceFixture(
@@ -92,9 +95,9 @@ class BlazeSslServerTest extends SslServerTest() {
   )
 }
 
-class BlazeMTLSServerTest extends SslServerTest("mTLS") {
+class JDKMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
-    BlazeClientBuilder[IO](munitExecutionContext).withSslContext(sslContext).resource,
+    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
     "client")
 
   val server = resourceFixture(
@@ -151,11 +154,11 @@ object SslServerTest {
   }
 
   def sslServer(
-      routes: HttpRoutes[IO],
-      ctx: SSLContext,
-      parameters: TLSParameters = TLSParameters.Default)(implicit
-      eff: Async[IO]
-  ): NettyServerBuilder[IO] =
+                 routes: HttpRoutes[IO],
+                 ctx: SSLContext,
+                 parameters: TLSParameters = TLSParameters.Default)(implicit
+                                                                    eff: Async[IO]
+               ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)
       .withEventLoopThreads(10)
