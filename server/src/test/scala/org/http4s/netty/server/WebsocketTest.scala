@@ -1,7 +1,8 @@
 package org.http4s.netty.server
 
 import java.net.http.HttpClient
-import cats.effect.IO
+import cats.effect.{IO, Resource}
+import cats.effect.std.Queue
 
 import javax.net.ssl.SSLContext
 import org.http4s.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
@@ -9,32 +10,42 @@ import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
 import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.websocket.WebSocketFrame
 
 class WebsocketTest extends IOSuite {
-  def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] = HttpRoutes.of[IO] {
-    case _ -> Root / "ws" =>
-      ws.build(identity)
-  }
+  def echoRoutes(ws: WebSocketBuilder2[IO], queue: Queue[IO, WebSocketFrame]): HttpRoutes[IO] =
+    HttpRoutes.of[IO] { case _ -> Root / "ws" =>
+      ws.build(
+        fs2.Stream.fromQueueUnterminated(queue, 2),
+        _.evalMap(frame =>
+          queue.offer(frame).flatMap(_ => queue.offer(WebSocketFrame.Close(1000).toOption.get))))
+    }
 
   val server = resourceFixture(
-    NettyServerBuilder[IO]
-      .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-      .withoutBanner
-      .bindAny()
-      .resource,
+    for {
+      queue <- Resource.eval(Queue.bounded[IO, WebSocketFrame](2))
+      netty <- NettyServerBuilder[IO]
+        .withHttpWebSocketApp(echoRoutes(_, queue).orNotFound)
+        .withoutBanner
+        .bindAny()
+        .resource
+    } yield netty,
     "server"
   )
 
   val sslContext: SSLContext = SslServerTest.sslContext
   val tlsServer = resourceFixture(
-    SslServerTest.sslServer(echoRoutes, sslContext).resource,
+    for {
+      queue <- Resource.eval(Queue.bounded[IO, WebSocketFrame](2))
+      netty <- SslServerTest.sslServer(echoRoutes(_, queue), sslContext).resource
+    } yield netty,
     "tls-server"
   )
 
   private def runTest(client: HttpClient, wsUrl: Uri, text: WSFrame.Text) =
     JdkWSClient[IO](client).use {
       _.connectHighLevel(WSRequest(wsUrl)).use { highlevel =>
-        highlevel.send(text) *> highlevel.sendClose("closing") *>
+        highlevel.send(text) *>
           highlevel.receiveStream.compile.toList
             .map(list => assertEquals(list, List(text)))
       }
