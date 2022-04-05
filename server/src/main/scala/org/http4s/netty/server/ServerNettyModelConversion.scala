@@ -7,7 +7,7 @@ import cats.effect.kernel.Sync
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
 import fs2.interop.reactivestreams._
-import org.typelevel.vault.Vault
+import org.typelevel.vault.{Key, Vault}
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.handler.codec.http.websocketx.{
@@ -67,6 +67,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
 
   /** Create a Netty response from the result */
   def toNettyResponseWithWebsocket(
+      key: Key[WebSocketContext[F]],
       httpRequest: Request[F],
       httpResponse: Response[F],
       dateString: String,
@@ -83,7 +84,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       } else
         HttpVersion.valueOf(httpRequest.httpVersion.toString)
 
-    httpResponse.attributes.lookup(org.http4s.server.websocket.websocketKey[F]) match {
+    httpResponse.attributes.lookup(key) match {
       case Some(wsContext) if !minorIs0 =>
         toWSResponse(
           httpRequest,

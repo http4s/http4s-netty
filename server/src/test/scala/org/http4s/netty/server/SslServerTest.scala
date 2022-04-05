@@ -3,7 +3,7 @@ package org.http4s.netty.server
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
-import cats.effect.{IO, Async}
+import cats.effect.{Async, IO}
 import fs2.io.net.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 
@@ -14,6 +14,7 @@ import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
+import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.server.{SecureSession, Server, ServerRequestKeys}
 import scodec.bits.ByteVector
 
@@ -48,7 +49,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   val routes: HttpRoutes[IO] = HttpRoutes
     .of[IO] {
       case GET -> Root => Ok("Hello from TLS")
-      case r@GET -> Root / "cert-info" =>
+      case r @ GET -> Root / "cert-info" =>
         r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
           case Some(value) => Ok(value)
           case None => BadRequest()
@@ -90,7 +91,7 @@ class JDKSslServerTest extends SslServerTest() {
     "client")
 
   val server = resourceFixture(
-    SslServerTest.sslServer(routes, sslContext).resource,
+    SslServerTest.sslServer(_ => routes, sslContext).resource,
     "server"
   )
 }
@@ -101,7 +102,7 @@ class JDKMTLSServerTest extends SslServerTest("mTLS") {
     "client")
 
   val server = resourceFixture(
-    SslServerTest.sslServer(routes, sslContext, TLSParameters(needClientAuth = true)).resource,
+    SslServerTest.sslServer(_ => routes, sslContext, TLSParameters(needClientAuth = true)).resource,
     "mtlsServer"
   )
 }
@@ -115,7 +116,7 @@ class NettyClientSslServerTest extends SslServerTest() {
     "client"
   )
   val server = resourceFixture(
-    SslServerTest.sslServer(routes, sslContext).resource,
+    SslServerTest.sslServer(_ => routes, sslContext).resource,
     "server"
   )
 }
@@ -128,7 +129,7 @@ class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
     "client"
   )
   val server = resourceFixture(
-    SslServerTest.sslServer(routes, sslContext, TLSParameters(needClientAuth = true)).resource,
+    SslServerTest.sslServer(_ => routes, sslContext, TLSParameters(needClientAuth = true)).resource,
     "mtlsServer"
   )
 }
@@ -154,13 +155,13 @@ object SslServerTest {
   }
 
   def sslServer(
-                 routes: HttpRoutes[IO],
-                 ctx: SSLContext,
-                 parameters: TLSParameters = TLSParameters.Default)(implicit
-                                                                    eff: Async[IO]
-               ): NettyServerBuilder[IO] =
+      routes: WebSocketBuilder[IO] => HttpRoutes[IO],
+      ctx: SSLContext,
+      parameters: TLSParameters = TLSParameters.Default)(implicit
+      eff: Async[IO]
+  ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
-      .withHttpApp(routes.orNotFound)
+      .withHttpWebSocketApp(routes(_).orNotFound)
       .withEventLoopThreads(10)
       .withoutBanner
       .bindAny()
