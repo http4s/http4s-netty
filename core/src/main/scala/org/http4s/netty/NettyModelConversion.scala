@@ -193,7 +193,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             disp.unsafeRunAndForget(f.compile.drain)
           }; ()
         } else
-          //Drain anyway, don't close the channel
+          // Drain anyway, don't close the channel
           disp.unsafeRunAndForget(f.compile.drain)
     }
 
