@@ -45,7 +45,6 @@ final class NettyServerBuilder[F[_]] private (
     banner: immutable.Seq[String],
     nettyChannelOptions: NettyChannelOptions,
     sslConfig: NettyServerBuilder.SslConfig[F],
-    websocketsEnabled: Boolean,
     wsMaxFrameLength: Int
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
@@ -64,7 +63,6 @@ final class NettyServerBuilder[F[_]] private (
       banner: immutable.Seq[String] = banner,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       sslConfig: NettyServerBuilder.SslConfig[F] = sslConfig,
-      websocketsEnabled: Boolean = websocketsEnabled,
       wsMaxFrameLength: Int = wsMaxFrameLength
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
@@ -80,7 +78,6 @@ final class NettyServerBuilder[F[_]] private (
       banner,
       nettyChannelOptions,
       sslConfig,
-      websocketsEnabled,
       wsMaxFrameLength
     )
 
@@ -264,7 +261,6 @@ object NettyServerBuilder {
       banner = org.http4s.server.defaults.Banner,
       nettyChannelOptions = NettyChannelOptions.empty,
       sslConfig = new NettyServerBuilder.NoSsl[F],
-      websocketsEnabled = false,
       wsMaxFrameLength = DefaultWSMaxFrameLength
     )
 
