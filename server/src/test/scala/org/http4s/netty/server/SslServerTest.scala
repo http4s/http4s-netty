@@ -5,7 +5,8 @@ import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 import cats.effect.{Async, IO}
 import fs2.io.net.tls.TLSParameters
-import io.circe.{Decoder, Encoder}
+import io.circe.{Decoder, Encoder, Json}
+import io.circe.syntax._
 
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
@@ -37,8 +38,14 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
       })
 
   implicit val encoderSession: Encoder[SecureSession] =
-    Encoder.forProduct4("sessionId", "cipherSuite", "keySize", "client_certificates")(
-      SecureSession.unapply(_).get)
+    Encoder.instance { session =>
+      Json.obj(
+        "sessionId" := session.sslSessionId,
+        "cipherSuite" := session.cipherSuite,
+        "keySize" := session.keySize,
+        "client_certificates" := session.X509Certificate
+      )
+    }
   implicit val decoderSession: Decoder[SecureSession] =
     Decoder.forProduct4("sessionId", "cipherSuite", "keySize", "client_certificates")(
       SecureSession.apply(_: String, _: String, _: Int, _: List[X509Certificate])
