@@ -175,7 +175,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             .map(_.length)
         val isDrained = new AtomicBoolean(false)
         val stream =
-          streamed.toStream
+          streamed.toStreamBuffered(1)
             .flatMap(c => Stream.chunk(Chunk.array(bytebufToArray(c.content()))))
             .onFinalize(F.delay {
               isDrained.compareAndSet(false, true);

@@ -139,7 +139,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
             stream => receiveSend(stream).map(wsbitsToNetty)
         }
 
-      StreamSubscriber[F, WebSocketFrame](disp).flatMap { subscriber =>
+      StreamSubscriber[F, WebSocketFrame](1).flatMap { subscriber =>
         F.delay {
           val processor = new Processor[WSFrame, WSFrame] {
             def onError(t: Throwable): Unit = subscriber.onError(t)
