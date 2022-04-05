@@ -1,7 +1,7 @@
 package org.http4s.netty.server
 
 import cats.implicits._
-import cats.effect.{IO, Resource}
+import cats.effect.{IO}
 import org.http4s.{HttpRoutes, Request, Response}
 import org.http4s.implicits._
 import org.http4s.dsl.io._
@@ -75,7 +75,7 @@ abstract class ServerTest extends IOSuite {
 
 class JDKServerTest extends ServerTest {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](JdkHttpClient[IO](HttpClient.newHttpClient())),
+    JdkHttpClient[IO](HttpClient.newHttpClient()),
     "client")
 }
 

@@ -3,8 +3,7 @@ package org.http4s.netty.server
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
-import cats.effect.{IO, Resource}
-import cats.effect.kernel.Async
+import cats.effect.{IO, Async}
 import fs2.io.net.tls.TLSParameters
 import io.circe.{Decoder, Encoder}
 
@@ -49,7 +48,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   val routes: HttpRoutes[IO] = HttpRoutes
     .of[IO] {
       case GET -> Root => Ok("Hello from TLS")
-      case r @ GET -> Root / "cert-info" =>
+      case r@GET -> Root / "cert-info" =>
         r.attributes.lookup(ServerRequestKeys.SecureSession).flatten match {
           case Some(value) => Ok(value)
           case None => BadRequest()
@@ -57,16 +56,19 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
     }
 
   def server: Fixture[Server]
+
   def client: Fixture[Client[IO]]
 
-  test(s"GET Root over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test(s"GET Root over $typ") {
+    /*(server: Server[IO], client: Client[IO]) =>*/
     val s = server()
     client().expect[String](s.baseUri).map { res =>
       assertEquals(res, "Hello from TLS")
     }
   }
 
-  test(s"GET Cert-Info over $typ") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test(s"GET Cert-Info over $typ") {
+    /*(server: Server[IO], client: Client[IO]) =>*/
     implicit val entityDecoder: EntityDecoder[IO, SecureSession] =
       org.http4s.circe.jsonOf[IO, SecureSession]
 
@@ -84,8 +86,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
 
 class JDKSslServerTest extends SslServerTest() {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](
-      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
+    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
     "client")
 
   val server = resourceFixture(
@@ -96,8 +97,7 @@ class JDKSslServerTest extends SslServerTest() {
 
 class JDKMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
-    Resource.pure[IO, Client[IO]](
-      JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build())),
+    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
     "client")
 
   val server = resourceFixture(
@@ -154,11 +154,11 @@ object SslServerTest {
   }
 
   def sslServer(
-      routes: HttpRoutes[IO],
-      ctx: SSLContext,
-      parameters: TLSParameters = TLSParameters.Default)(implicit
-      eff: Async[IO]
-  ): NettyServerBuilder[IO] =
+                 routes: HttpRoutes[IO],
+                 ctx: SSLContext,
+                 parameters: TLSParameters = TLSParameters.Default)(implicit
+                                                                    eff: Async[IO]
+               ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpApp(routes.orNotFound)
       .withEventLoopThreads(10)

@@ -19,6 +19,7 @@ object CommonSettings {
     Compile / compile / scalacOptions ++= Seq("-release", "8"),
     Compile / compile / scalacOptions --= ScalacOptions.fatalWarnings.tokens,
     Test / scalacOptions ++= Seq("-release", "11"),
+    Test / scalacOptions --= ScalacOptions.fatalWarnings.tokens,
     publishTo := {
       if (isSnapshot.value)
         Some(Opts.resolver.sonatypeSnapshots)
