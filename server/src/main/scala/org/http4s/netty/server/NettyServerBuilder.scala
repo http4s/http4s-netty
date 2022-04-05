@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 import cats.Applicative
 import cats.effect.{ConcurrentEffect, Resource, Sync}
 import cats.implicits._
-import com.comcast.ip4s.{IpAddress, IpLiteralSyntax, Port, SocketAddress}
+import com.comcast.ip4s._
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import fs2.io.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
