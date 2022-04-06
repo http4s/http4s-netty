@@ -1,6 +1,19 @@
+val Scala212 = "2.12.15"
+val Scala213 = "2.13.8"
+
 inThisBuild(
   Seq(
-    Test / fork := true
+    Test / fork := true,
+    developers := List(
+      // your GitHub handle and name
+      tlGitHubDev("hamnis", "Erlend Hamnaberg")
+    ),
+    licenses := Seq(License.Apache2),
+    tlBaseVersion := "0.4",
+    tlSonatypeUseLegacyHost := false,
+    crossScalaVersions := Seq(Scala213, "3.1.1"),
+    ThisBuild / scalaVersion := Scala213,
+    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
   )
 )
 
@@ -11,9 +24,11 @@ val netty = "4.1.75.Final"
 val munit = "0.7.29"
 
 lazy val core = project
-  .settings(CommonSettings.settings)
+  //.settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-core",
+    Compile / compile / scalacOptions ++= Seq("-release", "8"),
+    Test / scalacOptions ++= Seq("-release", "11"),
     libraryDependencies ++= List(
       "co.fs2" %% "fs2-reactive-streams" % "2.5.10",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.5")
@@ -30,9 +45,11 @@ lazy val core = project
 
 lazy val server = project
   .dependsOn(core, client % Test)
-  .settings(CommonSettings.settings)
+  //.settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-server",
+    Compile / compile / scalacOptions ++= Seq("-release", "8"),
+    Test / scalacOptions ++= Seq("-release", "11"),
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
@@ -47,9 +64,11 @@ lazy val server = project
 
 lazy val client = project
   .dependsOn(core)
-  .settings(CommonSettings.settings)
+  //.settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-client",
+    Compile / compile / scalacOptions ++= Seq("-release", "8"),
+    Test / scalacOptions ++= Seq("-release", "11"),
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "org.scalameta" %% "munit" % munit % Test,
@@ -59,14 +78,4 @@ lazy val client = project
     )
   )
 
-lazy val root =
-  project
-    .in(file("."))
-    .settings(CommonSettings.settings)
-    .settings(
-      name := "http4s-netty",
-      publishArtifact := false,
-      releaseCrossBuild := true,
-      releaseVersionBump := sbtrelease.Version.Bump.Minor
-    )
-    .aggregate(core, client, server)
+lazy val root = tlCrossRootProject.aggregate(core, client, server)
