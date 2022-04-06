@@ -23,12 +23,18 @@ val netty = "4.1.75.Final"
 
 val munit = "0.7.29"
 
-val nativeNettyModules = Seq(
-  ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64"),
-  ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % "0.0.13.Final")
-    .classifier("linux-x86_64"),
-  ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64")
-)
+val io_uring = "0.0.13.Final"
+
+val nativeNettyModules =
+  Seq(
+    "io.netty" % "netty-transport-classes-epoll" % netty,
+    "io.netty" % "netty-transport-classes-kqueue" % netty,
+    "io.netty.incubator" % "netty-incubator-transport-classes-io_uring" % io_uring,
+    ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64") % Runtime,
+    ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64") % Runtime,
+    ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % io_uring)
+      .classifier("linux-x86_64") % Runtime
+  )
 
 lazy val core = project
   .settings(CommonSettings.settings)
