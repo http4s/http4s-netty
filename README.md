@@ -1,22 +1,21 @@
 # netty-http4s
-![Build and Test](https://github.com/http4s/http4s-netty/workflows/Build%20and%20Test/badge.svg) [![Gitter chat](https://badges.gitter.im/http4s/http4s.png)](https://gitter.im/http4s/http4s) ![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.http4s/http4s-netty-core_2.13/badge.svg)
-
+[![Continuous Integration](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml/badge.svg)](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml) ![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.http4s/http4s-netty-core_2.13/badge.svg)
 
 Unfreeze of [@jmcardon](https://github.com/jmcardon) branch from [1831](https://github.com/http4s/http4s/pull/1831) to attempt to get [Netty Reactive Streams](https://github.com/playframework/netty-reactive-streams) working in Http4s.
 
-We are in every alpha quality here, and I would encourage people to try to use it and report bugs.
+This branch targets `http4s-0.22`
 
 You can test it out by adding 
 
-## Server
+### Server
 
 ```scala
-libraryDependencies += "org.http4s" %%  "http4s-netty-server" % "0.2.0"
+libraryDependencies += "org.http4s" %%  "http4s-netty-server" % "versionFromBadge"
 ```
 
-## Client
+### Client
 ```scala
-libraryDependencies += "org.http4s" %%  "http4s-netty-client" % "0.2.0"
+libraryDependencies += "org.http4s" %%  "http4s-netty-client" % "versionFromBadge"
 ```
 
 to your `build.sbt`
