@@ -1,5 +1,5 @@
 # netty-http4s
-[![Continuous Integration](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml/badge.svg)](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml) ![Maven Central](https://maven-badges.herokuapp.com/maven-central/org.http4s/http4s-netty-core_2.13/badge.svg)
+[![Continuous Integration](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml/badge.svg)](https://github.com/http4s/http4s-netty/actions/workflows/ci.yml) ![Maven Central](https://img.shields.io/maven-central/v/org.http4s/http4s-netty-core_2.13?style=flat&versionPrefix=0.5)
 
 Unfreeze of [@jmcardon](https://github.com/jmcardon) branch from [1831](https://github.com/http4s/http4s/pull/1831) to attempt to get [Netty Reactive Streams](https://github.com/playframework/netty-reactive-streams) working in Http4s.
 
