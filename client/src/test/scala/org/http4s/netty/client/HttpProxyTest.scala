@@ -16,63 +16,60 @@
 
 package org.http4s.netty.client
 
-import cats.effect.{Blocker, IO, Resource}
+import cats.syntax.all._
+import cats.effect.{Blocker, ContextShift, IO, Resource, Sync}
 import com.comcast.ip4s._
 import com.github.monkeywie.proxyee.server.HttpProxyServer
-import org.gaul.httpbin.HttpBin
 import org.http4s.Uri
 
-import java.net.{ServerSocket, URI}
+import java.net.ServerSocket
 import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
-  def getLoopBack(implicit blocker: Blocker) = Dns[IO].loopback
-  def uriFrom(bin: HttpBin) = Uri.unsafeFromString(s"http://localhost:${bin.getPort}")
-  def randomPort(blocker: Blocker) = blocker.blockOn(IO {
-    val s = new ServerSocket(0)
-    s.close()
-    Port.fromInt(s.getLocalPort).get
-  })
-  case class Server(baseUri: Uri, proxy: HttpProxy)
 
-  val server = resourceFixture(
+  val httpbin = resourceFixture(HttpBinTest.httpBin, "httpbin")
+
+  val proxy = resourceFixture(
     for {
       blocker <- Blocker[IO]
-      bin <- Resource(IO {
-        val bin = new HttpBin(URI.create("http://localhost:0"))
-        bin.start()
-        bin -> IO(bin.stop())
-      })
-      address <- Resource.eval(
-        getLoopBack(blocker).flatMap(loop => randomPort(blocker).map(SocketAddress(loop, _))))
+      address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO](blocker))
       _ <- Resource {
         val s = new HttpProxyServer()
         IO.fromFuture(
           IO(toScala(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value))))
           .as(s -> blocker.blockOn(IO(s.close())))
       }
-    } yield Server(
-      uriFrom(bin),
-      HttpProxy(
-        Uri.Scheme.http,
-        address.host,
-        Some(address.port),
-        IgnoredHosts.fromString("*.google.com").get,
-        None)),
-    "server"
+    } yield HttpProxy(
+      Uri.Scheme.http,
+      address.host,
+      Some(address.port),
+      IgnoredHosts.fromString("*.google.com").get,
+      None),
+    "proxy"
   )
 
   test("http GET via proxy") {
     NettyClientBuilder[IO]
-      .withProxy(server().proxy)
+      .withProxy(proxy())
       .resource
       .use { client =>
-        println(server())
-        val base = server().baseUri
+        val base = httpbin()
         client.expect[String](base / "get").map { s =>
           assert(s.nonEmpty)
         }
       }
 
+  }
+}
+
+object HttpProxyTest {
+  def randomSocketAddress[F[_]: Sync: ContextShift](blocker: Blocker) = {
+    def getLoopBack(implicit b: Blocker) = Dns[F].loopback
+    def randomPort = blocker.delay {
+      val s = new ServerSocket(0)
+      s.close()
+      Port.fromInt(s.getLocalPort).get
+    }
+    getLoopBack(blocker).flatMap(address => randomPort.map(SocketAddress(address, _)))
   }
 }
