@@ -54,7 +54,7 @@ final case class Socks4(host: Host, port: Port, username: Option[String]) extend
 
 final case class IgnoredHosts private (regex: Regex) {
   def ignored(uri: RequestKey) =
-    regex.matches(uri.authority.host.value)
+    regex.pattern.matcher(uri.authority.host.value).matches()
 }
 
 object IgnoredHosts {
@@ -77,7 +77,7 @@ object IgnoredHosts {
       .filterNot(_.trim.isEmpty)
       .map(disjunct => disjunctToRegex(disjunct.toLowerCase))
       .mkString("|")
-    Option.when(joined.nonEmpty)(IgnoredHosts(joined.r))
+    if (joined.nonEmpty) IgnoredHosts(joined.r).some else none
   }
 
 }
@@ -92,18 +92,20 @@ final case class HttpProxy(
   def defaultPort = if (scheme == Uri.Scheme.https) 443 else 80
 
   // todo: should we enforce we need to use https proxy for https requests?
-  private[client] def toProxyHandler(key: RequestKey) = Option.when(!ignoreHosts.ignored(key)) {
-    credentials.fold(
-      new HttpProxyHandler(
-        new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort))
-      )
-    )(cred =>
-      new HttpProxyHandler(
-        new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort)),
-        cred.username,
-        cred.password
-      ))
-  }
+  private[client] def toProxyHandler(key: RequestKey) = if (!ignoreHosts.ignored(key)) {
+    credentials
+      .fold(
+        new HttpProxyHandler(
+          new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort))
+        )
+      )(cred =>
+        new HttpProxyHandler(
+          new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort)),
+          cred.username,
+          cred.password
+        ))
+      .some
+  } else none
 }
 
 object Proxy {

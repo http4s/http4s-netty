@@ -23,7 +23,7 @@ import org.gaul.httpbin.HttpBin
 import org.http4s.Uri
 
 import java.net.{ServerSocket, URI}
-import scala.jdk.FutureConverters._
+import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
   def getLoopBack(implicit blocker: Blocker) = Dns[IO].loopback
@@ -48,7 +48,7 @@ class HttpProxyTest extends IOSuite {
       _ <- Resource {
         val s = new HttpProxyServer()
         IO.fromFuture(
-          IO(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value).asScala))
+          IO(toScala(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value))))
           .as(s -> blocker.blockOn(IO(s.close())))
       }
     } yield Server(
@@ -70,7 +70,6 @@ class HttpProxyTest extends IOSuite {
         println(server())
         val base = server().baseUri
         client.expect[String](base / "get").map { s =>
-          println(s)
           assert(s.nonEmpty)
         }
       }
