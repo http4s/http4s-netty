@@ -54,7 +54,7 @@ final case class Socks4(host: Host, port: Port, username: Option[String]) extend
 
 final case class IgnoredHosts private (regex: Regex) {
   def ignored(uri: RequestKey) =
-    regex.pattern.matcher(uri.authority.host.value).matches()
+    regex.pattern.matcher(uri.authority.host.renderString).matches()
 }
 
 object IgnoredHosts {
