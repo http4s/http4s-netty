@@ -104,6 +104,16 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
 
     private def buildPipeline(channel: Channel) = {
       val pipeline = channel.pipeline()
+      config.proxy.foreach {
+        case p: HttpProxy =>
+          p.toProxyHandler(key).foreach { handler =>
+            pipeline.addLast("proxy", handler)
+            ()
+          }
+        case s: Socks =>
+          pipeline.addLast("proxy", s.toProxyHandler)
+          ()
+      }
       (key, NettyClientBuilder.SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
         case (RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort)), Some(context)) =>
           logger.trace("Creating SSL engine")
@@ -142,6 +152,7 @@ object Http4sChannelPoolMap {
       maxChunkSize: Int,
       maxConnections: Int,
       idleTimeout: Duration,
+      proxy: Option[Proxy],
       sslConfig: NettyClientBuilder.SSLContextOption)
 
   def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
