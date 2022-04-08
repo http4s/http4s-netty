@@ -74,6 +74,10 @@ lazy val client = project
     name := "http4s-netty-client",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
+      "io.netty" % "netty-handler-proxy" % netty,
+      "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.6.3" % Test,
+      "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
