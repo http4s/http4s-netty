@@ -29,6 +29,7 @@ import org.http4s.client.RequestKey
 
 import java.net.InetSocketAddress
 import java.util.regex.Pattern.quote
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.Properties
 import scala.util.matching.Regex
 
@@ -37,19 +38,48 @@ sealed trait Proxy
 sealed trait Socks extends Proxy {
   private[client] def toProxyHandler: ProxyHandler
 }
-final case class Socks5(host: Host, port: Port, username: Option[String], password: Option[String])
-    extends Socks {
-  override private[client] def toProxyHandler: ProxyHandler = new Socks5ProxyHandler(
-    new InetSocketAddress(host.show, port.value),
-    username.orNull,
-    password.orNull
-  )
+
+final case class Socks5(
+    host: Host,
+    port: Port,
+    username: Option[String],
+    password: Option[String],
+    connectionTimeout: FiniteDuration
+) extends Socks {
+  override private[client] def toProxyHandler: ProxyHandler =
+    Proxy.applySetters(
+      new Socks5ProxyHandler(
+        new InetSocketAddress(host.show, port.value),
+        username.orNull,
+        password.orNull
+      ))(_.setConnectTimeoutMillis(connectionTimeout.toMillis))
 }
-final case class Socks4(host: Host, port: Port, username: Option[String]) extends Socks {
-  override private[client] def toProxyHandler: ProxyHandler = new Socks4ProxyHandler(
-    new InetSocketAddress(host.show, port.value),
-    username.orNull
-  )
+object Socks5 {
+  def apply(host: Host, port: Port, username: Option[String], password: Option[String]): Socks5 =
+    apply(host, port, username, password, Proxy.defaultTimeoutDuration)
+  def apply(host: Host, port: Port): Socks5 =
+    apply(host, port, None, None)
+}
+
+final case class Socks4(
+    host: Host,
+    port: Port,
+    username: Option[String],
+    connectionTimeout: FiniteDuration
+) extends Socks {
+  override private[client] def toProxyHandler: ProxyHandler =
+    Proxy.applySetters(
+      new Socks4ProxyHandler(
+        new InetSocketAddress(host.show, port.value),
+        username.orNull
+      ))(_.setConnectTimeoutMillis(connectionTimeout.toMillis))
+}
+
+object Socks4 {
+  def apply(host: Host, port: Port, username: Option[String]): Socks4 =
+    apply(host, port, username, Proxy.defaultTimeoutDuration)
+  def apply(host: Host, port: Port): Socks4 =
+    apply(host, port, None)
 }
 
 final case class IgnoredHosts private (regex: Regex) {
@@ -87,28 +117,54 @@ final case class HttpProxy(
     host: Host,
     port: Option[Port],
     ignoreHosts: IgnoredHosts,
-    credentials: Option[BasicCredentials]
+    credentials: Option[BasicCredentials],
+    connectionTimeout: FiniteDuration
 ) extends Proxy {
   def defaultPort = if (scheme == Uri.Scheme.https) 443 else 80
 
   // todo: should we enforce we need to use https proxy for https requests?
   private[client] def toProxyHandler(key: RequestKey) = if (!ignoreHosts.ignored(key)) {
-    credentials
-      .fold(
-        new HttpProxyHandler(
-          new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort))
-        )
-      )(cred =>
-        new HttpProxyHandler(
-          new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort)),
-          cred.username,
-          cred.password
-        ))
+    Proxy
+      .applySetters(
+        credentials
+          .fold(
+            new HttpProxyHandler(
+              new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort))
+            )
+          )(cred =>
+            new HttpProxyHandler(
+              new InetSocketAddress(host.show, port.map(_.value).getOrElse(defaultPort)),
+              cred.username,
+              cred.password
+            )))(_.setConnectTimeoutMillis(connectionTimeout.toMillis))
       .some
   } else none
 }
+object HttpProxy {
+  def apply(
+      scheme: Uri.Scheme,
+      host: Host,
+      port: Option[Port],
+      ignoreHosts: IgnoredHosts,
+      credentials: Option[BasicCredentials]
+  ): HttpProxy = apply(scheme, host, port, ignoreHosts, credentials, Proxy.defaultTimeoutDuration)
+  def apply(
+      scheme: Uri.Scheme,
+      host: Host,
+      port: Option[Port],
+      ignoreHosts: IgnoredHosts
+  ): HttpProxy = apply(scheme, host, port, ignoreHosts, None)
+  def apply(scheme: Uri.Scheme, host: Host, port: Option[Port]): HttpProxy =
+    apply(scheme, host, port, IgnoredHosts.default)
+  def apply(scheme: Uri.Scheme, host: Host): HttpProxy =
+    apply(scheme, host, None)
+}
 
 object Proxy {
+  val defaultTimeoutDuration: FiniteDuration = 10.seconds
+
+  private[client] def applySetters[A](make: A)(fns: ((A) => Unit)*): A =
+    fns.foldLeft(make) { (a, fn) => fn(a); a }
 
   /** https://docs.oracle.com/javase/8/docs/api/java/net/doc-files/net-properties.html#Proxies
     * @return
