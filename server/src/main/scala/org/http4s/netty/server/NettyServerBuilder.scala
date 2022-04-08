@@ -17,7 +17,6 @@
 package org.http4s.netty.server
 
 import java.net.InetSocketAddress
-
 import cats.Applicative
 import cats.effect.{ConcurrentEffect, Resource, Sync}
 import cats.implicits._
@@ -34,11 +33,13 @@ import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringServerSocketChannel}
+
 import javax.net.ssl.{SSLContext, SSLEngine}
 import org.http4s.HttpApp
 import org.http4s.netty.{NettyChannelOptions, NettyTransport}
 import org.http4s.server.{Server, ServiceErrorHandler, defaults}
 
+import java.util.concurrent.TimeUnit
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
@@ -103,20 +104,20 @@ final class NettyServerBuilder[F[_]] private (
     transport match {
       case NettyTransport.Nio =>
         logger.info("Using NIO EventLoopGroup")
-        EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        new EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(_))
       case NettyTransport.Native =>
         if (IOUring.isAvailable) {
           logger.info("Using IOUring")
-          EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
+          new EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(_))
         } else if (Epoll.isAvailable) {
           logger.info("Using Epoll")
-          EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+          new EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(_))
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
-          EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+          new EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(_))
         } else {
           logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+          new EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(_))
         }
     }
 
@@ -209,7 +210,7 @@ final class NettyServerBuilder[F[_]] private (
         case Bound(address, loop, channel) =>
           Sync[F].delay {
             channel.close().awaitUninterruptibly()
-            loop.eventLoop.shutdownGracefully()
+            loop.shutdown()
             logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
           }
       }
@@ -236,24 +237,27 @@ final class NettyServerBuilder[F[_]] private (
         engine
       }))
 
-  case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
+  private class EventLoopHolder[A <: ServerChannel](make: Int => MultithreadEventLoopGroup)(implicit
       classTag: ClassTag[A]
   ) {
+    private val boss = make(1)
+    private val worker = make(eventLoopThreads)
     def shutdown(): Unit = {
-      eventLoop.shutdownGracefully()
+      worker.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
+      boss.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
       ()
     }
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
     def configure(bootstrap: ServerBootstrap) = {
       val configured = bootstrap
-        .group(eventLoop)
+        .group(boss, worker)
         .channel(runtimeClass)
         .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
     }
 
   }
-  case class Bound(
+  private case class Bound(
       address: InetSocketAddress,
       holder: EventLoopHolder[_ <: ServerChannel],
       channel: Channel)
