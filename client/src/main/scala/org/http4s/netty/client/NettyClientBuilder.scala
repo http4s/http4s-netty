@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.client
+package org.http4s.netty
+package client
 
 import cats.effect.std.Dispatcher
-import cats.implicits._
 import cats.effect.{Async, Resource}
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
@@ -31,7 +31,6 @@ import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUring
 import javax.net.ssl.SSLContext
 import org.http4s.Response
 import org.http4s.client.{Client, RequestKey}
-import org.http4s.netty.{NettyChannelOptions, NettyModelConversion, NettyTransport}
 
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
@@ -46,7 +45,8 @@ class NettyClientBuilder[F[_]](
     maxConnectionsPerKey: Int,
     transport: NettyTransport,
     sslContext: NettyClientBuilder.SSLContextOption,
-    nettyChannelOptions: NettyChannelOptions
+    nettyChannelOptions: NettyChannelOptions,
+    proxy: Option[Proxy]
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
 
@@ -61,7 +61,8 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey: Int = maxConnectionsPerKey,
       transport: NettyTransport = transport,
       sslContext: NettyClientBuilder.SSLContextOption = sslContext,
-      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
+      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
+      proxy: Option[Proxy] = proxy
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -72,7 +73,8 @@ class NettyClientBuilder[F[_]](
       maxConnectionsPerKey,
       transport,
       sslContext,
-      nettyChannelOptions
+      nettyChannelOptions,
+      proxy
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
@@ -103,6 +105,10 @@ class NettyClientBuilder[F[_]](
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
+  def withProxy(proxy: Proxy): Self = copy(proxy = Some(proxy))
+  def withProxyFromSystemProperties: Self = copy(proxy = Proxy.fromSystemProperties)
+  def withoutProxy: Self = copy(proxy = None)
+
   private def getEventLoop: EventLoopHolder[_ <: SocketChannel] =
     transport match {
       case NettyTransport.Nio =>
@@ -131,7 +137,7 @@ class NettyClientBuilder[F[_]](
         boot.option(opt, value)
       }
       bootstrap
-    })(bs => F.delay(bs.config().group().shutdownGracefully()).void)
+    })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
 
   def resource: Resource[F, Client[F]] =
     Dispatcher[F].flatMap(disp =>
@@ -142,7 +148,9 @@ class NettyClientBuilder[F[_]](
           maxChunkSize,
           maxConnectionsPerKey,
           idleTimeout,
-          sslContext)
+          proxy,
+          sslContext
+        )
         mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
       })
 
@@ -166,8 +174,8 @@ class NettyClientBuilder[F[_]](
       } yield response
     }
 
-  case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(implicit
-      classTag: ClassTag[A]
+  private case class EventLoopHolder[A <: SocketChannel](eventLoop: MultithreadEventLoopGroup)(
+      implicit classTag: ClassTag[A]
   ) {
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
     def configure(bootstrap: Bootstrap) =
@@ -190,7 +198,8 @@ object NettyClientBuilder {
       maxConnectionsPerKey = 10,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
-      nettyChannelOptions = NettyChannelOptions.empty
+      nettyChannelOptions = NettyChannelOptions.empty,
+      proxy = Proxy.fromSystemProperties
     )
 
   private[client] sealed trait SSLContextOption extends Product with Serializable
