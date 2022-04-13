@@ -58,7 +58,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: ConcurrentEffect[F])
       }
 
     request.headers.foreach(appendSomeToNetty(_, req.headers()))
-    req.headers().add("Host", request.uri.authority.map(_.renderString))
+    request.uri.authority.foreach(authority => req.headers().add("Host", authority.renderString))
     req
   }
 
