@@ -66,7 +66,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           uri,
           StreamUnicastPublisher(
             request.body.chunks
-              .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))),
+              .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf))),
             disp)
         )
         transferEncoding(request.headers, false, streamedReq)
@@ -120,7 +120,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       Resource.eval(
         F.raiseError(ParseFailure("Malformed request", "Netty codec parsing unsuccessful")))
     else {
-      val (requestBody, cleanup) = convertHttpBody(request)
+      val (requestEntity, cleanup) = convertHttpBody(request)
       val uri: ParseResult[Uri] = Uri.fromString(request.uri())
       val headerBuf = new ListBuffer[Header.Raw]
       val headersIterator = request.headers().iteratorAsString()
@@ -143,7 +143,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         u,
         v,
         Headers(headerBuf.toList),
-        requestBody,
+        requestEntity,
         attributeMap
       )) match {
         case Right(http4sRequest) => Resource(F.pure((http4sRequest, cleanup(channel))))
@@ -167,22 +167,24 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       case _ => Vault.empty
     }
 
+  private val channelToUnitF = (_: Channel) => F.unit
+  private val empty = (Entity.empty[F], channelToUnitF)
+
   /** Create the source for the http message body
     */
   private[this] def convertHttpBody(request: HttpMessage): (Entity[F], Channel => F[Unit]) =
     request match {
       case full: FullHttpMessage =>
         val content = full.content()
-        val buffers = content.nioBuffers()
-        if (buffers.isEmpty)
-          (Entity.empty, _ => F.unit)
-        else {
-          val content = full.content()
-          val arr = bytebufToArray(content)
-          (
-            Entity.Strict(Chunk.array(arr)),
-            _ => F.unit
-          ) // No cleanup action needed
+        if (content.nioBufferCount() > 0) {
+          val buffers = content.nioBuffers()
+          val chunk = buffers.map(Chunk.byteBuffer).reduce(_ ++ _)
+          (Entity.Strict(chunk), channelToUnitF)
+        } else if (content.hasArray) {
+          // No cleanup action needed
+          (Entity.Strict(Chunk.array(content.array())), channelToUnitF)
+        } else {
+          empty
         }
       case streamed: StreamedHttpMessage =>
         val length =
@@ -195,11 +197,11 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             .toStreamBuffered(1)
             .flatMap(c => Stream.chunk(Chunk.array(bytebufToArray(c.content()))))
             .onFinalize(F.delay {
-              isDrained.compareAndSet(false, true);
+              isDrained.compareAndSet(false, true)
               ()
             })
         (Entity.Default(stream, length), drainBody(_, stream, isDrained))
-      case _ => (Entity.empty, _ => F.unit)
+      case _: HttpRequest => empty
     }
 
   /** Return an action that will drain the channel stream in the case that it wasn't drained.
@@ -317,15 +319,32 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpVersion: HttpVersion,
       minorIs0: Boolean
   ): DefaultHttpResponse = {
-    val response =
-      new DefaultStreamedHttpResponse(
-        httpVersion,
-        HttpResponseStatus.valueOf(httpResponse.status.code),
-        StreamUnicastPublisher(
-          httpResponse.body.chunks
-            .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))),
-          disp)
-      )
+    val response = httpResponse.entity match {
+      case Entity.Default(body, _) =>
+        new DefaultStreamedHttpResponse(
+          httpVersion,
+          HttpResponseStatus.valueOf(httpResponse.status.code),
+          false,
+          StreamUnicastPublisher(
+            body.chunks
+              .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf))),
+            disp)
+        )
+      case Entity.Strict(chunk) =>
+        new DefaultFullHttpResponse(
+          httpVersion,
+          HttpResponseStatus.valueOf(httpResponse.status.code),
+          chunkToNetty(chunk),
+          false
+        )
+      case Entity.Empty =>
+        new DefaultFullHttpResponse(
+          HttpVersion.HTTP_1_1,
+          HttpResponseStatus.valueOf(httpResponse.status.code),
+          Unpooled.EMPTY_BUFFER,
+          false
+        )
+    }
     transferEncoding(httpResponse.headers, minorIs0, response)
     response
   }
@@ -333,7 +352,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
   private def transferEncoding(
       headers: Headers,
       minorIs0: Boolean,
-      response: StreamedHttpMessage): Unit = {
+      response: HttpMessage): Unit = {
     headers.foreach(appendSomeToNetty(_, response.headers()))
     val transferEncoding = headers.get[`Transfer-Encoding`]
     headers.get[`Content-Length`] match {
@@ -372,18 +391,37 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     ()
   }
 
-  /** Convert a Chunk to a Netty ByteBuf. */
-  protected def chunkToNetty(bytes: Chunk[Byte]): HttpContent =
+  /** Convert a Chunk to a Netty HttpContent. */
+  protected def chunkToNettyHttpContent(bytes: Chunk[Byte]): HttpContent =
     if (bytes.isEmpty)
-      NettyModelConversion.CachedEmpty
+      NettyModelConversion.CachedEmptyHttpContent
     else
       bytes match {
         case Chunk.ArraySlice(values, offset, length) =>
           new DefaultHttpContent(Unpooled.wrappedBuffer(values, offset, length))
         case c: Chunk.ByteBuffer =>
+          // TODO: Should we use c.offset and c.size here?
           new DefaultHttpContent(Unpooled.wrappedBuffer(c.buf))
         case _ =>
           new DefaultHttpContent(Unpooled.wrappedBuffer(bytes.toArray))
+      }
+
+  /** Convert a Chunk to a Netty ByteBuf. */
+  protected def chunkToNetty(bytes: Chunk[Byte]): ByteBuf =
+    if (bytes.isEmpty)
+      Unpooled.EMPTY_BUFFER
+    else
+      bytes match {
+        case c: Chunk.ByteBuffer =>
+          // TODO: Should we use c.offset and c.size here?
+          Unpooled.wrappedBuffer(c.buf)
+        case Chunk.ArraySlice(values, offset, length) =>
+          Unpooled.wrappedBuffer(values, offset, length)
+        case c: Chunk.Queue[Byte] =>
+          val byteBufs = c.chunks.map(chunkToNetty).toArray
+          Unpooled.wrappedBuffer(byteBufs: _*)
+        case _ =>
+          Unpooled.wrappedBuffer(bytes.toArray)
       }
 
   protected def bytebufToArray(buf: ByteBuf): Array[Byte] = {
@@ -395,6 +433,6 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
 }
 
 object NettyModelConversion {
-  private[NettyModelConversion] val CachedEmpty: DefaultHttpContent =
+  private[NettyModelConversion] val CachedEmptyHttpContent: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
 }
