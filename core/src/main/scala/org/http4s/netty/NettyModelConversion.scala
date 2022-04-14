@@ -74,7 +74,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       }
 
     request.headers.foreach(appendSomeToNetty(_, req.headers()))
-    req.headers().add("Host", request.uri.authority.map(_.renderString))
+    request.uri.authority.foreach(authority => req.headers().add("Host", authority.renderString))
     req
   }
 
@@ -130,9 +130,36 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         headerBuf += Header.Raw(CIString(mapEntry.getKey), mapEntry.getValue)
       }
 
-      val method: ParseResult[Method] =
-        Method.fromString(request.method().name())
-      val version: ParseResult[HV] = HV.fromString(request.protocolVersion().text())
+      val method: ParseResult[Method] = request.method() match {
+        case HttpMethod.GET => Right(Method.GET)
+        case HttpMethod.POST => Right(Method.POST)
+        case HttpMethod.OPTIONS => Right(Method.OPTIONS)
+        case HttpMethod.HEAD => Right(Method.HEAD)
+        case HttpMethod.PUT => Right(Method.PUT)
+        case HttpMethod.PATCH => Right(Method.PATCH)
+        case HttpMethod.DELETE => Right(Method.DELETE)
+        case HttpMethod.TRACE => Right(Method.TRACE)
+        case HttpMethod.CONNECT => Right(Method.CONNECT)
+        case _ => Method.fromString(request.method().name())
+      }
+      val requestProtocolVersion = request.protocolVersion()
+      val majorVersion = requestProtocolVersion.majorVersion()
+      val minorVersion = requestProtocolVersion.minorVersion()
+      val version: ParseResult[HV] = majorVersion match {
+        case 1 =>
+          minorVersion match {
+            case 1 => Right(HV.`HTTP/1.1`)
+            case 0 => Right(HV.`HTTP/1.0`)
+          }
+        case 2 =>
+          Right(HV.`HTTP/2`)
+        case 3 =>
+          Right(HV.`HTTP/3`)
+        case 0 =>
+          Right(HV.`HTTP/0.9`)
+        case _ =>
+          HV.fromString(requestProtocolVersion.text())
+      }
 
       (for {
         v <- version
