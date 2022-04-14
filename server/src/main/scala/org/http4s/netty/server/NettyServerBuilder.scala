@@ -104,20 +104,36 @@ final class NettyServerBuilder[F[_]] private (
     transport match {
       case NettyTransport.Nio =>
         logger.info("Using NIO EventLoopGroup")
-        new EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(_))
+        EventLoopHolder[NioServerSocketChannel](
+          new NioEventLoopGroup(1),
+          new NioEventLoopGroup(eventLoopThreads)
+        )
       case NettyTransport.Native =>
         if (IOUring.isAvailable) {
           logger.info("Using IOUring")
-          new EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(_))
-        } else if (Epoll.isAvailable) {
+          EventLoopHolder[IOUringServerSocketChannel](
+            new IOUringEventLoopGroup(1),
+            new IOUringEventLoopGroup(eventLoopThreads))
+        } else
+        if (Epoll.isAvailable) {
           logger.info("Using Epoll")
-          new EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(_))
+          val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
+          acceptorEventLoopGroup.setIoRatio(100)
+          val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
+          workerEventLoopGroup.setIoRatio(80)
+          EventLoopHolder[EpollServerSocketChannel](
+            acceptorEventLoopGroup,
+            workerEventLoopGroup)
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
-          new EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(_))
+          EventLoopHolder[KQueueServerSocketChannel](
+            new KQueueEventLoopGroup(1),
+            new KQueueEventLoopGroup(eventLoopThreads))
         } else {
           logger.info("Falling back to NIO EventLoopGroup")
-          new EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(_))
+          EventLoopHolder[NioServerSocketChannel](
+            new NioEventLoopGroup(1),
+            new NioEventLoopGroup(eventLoopThreads))
         }
     }
 
@@ -237,20 +253,18 @@ final class NettyServerBuilder[F[_]] private (
         engine
       }))
 
-  private class EventLoopHolder[A <: ServerChannel](make: Int => MultithreadEventLoopGroup)(implicit
-      classTag: ClassTag[A]
-  ) {
-    private val boss = make(1)
-    private val worker = make(eventLoopThreads)
+  case class EventLoopHolder[A <: ServerChannel](
+      parent: MultithreadEventLoopGroup,
+      eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
     def shutdown(): Unit = {
-      worker.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
-      boss.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
+      eventLoop.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
+      parent.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
       ()
     }
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
     def configure(bootstrap: ServerBootstrap) = {
       val configured = bootstrap
-        .group(boss, worker)
+        .group(parent, eventLoop)
         .channel(runtimeClass)
         .option(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
         .childOption(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
