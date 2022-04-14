@@ -252,6 +252,8 @@ final class NettyServerBuilder[F[_]] private (
       val configured = bootstrap
         .group(boss, worker)
         .channel(runtimeClass)
+        .option(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
+        .childOption(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
         .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
     }
