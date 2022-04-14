@@ -114,16 +114,13 @@ final class NettyServerBuilder[F[_]] private (
           EventLoopHolder[IOUringServerSocketChannel](
             new IOUringEventLoopGroup(1),
             new IOUringEventLoopGroup(eventLoopThreads))
-        } else
-        if (Epoll.isAvailable) {
+        } else if (Epoll.isAvailable) {
           logger.info("Using Epoll")
           val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
           acceptorEventLoopGroup.setIoRatio(100)
           val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
           workerEventLoopGroup.setIoRatio(80)
-          EventLoopHolder[EpollServerSocketChannel](
-            acceptorEventLoopGroup,
-            workerEventLoopGroup)
+          EventLoopHolder[EpollServerSocketChannel](acceptorEventLoopGroup, workerEventLoopGroup)
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
           EventLoopHolder[KQueueServerSocketChannel](
