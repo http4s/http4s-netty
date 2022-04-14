@@ -349,10 +349,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     response
   }
 
-  private def transferEncoding(
-      headers: Headers,
-      minorIs0: Boolean,
-      response: HttpMessage): Unit = {
+  private def transferEncoding(headers: Headers, minorIs0: Boolean, response: HttpMessage): Unit = {
     headers.foreach(appendSomeToNetty(_, response.headers()))
     val transferEncoding = headers.get[`Transfer-Encoding`]
     headers.get[`Content-Length`] match {
