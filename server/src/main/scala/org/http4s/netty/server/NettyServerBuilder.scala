@@ -102,20 +102,36 @@ final class NettyServerBuilder[F[_]] private (
     transport match {
       case NettyTransport.Nio =>
         logger.info("Using NIO EventLoopGroup")
-        EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[NioServerSocketChannel](
+          new NioEventLoopGroup(1),
+          new NioEventLoopGroup(eventLoopThreads)
+        )
       case NettyTransport.Native =>
         if (IOUring.isAvailable) {
           logger.info("Using IOUring")
-          EventLoopHolder[IOUringServerSocketChannel](new IOUringEventLoopGroup(eventLoopThreads))
-        } else if (Epoll.isAvailable) {
+          EventLoopHolder[IOUringServerSocketChannel](
+            new IOUringEventLoopGroup(1),
+            new IOUringEventLoopGroup(eventLoopThreads))
+        } else
+        if (Epoll.isAvailable) {
           logger.info("Using Epoll")
-          EventLoopHolder[EpollServerSocketChannel](new EpollEventLoopGroup(eventLoopThreads))
+          val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
+          acceptorEventLoopGroup.setIoRatio(100)
+          val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
+          workerEventLoopGroup.setIoRatio(80)
+          EventLoopHolder[EpollServerSocketChannel](
+            acceptorEventLoopGroup,
+            workerEventLoopGroup)
         } else if (KQueue.isAvailable) {
           logger.info("Using KQueue")
-          EventLoopHolder[KQueueServerSocketChannel](new KQueueEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[KQueueServerSocketChannel](
+            new KQueueEventLoopGroup(1),
+            new KQueueEventLoopGroup(eventLoopThreads))
         } else {
           logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioServerSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+          EventLoopHolder[NioServerSocketChannel](
+            new NioEventLoopGroup(1),
+            new NioEventLoopGroup(eventLoopThreads))
         }
     }
 
@@ -250,11 +266,12 @@ final class NettyServerBuilder[F[_]] private (
         engine
       }))
 
-  case class EventLoopHolder[A <: ServerChannel](eventLoop: MultithreadEventLoopGroup)(implicit
-      classTag: ClassTag[A]
-  ) {
+  case class EventLoopHolder[A <: ServerChannel](
+      parent: MultithreadEventLoopGroup,
+      eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
     def shutdown(): Unit = {
       eventLoop.shutdownGracefully()
+      parent.shutdownGracefully()
       ()
     }
 
@@ -262,7 +279,7 @@ final class NettyServerBuilder[F[_]] private (
 
     def configure(bootstrap: ServerBootstrap) = {
       val configured = bootstrap
-        .group(eventLoop)
+        .group(parent, eventLoop)
         .channel(runtimeClass)
         .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
