@@ -6,3 +6,4 @@ release.sbt
 .bloop
 out
 metals.sbt
+.bsp/
