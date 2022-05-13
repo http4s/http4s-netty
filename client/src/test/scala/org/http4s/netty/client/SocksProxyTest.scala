@@ -26,7 +26,7 @@ class SocksProxyTest extends IOSuite {
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
       _ <- Resource {
-        val s = new SocksServer()
+        val s = new SocksServer
         IO.blocking(s.start(address.port.value))
           .map(_ => s -> IO.blocking(s.stop()))
       }

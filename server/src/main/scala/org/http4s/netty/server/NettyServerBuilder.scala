@@ -171,7 +171,7 @@ final class NettyServerBuilder[F[_]] private (
     copy(sslConfig = new NettyServerBuilder.ContextWithParameters[F](sslContext, tlsParameters))
 
   def withoutSsl: Self =
-    copy(sslConfig = new NettyServerBuilder.NoSsl[F]())
+    copy(sslConfig = new NettyServerBuilder.NoSsl[F])
 
   /** Socket selector threads.
     *
@@ -194,7 +194,7 @@ final class NettyServerBuilder[F[_]] private (
       else unresolved
     }
     val loop = getEventLoop
-    val server = new ServerBootstrap()
+    val server = new ServerBootstrap
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
@@ -206,13 +206,13 @@ final class NettyServerBuilder[F[_]] private (
           pipeline.addLast(
             "http-decoder",
             new HttpRequestDecoder(maxInitialLineLength, maxHeaderSize, maxChunkSize))
-          pipeline.addLast("http-encoder", new HttpResponseEncoder())
+          pipeline.addLast("http-encoder", new HttpResponseEncoder)
           if (idleTimeout.isFinite && idleTimeout.length > 0)
             pipeline.addLast(
               "idle-handler",
               new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
           pipeline
-            .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
+            .addLast("serverStreamsHandler", new HttpStreamsServerHandler)
             .addLast(
               "http4s",
               Http4sNettyHandler
@@ -330,7 +330,7 @@ object NettyServerBuilder {
     def isSecure = true
   }
 
-  private class NoSsl[F[_]]()(implicit F: Applicative[F]) extends SslConfig[F] {
+  private class NoSsl[F[_]](implicit F: Applicative[F]) extends SslConfig[F] {
     def makeContext = F.pure(None)
 
     def configureEngine(engine: SSLEngine) = {

@@ -131,7 +131,7 @@ class NettyClientBuilder[F[_]](
 
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
-      val bootstrap = new Bootstrap()
+      val bootstrap = new Bootstrap
       getEventLoop.configure(bootstrap)
       nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) =>
         boot.option(opt, value)

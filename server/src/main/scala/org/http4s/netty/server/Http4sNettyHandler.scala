@@ -67,7 +67,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
   // We keep track of whether there are requests in flight.  If there are, we don't respond to read
   // complete, since back pressure is the responsibility of the streams.
-  private[this] val requestsInFlight = new AtomicLong()
+  private[this] val requestsInFlight = new AtomicLong
 
   // This is used essentially as a queue, each incoming request attaches callbacks to this
   // and replaces it to ensure that responses are written out in the same order that they came

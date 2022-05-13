@@ -33,7 +33,7 @@ class HttpProxyTest extends IOSuite {
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
       _ <- Resource {
-        val s = new HttpProxyServer()
+        val s = new HttpProxyServer
         IO.fromFuture(
           IO(toScala(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value))))
           .as(s -> IO.blocking(s.close()))

@@ -47,7 +47,7 @@ private[server] object Trampoline extends ExecutionContextExecutor {
       else if (r1 == null) r1 = runnable
       else if (r2 == null) r2 = runnable
       else {
-        if (rest == null) rest = new ArrayDeque[Runnable]()
+        if (rest == null) rest = new ArrayDeque[Runnable]
         rest.add(runnable)
       }
 

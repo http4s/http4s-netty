@@ -108,7 +108,7 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
   }
 }
 
-class JDKSslServerTest extends SslServerTest() {
+class JDKSslServerTest extends SslServerTest {
   val client = resourceFixture(
     JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
     "client")
@@ -130,7 +130,7 @@ class JDKMTLSServerTest extends SslServerTest("mTLS") {
   )
 }
 
-class NettyClientSslServerTest extends SslServerTest() {
+class NettyClientSslServerTest extends SslServerTest {
   val client = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(sslContext)
