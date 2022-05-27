@@ -163,7 +163,7 @@ final class NettyServerBuilder[F[_]] private (
     copy(nettyChannelOptions = opts)
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
-  @deprecated(since = "0.5.0-M2", message = "Use withSslContext without tlsParameters")
+  @deprecated(message = "Use withSslContext without tlsParameters", since = "0.5.0-M2")
   def withSslContext(
       sslContext: SSLContext,
       tlsParameters: TLSParameters = TLSParameters.Default): Self =
