@@ -162,11 +162,18 @@ final class NettyServerBuilder[F[_]] private (
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
 
-  /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. */
+  /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. We only
+    * look at the needClientAuth and wantClientAuth boolean params. For more control use overload.
+    */
   @deprecated(message = "Use withSslContext without tlsParameters", since = "0.5.0-M2")
   def withSslContext(
       sslContext: SSLContext,
-      tlsParameters: TLSParameters = TLSParameters.Default): Self =
+      tlsParameters: TLSParameters = TLSParameters.Default): Self = {
+    val clientAuth =
+      if (tlsParameters.needClientAuth) ClientAuth.REQUIRE
+      else if (tlsParameters.wantClientAuth) ClientAuth.OPTIONAL
+      else ClientAuth.NONE
+
     withSslContext(
       new JdkSslContext(
         sslContext,
@@ -180,9 +187,10 @@ final class NettyServerBuilder[F[_]] private (
           ApplicationProtocolNames.HTTP_2,
           ApplicationProtocolNames.HTTP_1_1
         ),
-        ClientAuth.NONE,
+        clientAuth,
         null,
         false))
+  }
 
   def withSslContext(sslContext: SslContext): Self =
     copy(sslConfig = new NettyServerBuilder.ContextWithParameters(sslContext))
