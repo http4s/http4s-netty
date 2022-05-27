@@ -46,7 +46,6 @@ lazy val core = project
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
-      "io.netty" % "netty-codec-http2" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion
     )
   )
@@ -57,6 +56,7 @@ lazy val server = project
   .settings(
     name := "http4s-netty-server",
     libraryDependencies ++= List(
+      "io.netty" % "netty-codec-http2" % netty,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
