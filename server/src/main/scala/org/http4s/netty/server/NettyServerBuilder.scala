@@ -212,7 +212,6 @@ final class NettyServerBuilder[F[_]] private (
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = {
-
           val negotiationHandler = new NegotiationHandler(
             NegotiationHandler.Config(
               maxInitialLineLength,
@@ -231,7 +230,6 @@ final class NettyServerBuilder[F[_]] private (
             case Some(handler) =>
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
-              //negotiationHandler.addToPipeline(pipeline, true)
             case None =>
               negotiationHandler.addToPipeline(pipeline, true)
           }
@@ -247,7 +245,6 @@ final class NettyServerBuilder[F[_]] private (
   def resource: Resource[F, Server] =
     for {
       dispatcher <- Dispatcher[F]
-      // maybeEngine <- Resource.eval(createSSLEngine)
       key <- Resource.eval(Key.newKey[F, WebSocketContext[F]])
       bound <- Resource.make(Sync[F].delay(bind(dispatcher, key))) {
         case Bound(address, loop, channel) =>
@@ -286,7 +283,8 @@ final class NettyServerBuilder[F[_]] private (
         .channel(runtimeClass)
         .option(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
         .childOption(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
-        //.childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
+      // .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
+      // TODO: Why did we even need this ^ ?
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
     }
 
@@ -319,19 +317,16 @@ object NettyServerBuilder {
 
   private sealed trait SslConfig {
     def toHandler(alloc: ByteBufAllocator): Option[SslHandler]
-    // def configureEngine(sslEngine: SSLEngine): Unit
     def isSecure: Boolean
   }
 
   private class ContextWithParameters(sslContext: SslContext) extends SslConfig {
     def toHandler(alloc: ByteBufAllocator) = sslContext.newHandler(alloc).some
-    // def configureEngine(engine: SSLEngine) = engine.setSSLParameters(tlsParameters.toSSLParameters)
     def isSecure = true
   }
 
   private object NoSsl extends SslConfig {
     def toHandler(alloc: ByteBufAllocator) = none[SslHandler]
-
     def isSecure = false
   }
 }

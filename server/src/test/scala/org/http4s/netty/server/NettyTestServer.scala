@@ -52,7 +52,8 @@ object NettyTestServer extends IOApp {
               Protocol.ALPN,
               SelectorFailureBehavior.NO_ADVERTISE,
               SelectedListenerFailureBehavior.ACCEPT,
-              ApplicationProtocolNames.HTTP_2))
+              ApplicationProtocolNames.HTTP_2,
+              ApplicationProtocolNames.HTTP_1_1))
           .build())
       .resource
       .use(_ => IO.never)
