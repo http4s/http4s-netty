@@ -17,6 +17,18 @@
 package org.http4s.netty.server
 
 import cats.effect.{ExitCode, IO, IOApp}
+import io.netty.handler.codec.http2.Http2SecurityUtil
+import io.netty.handler.ssl.ApplicationProtocolConfig.{
+  Protocol,
+  SelectedListenerFailureBehavior,
+  SelectorFailureBehavior
+}
+import io.netty.handler.ssl.{
+  ApplicationProtocolConfig,
+  ApplicationProtocolNames,
+  SslProvider,
+  SupportedCipherSuiteFilter
+}
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io._
 import org.http4s.implicits._
@@ -29,6 +41,20 @@ object NettyTestServer extends IOApp {
       }
       .orNotFound
 
-    NettyServerBuilder[IO].withHttpApp(app).resource.use(_ => IO.never)
+    NettyServerBuilder[IO]
+      .withHttpApp(app)
+      .withSslContext(
+        SslServerTest.sslContextForServer
+          .sslProvider(SslProvider.JDK)
+          .ciphers(Http2SecurityUtil.CIPHERS, SupportedCipherSuiteFilter.INSTANCE)
+          .applicationProtocolConfig(
+            new ApplicationProtocolConfig(
+              Protocol.ALPN,
+              SelectorFailureBehavior.NO_ADVERTISE,
+              SelectedListenerFailureBehavior.ACCEPT,
+              ApplicationProtocolNames.HTTP_2))
+          .build())
+      .resource
+      .use(_ => IO.never)
   }
 }
