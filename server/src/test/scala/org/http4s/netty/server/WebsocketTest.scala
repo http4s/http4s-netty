@@ -19,9 +19,9 @@ package org.http4s.netty.server
 import java.net.http.HttpClient
 import cats.effect.{IO, Resource}
 import cats.effect.std.Queue
+import io.netty.handler.ssl.SslContext
 import org.http4s.client.websocket._
 
-import javax.net.ssl.SSLContext
 import org.http4s.jdkhttpclient.JdkWSClient
 import org.http4s.{HttpRoutes, Uri}
 import org.http4s.implicits._
@@ -50,7 +50,7 @@ class WebsocketTest extends IOSuite {
     "server"
   )
 
-  val sslContext: SSLContext = SslServerTest.sslContext
+  val sslContext: SslContext = SslServerTest.sslContextForServer.build()
   val tlsServer = resourceFixture(
     for {
       queue <- Resource.eval(Queue.bounded[IO, WebSocketFrame](2))
@@ -78,6 +78,9 @@ class WebsocketTest extends IOSuite {
   test("Websocket TLS tests") {
     val s = tlsServer()
     val wsUrl = s.baseUri.copy(Some(Uri.Scheme.unsafeFromString("wss"))) / "ws"
-    runTest(HttpClient.newBuilder().sslContext(sslContext).build(), wsUrl, WSFrame.Text("Hello"))
+    runTest(
+      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build(),
+      wsUrl,
+      WSFrame.Text("Hello"))
   }
 }
