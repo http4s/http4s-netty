@@ -20,9 +20,9 @@ import java.io.ByteArrayInputStream
 import java.security.KeyStore
 import java.security.cert.{CertificateFactory, X509Certificate}
 import cats.effect.{Async, IO}
-import fs2.io.net.tls.TLSParameters
 import io.circe.syntax.KeyOps
 import io.circe.{Decoder, Encoder, Json}
+import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder}
 
 import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
 import org.http4s.client.Client
@@ -39,7 +39,7 @@ import java.net.http.HttpClient
 import scala.util.Try
 
 abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
-  lazy val sslContext: SSLContext = SslServerTest.sslContext
+  // lazy val sslContext: SslContext = SslServerTest.sslContextForServer.build()
 
   implicit val x509Encoder: Encoder[X509Certificate] = Encoder.encodeString.contramap { x =>
     ByteVector(x.getEncoded).toBase64
@@ -109,22 +109,28 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
 
 class JDKSslServerTest extends SslServerTest() {
   val client = resourceFixture(
-    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
+    JdkHttpClient[IO](
+      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
     "client")
 
   val server = resourceFixture(
-    SslServerTest.sslServer(_ => routes, sslContext).resource,
+    SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
 
 class JDKMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
-    JdkHttpClient[IO](HttpClient.newBuilder().sslContext(sslContext).build()),
+    JdkHttpClient[IO](
+      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
     "client")
 
   val server = resourceFixture(
-    SslServerTest.sslServer(_ => routes, sslContext, TLSParameters(needClientAuth = true)).resource,
+    SslServerTest
+      .sslServer(
+        _ => routes,
+        SslServerTest.sslContextForServer.clientAuth(ClientAuth.REQUIRE).build())
+      .resource,
     "mtlsServer"
   )
 }
@@ -132,13 +138,13 @@ class JDKMTLSServerTest extends SslServerTest("mTLS") {
 class NettyClientSslServerTest extends SslServerTest() {
   val client = resourceFixture(
     NettyClientBuilder[IO]
-      .withSSLContext(sslContext)
+      .withSSLContext(SslServerTest.sslContextForClient)
       .withEventLoopThreads(2)
       .resource,
     "client"
   )
   val server = resourceFixture(
-    SslServerTest.sslServer(_ => routes, sslContext).resource,
+    SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
@@ -146,18 +152,22 @@ class NettyClientSslServerTest extends SslServerTest() {
 class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
   val client = resourceFixture(
     NettyClientBuilder[IO]
-      .withSSLContext(sslContext)
+      .withSSLContext(SslServerTest.sslContextForClient)
       .resource,
     "client"
   )
   val server = resourceFixture(
-    SslServerTest.sslServer(_ => routes, sslContext, TLSParameters(needClientAuth = true)).resource,
+    SslServerTest
+      .sslServer(
+        _ => routes,
+        SslServerTest.sslContextForServer.clientAuth(ClientAuth.REQUIRE).build())
+      .resource,
     "mtlsServer"
   )
 }
 
 object SslServerTest {
-  def sslContext: SSLContext = {
+  def sslContextForServer: SslContextBuilder = {
     val ks = KeyStore.getInstance("PKCS12")
     ks.load(getClass.getResourceAsStream("/teststore.p12"), "password".toCharArray)
 
@@ -170,16 +180,28 @@ object SslServerTest {
     val tmf = TrustManagerFactory.getInstance("SunX509")
     tmf.init(js)
 
-    val sc = SSLContext.getInstance("TLSv1.2")
-    sc.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
-
-    sc
+    SslContextBuilder.forServer(kmf).trustManager(tmf)
   }
 
-  def sslServer(
-      routes: WebSocketBuilder2[IO] => HttpRoutes[IO],
-      ctx: SSLContext,
-      parameters: TLSParameters = TLSParameters.Default)(implicit
+  def sslContextForClient: SSLContext = {
+    val ks = KeyStore.getInstance("PKCS12")
+    ks.load(getClass.getResourceAsStream("/teststore.p12"), "password".toCharArray)
+
+    val kmf = KeyManagerFactory.getInstance("SunX509")
+    kmf.init(ks, "password".toCharArray)
+
+    val js = KeyStore.getInstance("PKCS12")
+    js.load(getClass.getResourceAsStream("/teststore.p12"), "password".toCharArray)
+
+    val tmf = TrustManagerFactory.getInstance("SunX509")
+    tmf.init(js)
+
+    val ctx = SSLContext.getInstance("TLS")
+    ctx.init(kmf.getKeyManagers, tmf.getTrustManagers, null)
+    ctx
+  }
+
+  def sslServer(routes: WebSocketBuilder2[IO] => HttpRoutes[IO], ctx: SslContext)(implicit
       eff: Async[IO]
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
@@ -187,5 +209,5 @@ object SslServerTest {
       .withEventLoopThreads(10)
       .withoutBanner
       .bindAny()
-      .withSslContext(ctx, parameters)
+      .withSslContext(ctx)
 }
