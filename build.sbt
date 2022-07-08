@@ -1,4 +1,4 @@
-val Scala212 = "2.12.15"
+val Scala212 = "2.12.16"
 val Scala213 = "2.13.8"
 
 inThisBuild(
@@ -41,7 +41,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.2.9",
+      "co.fs2" %% "fs2-reactive-streams" % "3.2.8",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.6")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
