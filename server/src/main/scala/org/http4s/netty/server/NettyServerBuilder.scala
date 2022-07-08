@@ -149,7 +149,8 @@ final class NettyServerBuilder[F[_]] private (
     }
 
   def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = _ => httpApp)
-  def withHttpWebSocketApp(httpApp: WebSocketBuilder2[F] => HttpApp[F]) = copy(httpApp = httpApp)
+  def withHttpWebSocketApp(httpApp: WebSocketBuilder2[F] => HttpApp[F]): Self =
+    copy(httpApp = httpApp)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
   def bindHttp(port: Int = defaults.HttpPort, host: String = defaults.IPv4Host): Self =
