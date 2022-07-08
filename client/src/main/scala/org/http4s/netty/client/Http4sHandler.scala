@@ -16,16 +16,18 @@
 
 package org.http4s.netty.client
 
+import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.std.Dispatcher
-
-import java.io.IOException
 import cats.implicits._
-import cats.effect.{Async, Resource}
-import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.Response
 import org.http4s.netty.NettyModelConversion
+
+import java.io.IOException
 
 private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
     implicit F: Async[F])

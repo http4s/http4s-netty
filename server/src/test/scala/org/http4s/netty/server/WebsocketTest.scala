@@ -16,17 +16,22 @@
 
 package org.http4s.netty.server
 
-import java.net.http.HttpClient
-import cats.effect.{IO, Resource}
+import cats.effect.IO
+import cats.effect.Resource
 import cats.effect.std.Queue
 import io.netty.handler.ssl.SslContext
-
-import org.http4s.jdkhttpclient.{JdkWSClient, WSFrame, WSRequest}
-import org.http4s.{HttpRoutes, Uri}
-import org.http4s.implicits._
+import org.http4s.HttpRoutes
+import org.http4s.Uri
 import org.http4s.dsl.io._
+import org.http4s.implicits._
+import org.http4s.jdkhttpclient.JdkWSClient
+import org.http4s.jdkhttpclient.WSFrame
+import org.http4s.jdkhttpclient.WSRequest
+import org.http4s.server.Server
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
+
+import java.net.http.HttpClient
 
 class WebsocketTest extends IOSuite {
   def echoRoutes(ws: WebSocketBuilder2[IO], queue: Queue[IO, WebSocketFrame]): HttpRoutes[IO] =
@@ -37,7 +42,7 @@ class WebsocketTest extends IOSuite {
           queue.offer(frame).flatMap(_ => queue.offer(WebSocketFrame.Close(1000).toOption.get))))
     }
 
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     for {
       queue <- Resource.eval(Queue.bounded[IO, WebSocketFrame](2))
       netty <- NettyServerBuilder[IO]
@@ -50,7 +55,7 @@ class WebsocketTest extends IOSuite {
   )
 
   val sslContext: SslContext = SslServerTest.sslContextForServer.build()
-  val tlsServer = resourceFixture(
+  val tlsServer: Fixture[Server] = resourceFixture(
     for {
       queue <- Resource.eval(Queue.bounded[IO, WebSocketFrame](2))
       netty <- SslServerTest.sslServer(echoRoutes(_, queue), sslContext).resource

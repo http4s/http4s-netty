@@ -17,21 +17,29 @@
 package org.http4s.netty
 package client
 
+import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import cats.effect.{Async, Resource}
 import io.netty.bootstrap.Bootstrap
-import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollSocketChannel}
-import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueSocketChannel}
+import io.netty.channel.ChannelOption
+import io.netty.channel.MultithreadEventLoopGroup
+import io.netty.channel.epoll.Epoll
+import io.netty.channel.epoll.EpollEventLoopGroup
+import io.netty.channel.epoll.EpollSocketChannel
+import io.netty.channel.kqueue.KQueue
+import io.netty.channel.kqueue.KQueueEventLoopGroup
+import io.netty.channel.kqueue.KQueueSocketChannel
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.channel.{ChannelOption, MultithreadEventLoopGroup}
-import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringSocketChannel}
+import io.netty.incubator.channel.uring.IOUring
+import io.netty.incubator.channel.uring.IOUringEventLoopGroup
+import io.netty.incubator.channel.uring.IOUringSocketChannel
+import org.http4s.Response
+import org.http4s.client.Client
+import org.http4s.client.RequestKey
 
 import javax.net.ssl.SSLContext
-import org.http4s.Response
-import org.http4s.client.{Client, RequestKey}
-
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
@@ -178,7 +186,7 @@ class NettyClientBuilder[F[_]](
       implicit classTag: ClassTag[A]
   ) {
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
-    def configure(bootstrap: Bootstrap) =
+    def configure(bootstrap: Bootstrap): Bootstrap =
       bootstrap
         .group(eventLoop)
         .channel(runtimeClass)

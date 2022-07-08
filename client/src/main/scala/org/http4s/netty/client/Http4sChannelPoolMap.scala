@@ -16,21 +16,20 @@
 
 package org.http4s.netty.client
 
-import java.net.ConnectException
-
+import cats.effect.Async
+import cats.effect.Resource
 import cats.implicits._
-import cats.effect.{Async, Resource}
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
-import io.netty.channel.{Channel, ChannelFuture}
-import io.netty.channel.pool.{
-  AbstractChannelPoolHandler,
-  AbstractChannelPoolMap,
-  ChannelPoolHandler,
-  FixedChannelPool
-}
-import io.netty.handler.codec.http.{HttpRequestEncoder, HttpResponseDecoder}
+import io.netty.channel.Channel
+import io.netty.channel.ChannelFuture
+import io.netty.channel.pool.AbstractChannelPoolHandler
+import io.netty.channel.pool.AbstractChannelPoolMap
+import io.netty.channel.pool.ChannelPoolHandler
+import io.netty.channel.pool.FixedChannelPool
+import io.netty.handler.codec.http.HttpRequestEncoder
+import io.netty.handler.codec.http.HttpResponseDecoder
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AttributeKey
@@ -39,6 +38,7 @@ import org.http4s.Uri
 import org.http4s.Uri.Scheme
 import org.http4s.client.RequestKey
 
+import java.net.ConnectException
 import scala.concurrent.duration.Duration
 
 class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChannelPoolMap.Config)
@@ -144,7 +144,7 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
 }
 
 object Http4sChannelPoolMap {
-  val attr = AttributeKey.valueOf[RequestKey](classOf[RequestKey], "key")
+  val attr: AttributeKey[RequestKey] = AttributeKey.valueOf[RequestKey](classOf[RequestKey], "key")
 
   final case class Config(
       maxInitialLength: Int,

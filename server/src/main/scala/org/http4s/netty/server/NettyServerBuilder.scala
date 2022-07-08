@@ -16,47 +16,53 @@
 
 package org.http4s.netty.server
 
-import java.net.InetSocketAddress
+import cats.effect.Resource
+import cats.effect.Sync
 import cats.effect.kernel.Async
 import cats.effect.std.Dispatcher
-import cats.effect.{Resource, Sync}
 import cats.implicits._
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBufAllocator
 import io.netty.channel._
-import io.netty.channel.epoll.{Epoll, EpollEventLoopGroup, EpollServerSocketChannel}
-import io.netty.channel.kqueue.{KQueue, KQueueEventLoopGroup, KQueueServerSocketChannel}
+import io.netty.channel.epoll.Epoll
+import io.netty.channel.epoll.EpollEventLoopGroup
+import io.netty.channel.epoll.EpollServerSocketChannel
+import io.netty.channel.kqueue.KQueue
+import io.netty.channel.kqueue.KQueueEventLoopGroup
+import io.netty.channel.kqueue.KQueueServerSocketChannel
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
-import io.netty.handler.ssl.ApplicationProtocolConfig.{
-  Protocol,
-  SelectedListenerFailureBehavior,
-  SelectorFailureBehavior
-}
-import io.netty.handler.ssl.{
-  ApplicationProtocolConfig,
-  ApplicationProtocolNames,
-  ClientAuth,
-  IdentityCipherSuiteFilter,
-  JdkSslContext,
-  SslContext,
-  SslHandler
-}
-import io.netty.incubator.channel.uring.{IOUring, IOUringEventLoopGroup, IOUringServerSocketChannel}
-
-import javax.net.ssl.SSLContext
+import io.netty.handler.ssl.ApplicationProtocolConfig
+import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectorFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolNames
+import io.netty.handler.ssl.ClientAuth
+import io.netty.handler.ssl.IdentityCipherSuiteFilter
+import io.netty.handler.ssl.JdkSslContext
+import io.netty.handler.ssl.SslContext
+import io.netty.handler.ssl.SslHandler
+import io.netty.incubator.channel.uring.IOUring
+import io.netty.incubator.channel.uring.IOUringEventLoopGroup
+import io.netty.incubator.channel.uring.IOUringServerSocketChannel
 import org.http4s.HttpApp
-import org.http4s.netty.{NettyChannelOptions, NettyTransport}
+import org.http4s.netty.NettyChannelOptions
+import org.http4s.netty.NettyTransport
+import org.http4s.server.Server
+import org.http4s.server.ServiceErrorHandler
+import org.http4s.server.defaults
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.server.{Server, ServiceErrorHandler, defaults}
 import org.http4s.websocket.WebSocketContext
 import org.typelevel.vault.Key
 
+import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
 import scala.collection.immutable
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 import scala.reflect.ClassTag
 
 final class NettyServerBuilder[F[_]] private (
@@ -274,9 +280,9 @@ final class NettyServerBuilder[F[_]] private (
     }
 
   def allocated: F[(Server, F[Unit])] = resource.allocated
-  def stream = fs2.Stream.resource(resource)
+  def stream: fs2.Stream[F, Server] = fs2.Stream.resource(resource)
 
-  case class EventLoopHolder[A <: ServerChannel](
+  private case class EventLoopHolder[A <: ServerChannel](
       parent: MultithreadEventLoopGroup,
       eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
     def shutdown(): Unit = {
@@ -285,7 +291,7 @@ final class NettyServerBuilder[F[_]] private (
       ()
     }
     def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
-    def configure(bootstrap: ServerBootstrap) = {
+    def configure(bootstrap: ServerBootstrap): ServerBootstrap = {
       val configured = bootstrap
         .group(parent, eventLoop)
         .channel(runtimeClass)
@@ -329,12 +335,12 @@ object NettyServerBuilder {
   }
 
   private class ContextWithParameters(sslContext: SslContext) extends SslConfig {
-    def toHandler(alloc: ByteBufAllocator) = sslContext.newHandler(alloc).some
+    def toHandler(alloc: ByteBufAllocator): Option[SslHandler] = sslContext.newHandler(alloc).some
     def isSecure = true
   }
 
   private object NoSsl extends SslConfig {
-    def toHandler(alloc: ByteBufAllocator) = none[SslHandler]
+    def toHandler(alloc: ByteBufAllocator): Option[SslHandler] = none[SslHandler]
     def isSecure = false
   }
 }

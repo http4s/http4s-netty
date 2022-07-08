@@ -18,18 +18,18 @@ package org.http4s.netty.client
 
 import cats.syntax.all._
 import com.comcast.ip4s._
-import io.netty.handler.proxy.{
-  HttpProxyHandler,
-  ProxyHandler,
-  Socks4ProxyHandler,
-  Socks5ProxyHandler
-}
-import org.http4s.{BasicCredentials, Uri}
+import io.netty.handler.proxy.HttpProxyHandler
+import io.netty.handler.proxy.ProxyHandler
+import io.netty.handler.proxy.Socks4ProxyHandler
+import io.netty.handler.proxy.Socks5ProxyHandler
+import org.http4s.BasicCredentials
+import org.http4s.Uri
 import org.http4s.client.RequestKey
 
 import java.net.InetSocketAddress
 import java.util.regex.Pattern.quote
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Properties
 import scala.util.matching.Regex
 
@@ -82,15 +82,17 @@ object Socks4 {
     apply(host, port, None)
 }
 
-final case class IgnoredHosts private (regex: Regex) {
-  def ignored(uri: RequestKey) =
+final class IgnoredHosts private (regex: Regex) {
+  def ignored(uri: RequestKey): Boolean =
     regex.pattern.matcher(uri.authority.host.renderString).matches()
+
+  override def toString: String = s"IgnoredHosts(${regex.pattern.pattern()})"
 }
 
 object IgnoredHosts {
-  val default = fromString("localhost|127.*|[::1]").get
+  val default: IgnoredHosts = fromString("localhost|127.*|[::1]").get
 
-  def fromString(mask: String) = {
+  def fromString(mask: String): Option[IgnoredHosts] = {
     def disjunctToRegex(disjunct: String) = disjunct.trim match {
       case "*" => ".*"
       case s if s.startsWith("*") && s.endsWith("*") =>
@@ -107,7 +109,7 @@ object IgnoredHosts {
       .filterNot(_.trim.isEmpty)
       .map(disjunct => disjunctToRegex(disjunct.toLowerCase))
       .mkString("|")
-    if (joined.nonEmpty) IgnoredHosts(joined.r).some else none
+    if (joined.nonEmpty) new IgnoredHosts(joined.r).some else none
   }
 
 }
@@ -120,7 +122,7 @@ final case class HttpProxy(
     credentials: Option[BasicCredentials],
     connectionTimeout: FiniteDuration
 ) extends Proxy {
-  def defaultPort = if (scheme == Uri.Scheme.https) 443 else 80
+  def defaultPort: Int = if (scheme == Uri.Scheme.https) 443 else 80
 
   // todo: should we enforce we need to use https proxy for https requests?
   private[client] def toProxyHandler(key: RequestKey) = if (!ignoreHosts.ignored(key)) {

@@ -16,8 +16,10 @@
 
 package org.http4s.netty.client
 
+import cats.effect.IO
+import cats.effect.Resource
+import cats.effect.Sync
 import cats.syntax.all._
-import cats.effect.{IO, Resource, Sync}
 import com.comcast.ip4s._
 import com.github.monkeywie.proxyee.server.HttpProxyServer
 import org.http4s.Uri
@@ -27,9 +29,9 @@ import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
 
-  val httpbin = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val httpbin: Fixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
 
-  val proxy = resourceFixture(
+  val proxy: Fixture[HttpProxy] = resourceFixture(
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
       _ <- Resource {
@@ -62,7 +64,7 @@ class HttpProxyTest extends IOSuite {
 }
 
 object HttpProxyTest {
-  def randomSocketAddress[F[_]: Sync] = {
+  def randomSocketAddress[F[_]: Sync]: F[SocketAddress[IpAddress]] = {
     def getLoopBack = Dns[F].loopback
     def randomPort = Sync[F].blocking {
       val s = new ServerSocket(0)

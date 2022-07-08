@@ -19,14 +19,17 @@ package org.http4s.netty.server
 import cats.effect.Async
 import cats.effect.std.Dispatcher
 import com.typesafe.netty.http.HttpStreamsServerHandler
-import io.netty.channel.{Channel, ChannelHandlerContext, ChannelInitializer, ChannelPipeline}
-import io.netty.handler.codec.http.{HttpRequestDecoder, HttpResponseEncoder}
-import io.netty.handler.codec.http2.{
-  Http2FrameCodecBuilder,
-  Http2MultiplexHandler,
-  Http2StreamFrameToHttpObjectCodec
-}
-import io.netty.handler.ssl.{ApplicationProtocolNames, ApplicationProtocolNegotiationHandler}
+import io.netty.channel.Channel
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInitializer
+import io.netty.channel.ChannelPipeline
+import io.netty.handler.codec.http.HttpRequestDecoder
+import io.netty.handler.codec.http.HttpResponseEncoder
+import io.netty.handler.codec.http2.Http2FrameCodecBuilder
+import io.netty.handler.codec.http2.Http2MultiplexHandler
+import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
+import io.netty.handler.ssl.ApplicationProtocolNames
+import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
@@ -64,7 +67,7 @@ private[server] class NegotiationHandler[F[_]: Async](
       case _ => throw new IllegalStateException(s"Protocol: $protocol not supported")
     }
 
-  def addToPipeline(pipeline: ChannelPipeline, http1: Boolean) = {
+  def addToPipeline(pipeline: ChannelPipeline, http1: Boolean): Unit = {
     if (http1) {
       pipeline.addLast(
         "http-decoder",
@@ -91,7 +94,7 @@ private[server] class NegotiationHandler[F[_]: Async](
 }
 
 object NegotiationHandler {
-  case class Config(
+  final case class Config(
       maxInitialLineLength: Int,
       maxHeaderSize: Int,
       maxChunkSize: Int,
