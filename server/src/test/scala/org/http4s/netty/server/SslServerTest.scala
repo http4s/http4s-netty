@@ -16,26 +16,37 @@
 
 package org.http4s.netty.server
 
-import java.io.ByteArrayInputStream
-import java.security.KeyStore
-import java.security.cert.{CertificateFactory, X509Certificate}
-import cats.effect.{Async, IO}
-import io.circe.syntax._
-import io.circe.{Decoder, Encoder, Json}
-import io.netty.handler.ssl.{ClientAuth, SslContext, SslContextBuilder}
-
-import javax.net.ssl.{KeyManagerFactory, SSLContext, TrustManagerFactory}
+import cats.effect.Async
+import cats.effect.IO
+import io.circe.Decoder
+import io.circe.Encoder
+import io.circe.Json
+import io.circe.syntax.KeyOps
+import io.netty.handler.ssl.ClientAuth
+import io.netty.handler.ssl.SslContext
+import io.netty.handler.ssl.SslContextBuilder
+import org.http4s.EntityDecoder
+import org.http4s.EntityEncoder
+import org.http4s.HttpRoutes
 import org.http4s.client.Client
-import org.http4s.{EntityDecoder, EntityEncoder, HttpRoutes}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
+import org.http4s.server.SecureSession
+import org.http4s.server.Server
+import org.http4s.server.ServerRequestKeys
 import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.server.{SecureSession, Server, ServerRequestKeys}
 import scodec.bits.ByteVector
 
+import java.io.ByteArrayInputStream
 import java.net.http.HttpClient
+import java.security.KeyStore
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 import scala.util.Try
 
 abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
@@ -107,24 +118,24 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
 }
 
 class JDKSslServerTest extends SslServerTest() {
-  val client = resourceFixture(
+  val client: Fixture[Client[IO]] = resourceFixture(
     JdkHttpClient[IO](
       HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
     "client")
 
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
 
 class JDKMTLSServerTest extends SslServerTest("mTLS") {
-  val client = resourceFixture(
+  val client: Fixture[Client[IO]] = resourceFixture(
     JdkHttpClient[IO](
       HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
     "client")
 
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     SslServerTest
       .sslServer(
         _ => routes,
@@ -135,27 +146,27 @@ class JDKMTLSServerTest extends SslServerTest("mTLS") {
 }
 
 class NettyClientSslServerTest extends SslServerTest() {
-  val client = resourceFixture(
+  val client: Fixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(SslServerTest.sslContextForClient)
       .withEventLoopThreads(2)
       .resource,
     "client"
   )
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
 
 class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
-  val client = resourceFixture(
+  val client: Fixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(SslServerTest.sslContextForClient)
       .resource,
     "client"
   )
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     SslServerTest
       .sslServer(
         _ => routes,

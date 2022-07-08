@@ -16,19 +16,17 @@
 
 package org.http4s.netty.server
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.ExitCode
+import cats.effect.IO
+import cats.effect.IOApp
 import io.netty.handler.codec.http2.Http2SecurityUtil
-import io.netty.handler.ssl.ApplicationProtocolConfig.{
-  Protocol,
-  SelectedListenerFailureBehavior,
-  SelectorFailureBehavior
-}
-import io.netty.handler.ssl.{
-  ApplicationProtocolConfig,
-  ApplicationProtocolNames,
-  SslProvider,
-  SupportedCipherSuiteFilter
-}
+import io.netty.handler.ssl.ApplicationProtocolConfig
+import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectorFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolNames
+import io.netty.handler.ssl.SslProvider
+import io.netty.handler.ssl.SupportedCipherSuiteFilter
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io._
 import org.http4s.implicits._

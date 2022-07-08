@@ -16,7 +16,8 @@
 
 package org.http4s.netty.server
 
-import cats.effect.{IO, Resource}
+import cats.effect.IO
+import cats.effect.Resource
 import munit.CatsEffectSuite
 
 abstract class IOSuite extends CatsEffectSuite {

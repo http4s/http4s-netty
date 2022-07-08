@@ -16,47 +16,48 @@
 
 package org.http4s.netty.server
 
-import cats.effect.std.Dispatcher
-import cats.implicits._
 import cats.effect.Async
 import cats.effect.kernel.Sync
+import cats.effect.std.Dispatcher
+import cats.implicits._
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
 import fs2.interop.reactivestreams._
-import org.typelevel.vault.{Key, Vault}
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.handler.codec.http.websocketx.{
-  BinaryWebSocketFrame,
-  CloseWebSocketFrame,
-  ContinuationWebSocketFrame,
-  PingWebSocketFrame,
-  PongWebSocketFrame,
-  TextWebSocketFrame,
-  WebSocketFrame => WSFrame,
-  WebSocketServerHandshakerFactory
-}
-import io.netty.handler.codec.http.{
-  DefaultHttpResponse,
-  HttpHeaders,
-  HttpResponseStatus,
-  HttpVersion
-}
+import io.netty.handler.codec.http.DefaultHttpResponse
+import io.netty.handler.codec.http.HttpHeaders
+import io.netty.handler.codec.http.HttpResponseStatus
+import io.netty.handler.codec.http.HttpVersion
+import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame
+import io.netty.handler.codec.http.websocketx.ContinuationWebSocketFrame
+import io.netty.handler.codec.http.websocketx.PingWebSocketFrame
+import io.netty.handler.codec.http.websocketx.PongWebSocketFrame
+import io.netty.handler.codec.http.websocketx.TextWebSocketFrame
+import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory
+import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
+import org.http4s.Header
+import org.http4s.Request
+import org.http4s.Response
 import org.http4s.internal.tls._
+import org.http4s.netty.NettyModelConversion
+import org.http4s.server.SecureSession
+import org.http4s.server.ServerRequestKeys
+import org.http4s.websocket.WebSocketCombinedPipe
+import org.http4s.websocket.WebSocketContext
+import org.http4s.websocket.WebSocketFrame
+import org.http4s.websocket.WebSocketFrame._
+import org.http4s.websocket.WebSocketSeparatePipe
+import org.http4s.{HttpVersion => HV}
+import org.reactivestreams.Processor
+import org.reactivestreams.Subscriber
+import org.reactivestreams.Subscription
+import org.typelevel.vault.Key
+import org.typelevel.vault.Vault
+import scodec.bits.ByteVector
 
 import javax.net.ssl.SSLEngine
-import org.http4s.{Header, HttpVersion => HV, Request, Response}
-import org.http4s.netty.NettyModelConversion
-import org.http4s.server.{SecureSession, ServerRequestKeys}
-import org.http4s.websocket.{
-  WebSocketCombinedPipe,
-  WebSocketContext,
-  WebSocketFrame,
-  WebSocketSeparatePipe
-}
-import org.http4s.websocket.WebSocketFrame._
-import org.reactivestreams.{Processor, Subscriber, Subscription}
-import scodec.bits.ByteVector
 
 final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: Async[F])
     extends NettyModelConversion[F](disp) {

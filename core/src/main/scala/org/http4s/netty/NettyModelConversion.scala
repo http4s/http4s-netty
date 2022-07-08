@@ -22,17 +22,25 @@ import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http._
+import fs2.Chunk
+import fs2.Stream
 import fs2.interop.reactivestreams._
-import fs2.{Chunk, Stream, io => _}
-import org.typelevel.vault.Vault
-import io.netty.buffer.{ByteBuf, ByteBufUtil, Unpooled}
-import io.netty.channel.{Channel, ChannelFuture}
+import fs2.{io => _}
+import io.netty.buffer.ByteBuf
+import io.netty.buffer.ByteBufUtil
+import io.netty.buffer.Unpooled
+import io.netty.channel.Channel
+import io.netty.channel.ChannelFuture
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
-import org.http4s.headers.{Connection => ConnHeader, `Content-Length`, `Transfer-Encoding`}
+import org.http4s.Headers
+import org.http4s.headers.`Content-Length`
+import org.http4s.headers.`Transfer-Encoding`
+import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
+import org.typelevel.vault.Vault
 
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,7 +102,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     F.fromEither(res).tupleRight(drain)
   }
 
-  def toHeaders(headers: HttpHeaders) = {
+  def toHeaders(headers: HttpHeaders): Headers = {
     val buffer = List.newBuilder[Header.Raw]
     headers.forEach { e =>
       buffer += Header.Raw(CIString(e.getKey), e.getValue)

@@ -16,21 +16,24 @@
 
 package org.http4s.netty.server
 
-import java.net.http.HttpClient
-
-import org.http4s.implicits._
-import cats.implicits._
-import cats.effect.IO
 import cats.effect.Deferred
-import org.http4s.{HttpRoutes, Request, Response}
-import org.http4s.jdkhttpclient.JdkHttpClient
+import cats.effect.IO
+import cats.implicits._
+import org.http4s.HttpRoutes
+import org.http4s.Request
+import org.http4s.Response
+import org.http4s.client.Client
 import org.http4s.dsl.io._
+import org.http4s.implicits._
+import org.http4s.jdkhttpclient.JdkHttpClient
+import org.http4s.server.Server
 
+import java.net.http.HttpClient
 import scala.concurrent.duration._
 
 class DrainResponseTest extends IOSuite {
-  val ref = Deferred.unsafe[IO, Boolean]
-  val server = resourceFixture(
+  val ref: Deferred[IO, Boolean] = Deferred.unsafe[IO, Boolean]
+  val server: Fixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(
         HttpRoutes
@@ -52,7 +55,8 @@ class DrainResponseTest extends IOSuite {
     "server"
   )
 
-  val client = resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
+  val client: Fixture[Client[IO]] =
+    resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
 
   test("drain") {
     val uri = server().baseUri

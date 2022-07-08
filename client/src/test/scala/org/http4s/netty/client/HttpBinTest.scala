@@ -16,18 +16,19 @@
 
 package org.http4s.netty.client
 
-import java.net.URI
-import cats.syntax.all._
 import cats.effect._
-
+import cats.syntax.all._
 import org.gaul.httpbin.HttpBin
 import org.http4s._
+import org.http4s.client.Client
+
+import java.net.URI
 
 class HttpBinTest extends IOSuite {
 
-  val httpBin = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val httpBin: Fixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
 
-  val client = resourceFixture(NettyClientBuilder[IO].resource, "client")
+  val client: Fixture[Client[IO]] = resourceFixture(NettyClientBuilder[IO].resource, "client")
 
   test("status 200") {
     val base = httpBin()
@@ -58,7 +59,7 @@ object HttpBinTest {
 
   private def uriFrom(bin: HttpBin) = Uri.unsafeFromString(s"http://localhost:${bin.getPort}")
 
-  def httpBin = Resource(IO {
+  def httpBin: Resource[IO, Uri] = Resource(IO {
     val bin = new HttpBin(URI.create("http://localhost:0"))
     bin.start()
     uriFrom(bin) -> IO(bin.stop())

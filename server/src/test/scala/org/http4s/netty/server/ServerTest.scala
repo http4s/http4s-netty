@@ -16,22 +16,26 @@
 
 package org.http4s.netty.server
 
-import cats.implicits._
+import cats.data.Kleisli
 import cats.effect.IO
-import org.http4s.{HttpRoutes, Request, Response}
-import org.http4s.implicits._
-import org.http4s.dsl.io._
+import cats.implicits._
 import fs2._
+import org.http4s.HttpRoutes
+import org.http4s.Request
+import org.http4s.Response
 import org.http4s.client.Client
+import org.http4s.dsl.io._
+import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.netty.client.NettyClientBuilder
+import org.http4s.server.Server
 
 import java.net.http.HttpClient
 import scala.concurrent.duration._
 
 abstract class ServerTest extends IOSuite {
 
-  val server = resourceFixture(
+  val server: Fixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withEventLoopThreads(10)
@@ -90,11 +94,12 @@ abstract class ServerTest extends IOSuite {
 }
 
 class JDKServerTest extends ServerTest {
-  val client = resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
+  val client: Fixture[Client[IO]] =
+    resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
 }
 
 class NettyClientServerTest extends ServerTest {
-  val client = resourceFixture(
+  val client: Fixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withEventLoopThreads(2)
       .resource,
@@ -103,7 +108,7 @@ class NettyClientServerTest extends ServerTest {
 }
 
 object ServerTest {
-  def routes =
+  def routes: Kleisli[IO, Request[IO], Response[IO]] =
     HttpRoutes
       .of[IO] {
         case GET -> Root / "simple" => Ok("simple path")

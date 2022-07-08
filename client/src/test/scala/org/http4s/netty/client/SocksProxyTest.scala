@@ -16,13 +16,15 @@
 
 package org.http4s.netty.client
 
-import cats.effect.{IO, Resource}
+import cats.effect.IO
+import cats.effect.Resource
 import org.bbottema.javasocksproxyserver.SocksServer
+import org.http4s.Uri
 
 class SocksProxyTest extends IOSuite {
-  val httpBin = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val httpBin: Fixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
 
-  val socks = resourceFixture(
+  val socks: Fixture[(Socks4, Socks5)] = resourceFixture(
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
       _ <- Resource {

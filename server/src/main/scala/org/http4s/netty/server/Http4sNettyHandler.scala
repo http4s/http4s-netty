@@ -17,29 +17,33 @@
 package org.http4s.netty.server
 
 import cats.Defer
+import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.std.Dispatcher
-
-import java.io.IOException
-import java.time.format.DateTimeFormatter
-import java.time.{Instant, ZoneId}
-import java.util.Locale
-import java.util.concurrent.atomic.AtomicLong
-import cats.effect.{Async, Resource}
 import cats.syntax.all._
-import io.netty.channel.{ChannelInboundHandlerAdapter, _}
+import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel._
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
-import org.http4s.server.ServiceErrorHandler
 import org.http4s.netty.server.internal.Trampoline
+import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder
 import org.http4s.websocket.WebSocketContext
 import org.log4s.getLogger
 import org.typelevel.vault.Key
 
-import scala.concurrent.{Future, Promise}
-import scala.util.control.{NoStackTrace, NonFatal}
+import java.io.IOException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.util.control.NoStackTrace
+import scala.util.control.NonFatal
 
 /** Netty request handler
   *
