@@ -11,13 +11,13 @@ inThisBuild(
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.5",
     tlSonatypeUseLegacyHost := false,
-    crossScalaVersions := Seq(Scala213, Scala212, "3.1.2"),
+    crossScalaVersions := Seq(Scala213, Scala212, "3.1.3"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
   )
 )
 
-val http4sVersion = "0.23.12"
+val http4sVersion = "0.23.13"
 
 val netty = "4.1.78.Final"
 
@@ -41,7 +41,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.2.8",
+      "co.fs2" %% "fs2-reactive-streams" % "3.2.9",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.6")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -78,7 +78,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.6.5" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.6.6" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
