@@ -22,7 +22,8 @@ import org.http4s.Uri
 import org.http4s.client.RequestKey
 
 class IgnoredHostsTest extends FunSuite {
-  def make(host: Uri.Host): RequestKey = RequestKey(Uri.Scheme.http, Uri.Authority(None, host, None))
+  def make(host: Uri.Host): RequestKey =
+    RequestKey(Uri.Scheme.http, Uri.Authority(None, host, None))
   test("default") {
     assert(IgnoredHosts.default.ignored(make(Uri.RegName("localhost"))))
     assert(IgnoredHosts.default.ignored(make(Uri.Ipv4Address(ipv4"127.0.0.1"))))

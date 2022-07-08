@@ -32,7 +32,7 @@ import java.net.http.HttpClient
 import scala.concurrent.duration._
 
 class DrainResponseTest extends IOSuite {
-  val ref: Deferred[IO,Boolean] = Deferred.unsafe[IO, Boolean]
+  val ref: Deferred[IO, Boolean] = Deferred.unsafe[IO, Boolean]
   val server: Fixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(
@@ -55,7 +55,8 @@ class DrainResponseTest extends IOSuite {
     "server"
   )
 
-  val client: Fixture[Client[IO]] = resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
+  val client: Fixture[Client[IO]] =
+    resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
 
   test("drain") {
     val uri = server().baseUri

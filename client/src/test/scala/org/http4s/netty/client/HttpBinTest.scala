@@ -59,7 +59,7 @@ object HttpBinTest {
 
   private def uriFrom(bin: HttpBin) = Uri.unsafeFromString(s"http://localhost:${bin.getPort}")
 
-  def httpBin: Resource[IO,Uri] = Resource(IO {
+  def httpBin: Resource[IO, Uri] = Resource(IO {
     val bin = new HttpBin(URI.create("http://localhost:0"))
     bin.start()
     uriFrom(bin) -> IO(bin.stop())
