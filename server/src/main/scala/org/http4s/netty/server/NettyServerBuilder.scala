@@ -207,7 +207,8 @@ final class NettyServerBuilder[F[_]] private (
         ),
         clientAuth,
         null,
-        false))
+        false
+      ))
   }
 
   def withSslContext(sslContext: SslContext): Self =
