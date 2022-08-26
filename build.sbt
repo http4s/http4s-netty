@@ -18,7 +18,7 @@ inThisBuild(
 
 val http4sVersion = "1.0.0-M35"
 
-val netty = "4.1.78.Final"
+val netty = "4.1.80.Final"
 
 val munit = "0.7.29"
 
