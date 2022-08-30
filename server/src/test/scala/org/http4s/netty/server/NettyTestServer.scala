@@ -45,13 +45,13 @@ object NettyTestServer extends IOApp {
         SslServerTest.sslContextForServer
           .sslProvider(SslProvider.JDK)
           .ciphers(Http2SecurityUtil.CIPHERS, SupportedCipherSuiteFilter.INSTANCE)
-          .applicationProtocolConfig(
-            new ApplicationProtocolConfig(
-              Protocol.ALPN,
-              SelectorFailureBehavior.NO_ADVERTISE,
-              SelectedListenerFailureBehavior.ACCEPT,
-              ApplicationProtocolNames.HTTP_2,
-              ApplicationProtocolNames.HTTP_1_1))
+          .applicationProtocolConfig(new ApplicationProtocolConfig(
+            Protocol.ALPN,
+            SelectorFailureBehavior.NO_ADVERTISE,
+            SelectedListenerFailureBehavior.ACCEPT,
+            ApplicationProtocolNames.HTTP_2,
+            ApplicationProtocolNames.HTTP_1_1
+          ))
           .build())
       .resource
       .use(_ => IO.never)
