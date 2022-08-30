@@ -17,9 +17,9 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.23.13"
+val http4sVersion = "0.23.15"
 
-val netty = "4.1.78.Final"
+val netty = "4.1.80.Final"
 
 val munit = "0.7.29"
 
@@ -41,7 +41,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.2.8",
+      "co.fs2" %% "fs2-reactive-streams" % "3.2.12",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.6")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -63,7 +63,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.5.0" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.7.0" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     ),
     libraryDependencies ++= nativeNettyModules

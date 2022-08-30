@@ -22,11 +22,10 @@ import cats.effect.std.Queue
 import io.netty.handler.ssl.SslContext
 import org.http4s.HttpRoutes
 import org.http4s.Uri
+import org.http4s.client.websocket.{WSFrame, WSRequest}
 import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkWSClient
-import org.http4s.jdkhttpclient.WSFrame
-import org.http4s.jdkhttpclient.WSRequest
 import org.http4s.server.Server
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame

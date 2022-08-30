@@ -54,8 +54,6 @@ import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.defaults
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.websocket.WebSocketContext
-import org.typelevel.vault.Key
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
@@ -215,7 +213,7 @@ final class NettyServerBuilder[F[_]] private (
 
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
-  private def bind(dispatcher: Dispatcher[F], key: Key[WebSocketContext[F]]) = {
+  private def bind(dispatcher: Dispatcher[F]) = {
     val resolvedAddress =
       if (socketAddress.isUnresolved)
         new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
@@ -235,7 +233,6 @@ final class NettyServerBuilder[F[_]] private (
               idleTimeout,
               wsMaxFrameLength),
             httpApp,
-            key,
             serviceErrorHandler,
             dispatcher
           )
@@ -260,8 +257,7 @@ final class NettyServerBuilder[F[_]] private (
   def resource: Resource[F, Server] =
     for {
       dispatcher <- Dispatcher[F]
-      key <- Resource.eval(Key.newKey[F, WebSocketContext[F]])
-      bound <- Resource.make(Sync[F].delay(bind(dispatcher, key))) {
+      bound <- Resource.make(Sync[F].delay(bind(dispatcher))) {
         case Bound(address, loop, channel) =>
           Sync[F].delay {
             channel.close().awaitUninterruptibly()

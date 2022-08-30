@@ -30,9 +30,7 @@ import org.http4s.HttpApp
 import org.http4s.netty.server.internal.Trampoline
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.http4s.websocket.WebSocketContext
 import org.log4s.getLogger
-import org.typelevel.vault.Key
 
 import java.io.IOException
 import java.time.Instant
@@ -219,7 +217,6 @@ object Http4sNettyHandler {
 
   private class WebsocketHandler[F[_]](
       appFn: WebSocketBuilder2[F] => HttpApp[F],
-      key: Key[WebSocketContext[F]],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]
@@ -235,27 +232,32 @@ object Http4sNettyHandler {
         channel: Channel,
         request: HttpRequest,
         dateString: String
-    ): Resource[F, DefaultHttpResponse] = {
-      val app = appFn(WebSocketBuilder2[F](key))
-      logger.trace("Http request received by netty: " + request)
-      converter
-        .fromNettyRequest(channel, request)
-        .evalMap { req =>
-          D
-            .defer(app(req))
-            .recoverWith(serviceErrorHandler(req))
-            .flatMap(
-              converter.toNettyResponseWithWebsocket(key, req, _, dateString, maxWSPayloadLength))
-        }
-    }
+    ): Resource[F, DefaultHttpResponse] =
+      Resource.eval(WebSocketBuilder2[F]).flatMap { b =>
+        val app = appFn(b)
+        logger.trace("Http request received by netty: " + request)
+        converter
+          .fromNettyRequest(channel, request)
+          .evalMap { req =>
+            D
+              .defer(app(req))
+              .recoverWith(serviceErrorHandler(req))
+              .flatMap(
+                converter.toNettyResponseWithWebsocket(
+                  b.webSocketKey,
+                  req,
+                  _,
+                  dateString,
+                  maxWSPayloadLength))
+          }
+      }
   }
 
   def websocket[F[_]: Async](
       app: WebSocketBuilder2[F] => HttpApp[F],
-      key: Key[WebSocketContext[F]],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]
   ): Http4sNettyHandler[F] =
-    new WebsocketHandler[F](app, key, serviceErrorHandler, maxWSPayloadLength, dispatcher)
+    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, dispatcher)
 }
