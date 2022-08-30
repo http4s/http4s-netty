@@ -22,7 +22,8 @@ import cats.effect.std.Queue
 import io.netty.handler.ssl.SslContext
 import org.http4s.HttpRoutes
 import org.http4s.Uri
-import org.http4s.client.websocket._
+import org.http4s.client.websocket.WSFrame
+import org.http4s.client.websocket.WSRequest
 import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkWSClient
