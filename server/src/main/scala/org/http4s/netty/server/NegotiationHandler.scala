@@ -34,15 +34,12 @@ import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder
-import org.http4s.websocket.WebSocketContext
-import org.typelevel.vault.Key
 
 import scala.concurrent.duration.Duration
 
 private[server] class NegotiationHandler[F[_]: Async](
     config: NegotiationHandler.Config,
     httpApp: WebSocketBuilder[F] => HttpApp[F],
-    key: Key[WebSocketContext[F]],
     serviceErrorHandler: ServiceErrorHandler[F],
     dispatcher: Dispatcher[F]
 ) extends ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
@@ -87,7 +84,7 @@ private[server] class NegotiationHandler[F[_]: Async](
       .addLast(
         "http4s",
         Http4sNettyHandler
-          .websocket(httpApp, key, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
+          .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
       )
     ()
   }

@@ -41,6 +41,7 @@ import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
+import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
@@ -213,11 +214,11 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         val content = full.content()
         if (content.nioBufferCount() > 0) {
           val buffers = content.nioBuffers()
-          val chunk = buffers.map(Chunk.byteBuffer).reduce(_ ++ _)
+          val chunk = buffers.map(ByteVector.apply).reduce(_ ++ _)
           (Entity.Strict(chunk), channelToUnitF)
         } else if (content.hasArray) {
           // No cleanup action needed
-          (Entity.Strict(Chunk.array(content.array())), channelToUnitF)
+          (Entity.Strict(ByteVector(content.array())), channelToUnitF)
         } else {
           empty
         }
@@ -369,7 +370,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         new DefaultFullHttpResponse(
           httpVersion,
           HttpResponseStatus.valueOf(httpResponse.status.code),
-          chunkToNetty(chunk),
+          chunkToNetty(Chunk.byteVector(chunk)),
           false
         )
       case Entity.Empty =>
