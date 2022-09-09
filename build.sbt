@@ -18,7 +18,7 @@ inThisBuild(
 
 val http4sVersion = "1.0.0-M36"
 
-val netty = "4.1.80.Final"
+val netty = "4.1.81.Final"
 
 val munit = "0.7.29"
 
@@ -40,7 +40,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.2.12",
+      "co.fs2" %% "fs2-reactive-streams" % "3.2.14",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.6")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -77,7 +77,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.6.6" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.6.7" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
