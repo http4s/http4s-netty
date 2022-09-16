@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.client
+package org.http4s.netty
+package client
 
 import cats.effect.Async
 import cats.effect.Resource
@@ -28,8 +29,7 @@ import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.ChannelPoolHandler
 import io.netty.channel.pool.FixedChannelPool
-import io.netty.handler.codec.http.HttpRequestEncoder
-import io.netty.handler.codec.http.HttpResponseDecoder
+import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AttributeKey
@@ -41,7 +41,9 @@ import org.http4s.client.RequestKey
 import java.net.ConnectException
 import scala.concurrent.duration.Duration
 
-class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChannelPoolMap.Config)
+private[client] class Http4sChannelPoolMap[F[_]: Async](
+    bootstrap: Bootstrap,
+    config: Http4sChannelPoolMap.Config)
     extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
 
@@ -86,17 +88,15 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
       key: RequestKey,
       config: Http4sChannelPoolMap.Config
   ) extends AbstractChannelPoolHandler {
-
     override def channelAcquired(ch: Channel): Unit = {
       logger.trace(s"Connected to $ch")
       ch.attr(Http4sChannelPoolMap.attr).set(key)
     }
 
-    override def channelCreated(ch: Channel): Unit = {
+    override def channelCreated(ch: Channel): Unit = void {
       logger.trace(s"Created $ch")
       ch.attr(Http4sChannelPoolMap.attr).set(key)
       buildPipeline(ch)
-      ()
     }
 
     override def channelReleased(ch: Channel): Unit =
@@ -107,31 +107,33 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
       config.proxy.foreach {
         case p: HttpProxy =>
           p.toProxyHandler(key).foreach { handler =>
-            pipeline.addLast("proxy", handler)
-            ()
+            void(pipeline.addLast("proxy", handler))
           }
         case s: Socks =>
-          pipeline.addLast("proxy", s.toProxyHandler)
-          ()
+          void(pipeline.addLast("proxy", s.toProxyHandler))
       }
-      (key, NettyClientBuilder.SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
+      (key, SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
         case (RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort)), Some(context)) =>
-          logger.trace("Creating SSL engine")
+          void {
+            logger.trace("Creating SSL engine")
 
-          val port = mayBePort.getOrElse(443)
-          val engine = context.createSSLEngine(host.value, port)
-          val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
-          engine.setUseClientMode(true)
-          engine.setSSLParameters(params.toSSLParameters)
-          pipeline.addLast("ssl", new SslHandler(engine))
-          ()
+            val port = mayBePort.getOrElse(443)
+            val engine = context.createSSLEngine(host.value, port)
+            val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
+            engine.setUseClientMode(true)
+            engine.setSSLParameters(params.toSSLParameters)
+            pipeline.addLast("ssl", new SslHandler(engine))
+          }
         case _ => ()
       }
 
       pipeline.addLast(
-        "response-decoder",
-        new HttpResponseDecoder(config.maxInitialLength, config.maxHeaderSize, config.maxChunkSize))
-      pipeline.addLast("request-encoder", new HttpRequestEncoder)
+        "httpClientCodec",
+        new HttpClientCodec(
+          config.maxInitialLength,
+          config.maxHeaderSize,
+          config.maxChunkSize,
+          false))
       pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
 
       if (config.idleTimeout.isFinite && config.idleTimeout.length > 0)
@@ -143,7 +145,7 @@ class Http4sChannelPoolMap[F[_]: Async](bootstrap: Bootstrap, config: Http4sChan
   }
 }
 
-object Http4sChannelPoolMap {
+private[client] object Http4sChannelPoolMap {
   val attr: AttributeKey[RequestKey] = AttributeKey.valueOf[RequestKey](classOf[RequestKey], "key")
 
   final case class Config(
@@ -153,13 +155,13 @@ object Http4sChannelPoolMap {
       maxConnections: Int,
       idleTimeout: Duration,
       proxy: Option[Proxy],
-      sslConfig: NettyClientBuilder.SSLContextOption)
+      sslConfig: SSLContextOption)
 
   def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
     Async[F].async_ { callback =>
-      future
-        .addListener((f: Future[A]) =>
-          if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause())))
-      ()
+      void(
+        future
+          .addListener((f: Future[A]) =>
+            if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause()))))
     }
 }

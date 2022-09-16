@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty
+package server
 
 import cats.effect.Async
 import cats.effect.std.Dispatcher
@@ -53,18 +54,18 @@ private[server] class NegotiationHandler[F[_]: Async](
             new Http2MultiplexHandler(new ChannelInitializer[Channel] {
               override def initChannel(ch: Channel): Unit = {
                 ch.pipeline().addLast(new Http2StreamFrameToHttpObjectCodec(true))
-                addToPipeline(ch.pipeline(), false)
+                addToPipeline(ch.pipeline(), http1 = false)
               }
             })
           )
         ()
       case ApplicationProtocolNames.HTTP_1_1 =>
         val pipeline = ctx.pipeline()
-        addToPipeline(pipeline, true)
+        addToPipeline(pipeline, http1 = true)
       case _ => throw new IllegalStateException(s"Protocol: $protocol not supported")
     }
 
-  def addToPipeline(pipeline: ChannelPipeline, http1: Boolean): Unit = {
+  def addToPipeline(pipeline: ChannelPipeline, http1: Boolean): Unit = void {
     if (http1) {
       pipeline.addLast(
         "http-decoder",
@@ -86,7 +87,6 @@ private[server] class NegotiationHandler[F[_]: Async](
         Http4sNettyHandler
           .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
       )
-    ()
   }
 }
 

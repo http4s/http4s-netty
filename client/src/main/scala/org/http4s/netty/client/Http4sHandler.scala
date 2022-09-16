@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.client
+package org.http4s.netty
+package client
 
 import cats.effect.Async
 import cats.effect.Resource
@@ -52,7 +53,6 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
             ctx.pipeline().remove(this)
           }
         dispatcher.unsafeRunAndForget(responseResourceF)
-        ()
       case _ =>
         super.channelRead(ctx, msg)
     }
@@ -70,20 +70,20 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
         onException(ctx, e)
     }
 
-  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = {
+  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
     cb(Left(e))
     ctx.channel().close()
     ctx.pipeline().remove(this)
-    ()
   }
 
-  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
+  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.channel().close(); ()
+        ctx.channel().close()
       case _ => super.userEventTriggered(ctx, evt)
     }
+  }
 }
 
 object Http4sHandler {

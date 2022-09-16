@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty
+package server
 
 import cats.effect.Resource
 import cats.effect.Sync
@@ -225,7 +226,7 @@ final class NettyServerBuilder[F[_]] private (
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
-        override def initChannel(ch: SocketChannel): Unit = {
+        override def initChannel(ch: SocketChannel): Unit = void {
           val negotiationHandler = new NegotiationHandler(
             NegotiationHandler.Config(
               maxInitialLineLength,
@@ -244,9 +245,8 @@ final class NettyServerBuilder[F[_]] private (
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
             case None =>
-              negotiationHandler.addToPipeline(pipeline, true)
+              negotiationHandler.addToPipeline(pipeline, http1 = true)
           }
-          ()
         }
       })
       .bind(resolvedAddress)

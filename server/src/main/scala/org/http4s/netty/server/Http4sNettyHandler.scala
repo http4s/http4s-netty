@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty
+package server
 
 import cats.Defer
 import cats.effect.Async
@@ -128,14 +129,17 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
                 // Since we've now gone down to zero, we need to issue a
                 // read, in case we ignored an earlier read complete
                 ctx.read()
-              ctx
-                .writeAndFlush(response)
-                .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
-              ()
+              void {
+                ctx
+                  .writeAndFlush(response)
+                  .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
+              }
             }(Trampoline)
             .recover[Unit] { case NonFatal(e) =>
               logger.warn(e)("Error caught during write action")
-              sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE); ()
+              void {
+                sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE)
+              }
             }(Trampoline)
         }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
@@ -167,38 +171,39 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   }
 
   @SuppressWarnings(Array("deprecation"))
-  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = void {
     cause match {
       // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
       // sending/receiving the response.
       case e: IOException =>
         logger.trace(e)("Benign IO exception caught in Netty")
-        ctx.channel().close(); ()
+        ctx.channel().close()
       case e: TooLongFrameException =>
         logger.warn(e)("Handling TooLongFrameException")
-        sendSimpleErrorResponse(ctx, HttpResponseStatus.REQUEST_URI_TOO_LONG); ()
-
+        sendSimpleErrorResponse(ctx, HttpResponseStatus.REQUEST_URI_TOO_LONG)
       case InvalidMessageException =>
-        sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR); ()
+        sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
       case e =>
         logger.error(e)("Exception caught in Netty")
-        ctx.channel().close(); ()
+        ctx.channel().close()
     }
+  }
 
-  override def channelActive(ctx: ChannelHandlerContext): Unit = {
+  override def channelActive(ctx: ChannelHandlerContext): Unit = void {
     // AUTO_READ is off, so need to do the first read explicitly.
     // this method is called when the channel is registered with the event loop,
     // so ctx.read is automatically safe here w/o needing an isRegistered().
-    ctx.read(); ()
+    ctx.read()
   }
 
-  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
+  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.close(); ()
+        ctx.close();
       case _ => super.userEventTriggered(ctx, evt)
     }
+  }
 
   private def sendSimpleErrorResponse(
       ctx: ChannelHandlerContext,
