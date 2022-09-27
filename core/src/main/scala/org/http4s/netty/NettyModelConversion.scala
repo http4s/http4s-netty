@@ -62,7 +62,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     logger.trace(s"Converting request $request")
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
-    val uri = request.uri.withoutFragment.copy(authority = None).renderString
+    val uri = request.uri.toOriginForm.renderString
 
     val req =
       if (notAllowedWithBody.contains(request.method))
