@@ -10,7 +10,7 @@ inThisBuild(
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.6",
     tlSonatypeUseLegacyHost := false,
-    crossScalaVersions := Seq(Scala213, "3.1.3"),
+    crossScalaVersions := Seq(Scala213, "3.2.0"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
   )
@@ -77,7 +77,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.6.8" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.6.9" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,

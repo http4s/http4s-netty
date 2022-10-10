@@ -66,9 +66,11 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     val uri = request.uri.toOriginForm.renderString
 
     val req =
-      if (notAllowedWithBody.contains(request.method))
-        new DefaultFullHttpRequest(version, method, uri)
-      else {
+      if (notAllowedWithBody.contains(request.method)) {
+        val defaultReq = new DefaultFullHttpRequest(version, method, uri)
+        request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
+        defaultReq
+      } else {
         val streamedReq = new DefaultStreamedHttpRequest(
           version,
           method,
@@ -82,7 +84,6 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         streamedReq
       }
 
-    request.headers.foreach(appendSomeToNetty(_, req.headers()))
     request.uri.authority.foreach(authority => req.headers().add("Host", authority.renderString))
     req
   }
