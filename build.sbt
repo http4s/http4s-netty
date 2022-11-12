@@ -1,3 +1,5 @@
+import com.typesafe.tools.mima.core._
+
 val Scala212 = "2.12.17"
 val Scala213 = "2.13.10"
 
@@ -85,7 +87,32 @@ lazy val client = project
       "org.gaul" % "httpbin" % "1.3.0" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     ),
-    libraryDependencies ++= nativeNettyModules
+    libraryDependencies ++= nativeNettyModules,
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap"),
+      ProblemFilters.exclude[MissingClassProblem](
+        "org.http4s.netty.client.NettyClientBuilder$EventLoopHolder$"),
+      ProblemFilters.exclude[MissingClassProblem](
+        "org.http4s.netty.client.NettyClientBuilder$SSLContextOption*"),
+      ProblemFilters.exclude[MissingClassProblem](
+        "org.http4s.netty.client.NettyClientBuilder$EventLoopHolder"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.sslConfig"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.copy$default$7"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.*"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.copy"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.apply"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#Config.this"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.NettyClientBuilder.this"),
+      ProblemFilters.exclude[MissingFieldProblem](
+        "org.http4s.netty.client.NettyClientBuilder.SSLContextOption")
+    )
   )
 
 lazy val root = tlCrossRootProject.aggregate(core, client, server)

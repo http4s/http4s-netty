@@ -217,7 +217,7 @@ object SslServerTest {
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpWebSocketApp(routes(_).orNotFound)
-      .withEventLoopThreads(10)
+      .withNioTransport
       .withoutBanner
       .bindAny()
       .withSslContext(ctx)

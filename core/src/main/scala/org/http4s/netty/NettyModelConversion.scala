@@ -45,7 +45,6 @@ import org.typelevel.vault.Vault
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLEngine
-import scala.collection.mutable.ListBuffer
 
 /** Helpers for converting http4s request/response objects to and from the netty model
   *
@@ -111,6 +110,12 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     Headers(buffer.result())
   }
 
+  def toNettyHeaders(headers: Headers): HttpHeaders = {
+    val defaultHeaders = new DefaultHttpHeaders()
+    headers.headers.foreach(h => defaultHeaders.add(h.name.toString, h.value))
+    defaultHeaders
+  }
+
   /** Turn a netty http request into an http4s request
     *
     * @param channel
@@ -131,13 +136,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     else {
       val (requestBody, cleanup) = convertHttpBody(request)
       val uri: ParseResult[Uri] = Uri.fromString(request.uri())
-      val headerBuf = new ListBuffer[Header.Raw]
-      val headersIterator = request.headers().iteratorAsString()
-      var mapEntry: java.util.Map.Entry[String, String] = null
-      while (headersIterator.hasNext) {
-        mapEntry = headersIterator.next()
-        headerBuf += Header.Raw(CIString(mapEntry.getKey), mapEntry.getValue)
-      }
+      val headers = toHeaders(request.headers())
 
       val method: ParseResult[Method] = request.method() match {
         case HttpMethod.GET => Right(Method.GET)
@@ -178,7 +177,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         m,
         u,
         v,
-        Headers(headerBuf.toList),
+        headers,
         requestBody,
         attributeMap
       )) match {
@@ -214,7 +213,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           (Stream.empty.covary[F], _ => F.unit)
         else {
           val content = full.content()
-          val arr = bytebufToArray(content)
+          val arr = NettyModelConversion.bytebufToArray(content)
           (
             Stream
               .chunk(Chunk.array(arr))
@@ -227,7 +226,8 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         val stream =
           streamed
             .toStreamBuffered(1)
-            .flatMap(c => Stream.chunk(Chunk.array(bytebufToArray(c.content()))))
+            .flatMap(c =>
+              Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
             .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
         (stream, drainBody(_, stream, isDrained))
       case _ => (Stream.empty.covary[F], _ => F.unit)
@@ -416,15 +416,15 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           new DefaultHttpContent(Unpooled.wrappedBuffer(bytes.toArray))
       }
 
-  protected def bytebufToArray(buf: ByteBuf): Array[Byte] = {
-    val array = ByteBufUtil.getBytes(buf)
-    ReferenceCountUtil.release(buf)
-    array
-  }
-
 }
 
 object NettyModelConversion {
   private[NettyModelConversion] val CachedEmpty: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
+
+  def bytebufToArray(buf: ByteBuf): Array[Byte] = {
+    val array = ByteBufUtil.getBytes(buf)
+    ReferenceCountUtil.release(buf)
+    array
+  }
 }

@@ -26,11 +26,10 @@ package object netty {
     def liftToFWithChannel(implicit F: Async[F]): F[Channel] =
       fcf.flatMap(cf =>
         F.async_ { (callback: Either[Throwable, Channel] => Unit) =>
-          cf.addListener { (f: ChannelFuture) =>
+          void(cf.addListener { (f: ChannelFuture) =>
             if (f.isSuccess) callback(Right(f.channel()))
             else callback(Left(f.cause()))
-          }
-          ()
+          })
         })
   }
 
@@ -40,11 +39,15 @@ package object netty {
     def liftToF(implicit F: Async[F]): F[Unit] =
       ff.flatMap(f =>
         F.async_ { (callback: Either[Throwable, Unit] => Unit) =>
-          f.addListener { (f: io.netty.util.concurrent.Future[_]) =>
+          void(f.addListener { (f: io.netty.util.concurrent.Future[_]) =>
             if (f.isSuccess) callback(Right(()))
             else callback(Left(f.cause()))
-          }
-          ()
+          })
         })
+  }
+
+  def void[A](a: A): Unit = {
+    val _ = a
+    ()
   }
 }
