@@ -129,43 +129,43 @@ class NettyWSClientBuilder[F[_]](
       val conn = for {
         queue <- Queue.unbounded[F, Either[Throwable, WSFrame]]
         closed <- Deferred[F, Unit]
-        tupled <- Async[F].async_[Resource[F, WSConnection[F]]] { callback =>
-          void {
-            bs.handler(new ChannelInitializer[SocketChannel] {
-              override def initChannel(ch: SocketChannel): Unit = void {
-                logger.trace("initChannel")
-                val pipeline = ch.pipeline
-                (key.scheme, SSLContextOption.toMaybeSSLContext(sslContext)) match {
-                  case (WSS, Some(context)) =>
-                    void {
-                      logger.trace("Creating SSL engine")
+        connection <- Async[F].async[Resource[F, WSConnection[F]]] { callback =>
+          bs.handler(new ChannelInitializer[SocketChannel] {
+            override def initChannel(ch: SocketChannel): Unit = void {
+              logger.trace("initChannel")
+              val pipeline = ch.pipeline
+              (key.scheme, SSLContextOption.toMaybeSSLContext(sslContext)) match {
+                case (WSS, Some(context)) =>
+                  void {
+                    logger.trace("Creating SSL engine")
 
-                      val engine =
-                        context.createSSLEngine(socketAddress.getHostName, socketAddress.getPort)
-                      val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
-                      engine.setUseClientMode(true)
-                      engine.setSSLParameters(params.toSSLParameters)
-                      pipeline.addLast("ssl", new SslHandler(engine))
-                    }
-                  case _ => ()
-                }
-
-                pipeline.addLast("http", new HttpClientCodec())
-                pipeline.addLast("aggregate", new HttpObjectAggregator(8192))
-                pipeline.addLast(
-                  "websocket",
-                  new Http4sWebsocketHandler[F](req, queue, closed, dispatcher, callback))
-                if (idleTimeout.isFinite && idleTimeout.length > 0)
-                  pipeline
-                    .addLast(
-                      "timeout",
-                      new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
+                    val engine =
+                      context.createSSLEngine(socketAddress.getHostName, socketAddress.getPort)
+                    val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
+                    engine.setUseClientMode(true)
+                    engine.setSSLParameters(params.toSSLParameters)
+                    pipeline.addLast("ssl", new SslHandler(engine))
+                  }
+                case _ => ()
               }
-            })
-            dispatcher.unsafeRunSync(F.delay(bs.connect(socketAddress)).liftToF)
-          }
+
+              pipeline.addLast("http", new HttpClientCodec())
+              pipeline.addLast("aggregate", new HttpObjectAggregator(8192))
+              pipeline.addLast(
+                "websocket",
+                new Http4sWebsocketHandler[F](req, queue, closed, dispatcher, callback))
+              if (idleTimeout.isFinite && idleTimeout.length > 0)
+                pipeline
+                  .addLast(
+                    "timeout",
+                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
+            }
+          })
+          F.delay(bs.connect(socketAddress))
+            .liftToFWithChannel
+            .map(c => Some(F.delay(c.close()).liftToF))
         }
-      } yield tupled
+      } yield connection
 
       Resource.eval(conn).flatMap(identity)
     }
