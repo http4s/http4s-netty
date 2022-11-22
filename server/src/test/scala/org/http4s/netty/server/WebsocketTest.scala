@@ -104,6 +104,7 @@ class NettyWebsocketTest
 
 class JDKClientWebsocketTest
     extends WebsocketTest({
-      case Some(ctx) => JdkWSClient[IO](HttpClient.newBuilder().sslContext(ctx).build())
-      case None => JdkWSClient[IO](HttpClient.newHttpClient())
+      case Some(ctx) =>
+        Resource.pure(JdkWSClient[IO](HttpClient.newBuilder().sslContext(ctx).build()))
+      case None => Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient()))
     })

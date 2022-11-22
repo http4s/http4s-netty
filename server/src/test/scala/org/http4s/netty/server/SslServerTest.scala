@@ -17,6 +17,7 @@
 package org.http4s.netty.server
 
 import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.IO
 import io.circe.Decoder
 import io.circe.Encoder
@@ -120,8 +121,9 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
 
 class JDKSslServerTest extends SslServerTest() {
   val client: Fixture[Client[IO]] = resourceFixture(
-    JdkHttpClient[IO](
-      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
+    Resource.pure(
+      JdkHttpClient[IO](
+        HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build())),
     "client")
 
   val server: Fixture[Server] = resourceFixture(
@@ -132,8 +134,9 @@ class JDKSslServerTest extends SslServerTest() {
 
 class JDKMTLSServerTest extends SslServerTest("mTLS") {
   val client: Fixture[Client[IO]] = resourceFixture(
-    JdkHttpClient[IO](
-      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
+    Resource.pure(
+      JdkHttpClient[IO](
+        HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build())),
     "client")
 
   val server: Fixture[Server] = resourceFixture(
