@@ -18,6 +18,7 @@ package org.http4s.netty.server
 
 import cats.data.Kleisli
 import cats.effect.IO
+import cats.effect.Resource
 import cats.implicits._
 import fs2._
 import org.http4s.HttpRoutes
@@ -95,7 +96,7 @@ abstract class ServerTest extends IOSuite {
 
 class JDKServerTest extends ServerTest {
   val client: Fixture[Client[IO]] =
-    resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
+    resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 }
 
 class NettyClientServerTest extends ServerTest {

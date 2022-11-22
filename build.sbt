@@ -44,7 +44,7 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "co.fs2" %% "fs2-reactive-streams" % "3.3.0",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.7")
+      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.8")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
@@ -65,7 +65,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.7.0" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.8.0" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     ),
     libraryDependencies ++= nativeNettyModules
@@ -80,7 +80,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.7.0" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.7.2" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,

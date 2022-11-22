@@ -18,6 +18,7 @@ package org.http4s.netty.server
 
 import cats.effect.Deferred
 import cats.effect.IO
+import cats.effect.Resource
 import cats.implicits._
 import org.http4s.HttpRoutes
 import org.http4s.Request
@@ -56,7 +57,7 @@ class DrainResponseTest extends IOSuite {
   )
 
   val client: Fixture[Client[IO]] =
-    resourceFixture(JdkHttpClient[IO](HttpClient.newHttpClient()), "client")
+    resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 
   test("drain") {
     val uri = server().baseUri
