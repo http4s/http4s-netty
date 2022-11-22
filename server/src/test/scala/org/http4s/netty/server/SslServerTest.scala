@@ -17,8 +17,8 @@
 package org.http4s.netty.server
 
 import cats.effect.Async
-import cats.effect.Resource
 import cats.effect.IO
+import cats.effect.Resource
 import io.circe.Decoder
 import io.circe.Encoder
 import io.circe.Json
