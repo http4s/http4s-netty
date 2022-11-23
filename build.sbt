@@ -70,7 +70,8 @@ lazy val server = project
     ),
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
-      ProblemFilters.exclude[IncompatibleResultTypeProblem]("org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket")
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket")
     )
   )
 
