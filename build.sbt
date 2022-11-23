@@ -43,7 +43,7 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.3.0",
+      "co.fs2" %% "fs2-reactive-streams" % "3.4.0",
       ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.8")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -68,7 +68,11 @@ lazy val server = project
       "org.http4s" %% "http4s-jdk-http-client" % "0.8.0" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     ),
-    libraryDependencies ++= nativeNettyModules
+    libraryDependencies ++= nativeNettyModules,
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket")
+    )
   )
 
 lazy val client = project

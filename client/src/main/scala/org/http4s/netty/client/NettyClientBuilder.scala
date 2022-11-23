@@ -112,19 +112,21 @@ class NettyClientBuilder[F[_]](
     })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
 
   def resource: Resource[F, Client[F]] =
-    Dispatcher[F].flatMap(disp =>
-      createBootstrap.map { bs =>
-        val config = Http4sChannelPoolMap.Config(
-          maxInitialLength,
-          maxHeaderSize,
-          maxChunkSize,
-          maxConnectionsPerKey,
-          idleTimeout,
-          proxy,
-          sslContext
-        )
-        mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
-      })
+    Dispatcher
+      .parallel[F]
+      .flatMap(disp =>
+        createBootstrap.map { bs =>
+          val config = Http4sChannelPoolMap.Config(
+            maxInitialLength,
+            maxHeaderSize,
+            maxChunkSize,
+            maxConnectionsPerKey,
+            idleTimeout,
+            proxy,
+            sslContext
+          )
+          mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
+        })
 
   private def mkClient(pool: Http4sChannelPoolMap[F], dispatcher: Dispatcher[F]) =
     Client[F] { req =>
@@ -134,12 +136,13 @@ class NettyClientBuilder[F[_]](
 
       for {
         channel <- pool.resource(key)
+        nettyReq <- nettyConverter.toNettyRequest(req)
         responseResource <- Resource
           .eval(F.async_[Resource[F, Response[F]]] { cb =>
             val http4sHandler = new Http4sHandler[F](cb, dispatcher)
             channel.pipeline().addLast(pipelineKey, http4sHandler)
             logger.trace(s"Sending request to $key")
-            channel.writeAndFlush(nettyConverter.toNettyRequest(req))
+            dispatcher.unsafeRunAndForget(F.delay(channel.writeAndFlush(nettyReq)).liftToF)
             logger.trace(s"After request to $key")
           })
         response <- responseResource
