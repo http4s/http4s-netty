@@ -243,10 +243,9 @@ object Http4sNettyHandler {
         logger.trace("Http request received by netty: " + request)
         converter
           .fromNettyRequest(channel, request)
-          .evalMap { req =>
-            D
-              .defer(app(req))
-              .recoverWith(serviceErrorHandler(req))
+          .flatMap { req =>
+            Resource
+              .eval(D.defer(app(req)).recoverWith(serviceErrorHandler(req)))
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
                   b.webSocketKey,

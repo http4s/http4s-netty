@@ -107,7 +107,7 @@ class NettyWSClientBuilder[F[_]](
 
   def resource: Resource[F, WSClient[F]] = for {
     bs <- createBootstrap
-    disp <- Dispatcher[F]
+    disp <- Dispatcher.parallel[F]
   } yield mkWSClient(bs, disp)
 
   private def mkWSClient(bs: Bootstrap, dispatcher: Dispatcher[F]) =

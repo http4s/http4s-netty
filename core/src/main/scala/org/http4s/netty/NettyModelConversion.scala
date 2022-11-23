@@ -57,7 +57,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
 
   private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
-  def toNettyRequest(request: Request[F]): HttpRequest = {
+  def toNettyRequest(request: Request[F]): Resource[F, HttpRequest] = {
     logger.trace(s"Converting request $request")
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
@@ -67,23 +67,21 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       if (notAllowedWithBody.contains(request.method)) {
         val defaultReq = new DefaultFullHttpRequest(version, method, uri)
         request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
-        defaultReq
+        Resource.pure[F, HttpRequest](defaultReq)
       } else {
-        val streamedReq = new DefaultStreamedHttpRequest(
-          version,
-          method,
-          uri,
-          StreamUnicastPublisher(
-            request.body.chunks
-              .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))),
-            disp)
-        )
-        transferEncoding(request.headers, false, streamedReq)
-        streamedReq
+        StreamUnicastPublisher(
+          request.body.chunks
+            .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
+          val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
+          transferEncoding(request.headers, false, streamedReq)
+          streamedReq
+        }
       }
 
-    request.uri.authority.foreach(authority => req.headers().add("Host", authority.renderString))
-    req
+    req.map { r =>
+      request.uri.authority.foreach(authority => r.headers().add("Host", authority.renderString))
+      r
+    }
   }
 
   def fromNettyResponse(response: HttpResponse): F[(Response[F], (Channel) => F[Unit])] = {
@@ -258,26 +256,6 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     ()
   }
 
-  /** Create a Netty response from the result */
-  def toNettyResponse(
-      httpRequest: Request[F],
-      httpResponse: Response[F],
-      dateString: String
-  ): DefaultHttpResponse = {
-    // Http version is 1.0. We can assume it's most likely not.
-    var minorIs0 = false
-    val httpVersion: HttpVersion =
-      if (httpRequest.httpVersion == HV.`HTTP/1.1`)
-        HttpVersion.HTTP_1_1
-      else if (httpRequest.httpVersion == HV.`HTTP/1.0`) {
-        minorIs0 = true
-        HttpVersion.HTTP_1_0
-      } else
-        HttpVersion.valueOf(httpRequest.httpVersion.toString)
-
-    toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0)
-  }
-
   /** Translate an Http4s response to a Netty response.
     *
     * @param httpRequest
@@ -298,7 +276,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpVersion: HttpVersion,
       dateString: String,
       minorVersionIs0: Boolean
-  ): DefaultHttpResponse = {
+  ): Resource[F, DefaultHttpResponse] = {
     val response =
       if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD)
         canHaveBodyResponse(httpResponse, httpVersion, minorVersionIs0)
@@ -322,21 +300,23 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             case _ => // no-op
           }
         }
-        r
+        Resource.pure[F, DefaultHttpResponse](r)
       }
-    // Add the cached date if not present
-    if (!response.headers().contains(HttpHeaderNames.DATE))
-      response.headers().add(HttpHeaderNames.DATE, dateString)
 
-    httpRequest.headers.get[ConnHeader] match {
-      case Some(conn) =>
-        response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
-      case None =>
-        if (minorVersionIs0) // Close by default for Http 1.0
-          response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+    response.map { response =>
+      // Add the cached date if not present
+      if (!response.headers().contains(HttpHeaderNames.DATE))
+        response.headers().add(HttpHeaderNames.DATE, dateString)
+
+      httpRequest.headers.get[ConnHeader] match {
+        case Some(conn) =>
+          response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
+        case None =>
+          if (minorVersionIs0) // Close by default for Http 1.0
+            response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+      }
+      response
     }
-
-    response
   }
 
   /** Translate an http4s request to an http request that is allowed a body based on the response
@@ -346,19 +326,19 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpResponse: Response[F],
       httpVersion: HttpVersion,
       minorIs0: Boolean
-  ): DefaultHttpResponse = {
-    val response =
-      new DefaultStreamedHttpResponse(
-        httpVersion,
-        HttpResponseStatus.valueOf(httpResponse.status.code),
-        StreamUnicastPublisher(
-          httpResponse.body.chunks
-            .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))),
-          disp)
-      )
-    transferEncoding(httpResponse.headers, minorIs0, response)
-    response
-  }
+  ): Resource[F, DefaultHttpResponse] =
+    StreamUnicastPublisher(
+      httpResponse.body.chunks
+        .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
+      val response =
+        new DefaultStreamedHttpResponse(
+          httpVersion,
+          HttpResponseStatus.valueOf(httpResponse.status.code),
+          publisher
+        )
+      transferEncoding(httpResponse.headers, minorIs0, response)
+      response
+    }
 
   private def transferEncoding(
       headers: Headers,

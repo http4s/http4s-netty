@@ -68,7 +68,10 @@ lazy val server = project
       "org.http4s" %% "http4s-jdk-http-client" % "0.8.0" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
     ),
-    libraryDependencies ++= nativeNettyModules
+    libraryDependencies ++= nativeNettyModules,
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket")
+    )
   )
 
 lazy val client = project
