@@ -18,7 +18,6 @@ package org.http4s
 package netty
 
 import cats.effect._
-import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http._
@@ -30,7 +29,6 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.channel.ChannelFuture
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
@@ -51,7 +49,7 @@ import javax.net.ssl.SSLEngine
   * Adapted from NettyModelConversion.scala in
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
   */
-private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: Async[F]) {
+private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   protected[this] val logger = org.log4s.getLogger
 
@@ -226,7 +224,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             .toStreamBuffered(1)
             .flatMap(c =>
               Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
-            .onFinalize(F.delay { isDrained.compareAndSet(false, true); () })
+            .onFinalize(F.delay(void(isDrained.compareAndSet(false, true))))
         (stream, drainBody(_, stream, isDrained))
       case _ => (Stream.empty.covary[F], _ => F.unit)
     }
@@ -235,18 +233,19 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     */
   private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
     F.delay {
-      if (isDrained.compareAndSet(false, true))
+      if (isDrained.compareAndSet(false, true)) {
         if (c.isOpen) {
           logger.info("Response body not drained to completion. Draining and closing connection")
-          c.close().addListener { (_: ChannelFuture) =>
-            // Drain the stream regardless. Some bytebufs often
-            // Remain in the buffers. Draining them solves this issue
-            disp.unsafeRunAndForget(f.compile.drain)
-          }; ()
+          // Drain the stream regardless. Some bytebufs often
+          // Remain in the buffers. Draining them solves this issue
+          F.delay(c.close()).liftToF >> f.compile.drain
         } else
           // Drain anyway, don't close the channel
-          disp.unsafeRunAndForget(f.compile.drain)
-    }
+          f.compile.drain
+      } else {
+        F.unit
+      }
+    }.flatMap(identity)
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */

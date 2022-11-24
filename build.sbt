@@ -48,7 +48,8 @@ lazy val core = project
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
-      "org.http4s" %% "http4s-core" % http4sVersion
+      "org.http4s" %% "http4s-core" % http4sVersion,
+      "org.typelevel" %% "cats-effect" % "3.4.1"
     )
   )
 
@@ -71,7 +72,9 @@ lazy val server = project
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
       ProblemFilters.exclude[IncompatibleResultTypeProblem](
-        "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket")
+        "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.ServerNettyModelConversion.this")
     )
   )
 

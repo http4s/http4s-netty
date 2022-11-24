@@ -47,7 +47,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     callback: (Either[Throwable, Resource[F, WSConnection[F]]]) => Unit
 )(implicit F: Async[F])
     extends SimpleChannelInboundHandler[AnyRef] {
-  private val nettyConverter = new NettyModelConversion[F](dispatcher)
+  private val nettyConverter = new NettyModelConversion[F]
 
   private val handshaker = WebSocketClientHandshakerFactory.newHandshaker(
     URI.create(req.uri.renderString),
@@ -119,7 +119,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
       F.delay(ctx.channel().isWritable)
         .ifM(
           {
-            logger.info(s"writing $wsf")
+            logger.trace(s"writing $wsf")
             F.delay(ctx.writeAndFlush(fromWSFrame(wsf))).liftToF
           },
           F.unit)
@@ -144,9 +144,8 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def subprotocol: Option[String] = Option(sub)
 
-    def close: F[Unit] = F
-      .delay(ctx.channel().isWritable)
-      .ifM(send(WSFrame.Close(1000, "")) >> F.delay(ctx.close).liftToF, F.unit)
+    def close: F[Unit] =
+      send(WSFrame.Close(1000, "")) >> closed.complete(()) >> F.delay(ctx.close).liftToF
   }
 }
 

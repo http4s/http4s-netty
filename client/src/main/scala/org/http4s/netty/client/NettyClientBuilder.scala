@@ -132,7 +132,7 @@ class NettyClientBuilder[F[_]](
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
       val pipelineKey = s"http4s-$key"
-      val nettyConverter = new NettyModelConversion[F](dispatcher)
+      val nettyConverter = new NettyModelConversion[F]
 
       for {
         channel <- pool.resource(key)

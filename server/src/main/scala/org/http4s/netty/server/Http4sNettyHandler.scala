@@ -151,7 +151,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
     }
   }
 
-  override def channelReadComplete(ctx: ChannelHandlerContext): Unit = {
+  override def channelReadComplete(ctx: ChannelHandlerContext): Unit = void {
     logger.trace(s"channelReadComplete: ctx = $ctx")
 
     // The normal response to read complete is to issue another read,
@@ -162,11 +162,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
     // which will be using channel read complete and read to implement
     // their own back pressure
     if (requestsInFlight.get() == 0) {
-      ctx.read(); ()
+      ctx.read()
     } else {
       // otherwise forward it, so that any handler publishers downstream
       // can handle it
-      ctx.fireChannelReadComplete(); ()
+      ctx.fireChannelReadComplete()
     }
   }
 
@@ -230,8 +230,7 @@ object Http4sNettyHandler {
       D: Defer[F]
   ) extends Http4sNettyHandler[F](dispatcher) {
 
-    private[this] val converter: ServerNettyModelConversion[F] =
-      new ServerNettyModelConversion[F](dispatcher)
+    private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
 
     override def handle(
         channel: Channel,
@@ -239,7 +238,7 @@ object Http4sNettyHandler {
         dateString: String
     ): Resource[F, DefaultHttpResponse] =
       Resource.eval(WebSocketBuilder2[F]).flatMap { b =>
-        val app = appFn(b)
+        val app = appFn(b).run
         logger.trace("Http request received by netty: " + request)
         converter
           .fromNettyRequest(channel, request)
