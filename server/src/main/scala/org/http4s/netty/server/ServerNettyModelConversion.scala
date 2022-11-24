@@ -19,7 +19,6 @@ package org.http4s.netty.server
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.kernel.Sync
-import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
@@ -61,9 +60,8 @@ import scodec.bits.ByteVector
 
 import javax.net.ssl.SSLEngine
 
-private[server] final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit
-    F: Async[F])
-    extends NettyModelConversion[F](disp) {
+private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F])
+    extends NettyModelConversion[F] {
   override protected def requestAttributes(
       optionalSslEngine: Option[SSLEngine],
       channel: Channel): Vault =

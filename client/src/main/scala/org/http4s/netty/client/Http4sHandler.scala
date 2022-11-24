@@ -35,7 +35,7 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
     extends ChannelInboundHandlerAdapter {
 
   private[this] val logger = org.log4s.getLogger
-  val modelConversion = new NettyModelConversion[F](dispatcher)
+  val modelConversion = new NettyModelConversion[F]
 
   override def isSharable: Boolean = false
 
