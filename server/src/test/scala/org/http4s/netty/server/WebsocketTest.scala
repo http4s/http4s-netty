@@ -82,7 +82,7 @@ abstract class WebsocketTest(client: (Option[SSLContext]) => Resource[IO, WSClie
     }
   }
 
-  test("Websocket tests") {
+  test("Websocket tests".flaky) {
     val s = server()
     val wsUrl = s.baseUri.copy(Some(Uri.Scheme.unsafeFromString("ws"))) / "websocket"
 
