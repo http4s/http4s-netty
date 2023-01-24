@@ -85,7 +85,12 @@ private[server] class NegotiationHandler[F[_]: Async](
       .addLast(
         "http4s",
         Http4sNettyHandler
-          .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
+          .websocket(
+            httpApp,
+            serviceErrorHandler,
+            config.wsMaxFrameLength,
+            pipeline.channel,
+            dispatcher)
       )
   }
 }
