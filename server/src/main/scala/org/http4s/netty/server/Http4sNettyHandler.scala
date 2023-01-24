@@ -28,6 +28,7 @@ import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
+import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
 import org.http4s.netty.server.internal.Trampoline
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -75,14 +76,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   // This is used essentially as a queue, each incoming request attaches callbacks to this
   // and replaces it to ensure that responses are written out in the same order that they came
   // in.
-  private[this] var lastResponseSent: Future[Unit] = Future.successful(())
-
-  // Cache the formatter thread locally
-  private[this] val RFC7231InstantFormatter =
-    DateTimeFormatter
-      .ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz")
-      .withLocale(Locale.US)
-      .withZone(ZoneId.of("GMT"))
+  private[this] var lastResponseSent: Future[Unit] = Future.unit
 
   // Compute the formatted date string only once per second, and cache the result.
   // This should help microscopically under load.
@@ -218,6 +212,14 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 }
 
 object Http4sNettyHandler {
+
+  // `DateTimeFormatter` is immutable and thread safe, so we can share it.
+  private val RFC7231InstantFormatter =
+    DateTimeFormatter
+      .ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz")
+      .withLocale(Locale.US)
+      .withZone(ZoneId.of("GMT"))
+
   private[netty] case object InvalidMessageException extends Exception with NoStackTrace
 
   private class WebsocketHandler[F[_]](
