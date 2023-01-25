@@ -62,7 +62,7 @@ import scala.util.control.NonFatal
   * module name `http4s-miku`, slain by a bolt of lightning thrown by Zeus during a battle of module
   * naming.
   */
-private[netty] abstract class Http4sNettyHandler[F[_]](ch: Channel, disp: Dispatcher[F])(implicit
+private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(implicit
     F: Async[F]
 ) extends ChannelInboundHandlerAdapter {
   import Http4sNettyHandler.InvalidMessageException
@@ -73,7 +73,15 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ch: Channel, disp: Dispat
   //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
   //  2. We get serialization of execution: the EventLoop is a serial execution queue so
   //     we can rest easy knowing that no two events will be executed in parallel.
-  private[this] val eventLoopContext = ExecutionContext.fromExecutor(ch.eventLoop)
+  private[this] var eventLoopContext_ : ExecutionContext = _
+
+  // Note that this must be called from within the handlers EventLoop
+  private[this] def getEventLoopExecutionContext(ctx: ChannelHandlerContext): ExecutionContext = {
+    if (eventLoopContext_ == null) {
+      eventLoopContext_ = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+    }
+    eventLoopContext_
+  }
 
   // We keep track of whether there are requests in flight.  If there are, we don't respond to read
   // complete, since back pressure is the responsibility of the streams.
@@ -101,6 +109,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](ch: Channel, disp: Dispat
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
+    val eventLoopContext = getEventLoopExecutionContext(ctx)
     val newTick = System.currentTimeMillis() / 1000
     if (cachedDate < newTick) {
       cachedDateString = RFC7231InstantFormatter.format(Instant.ofEpochSecond(newTick))
@@ -233,12 +242,11 @@ object Http4sNettyHandler {
       appFn: WebSocketBuilder2[F] => HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
-      ch: Channel,
       dispatcher: Dispatcher[F]
   )(implicit
       F: Async[F],
       D: Defer[F]
-  ) extends Http4sNettyHandler[F](ch, dispatcher) {
+  ) extends Http4sNettyHandler[F](dispatcher) {
 
     private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
 
@@ -270,8 +278,7 @@ object Http4sNettyHandler {
       app: WebSocketBuilder2[F] => HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
-      ch: Channel,
       dispatcher: Dispatcher[F]
   ): Http4sNettyHandler[F] =
-    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, ch, dispatcher)
+    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, dispatcher)
 }
