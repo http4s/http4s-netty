@@ -26,6 +26,7 @@ import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.http.HttpRequestDecoder
 import io.netty.handler.codec.http.HttpResponseEncoder
+import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder
 import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
@@ -81,6 +82,7 @@ private[server] class NegotiationHandler[F[_]: Async](
         "idle-handler",
         new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
     pipeline
+      .addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
       .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
       .addLast(
         "http4s",

@@ -14,42 +14,36 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty.client
 
 import cats.effect.IO
-import cats.effect.Resource
 import cats.syntax.all._
-import org.http4s.HttpRoutes
-import org.http4s.Uri
-import org.http4s.client.websocket.WSClient
-import org.http4s.client.websocket.WSFrame
-import org.http4s.client.websocket.WSRequest
+import com.comcast.ip4s._
+import org.http4s._
+import org.http4s.client.websocket._
 import org.http4s.dsl.io._
-import org.http4s.implicits._
-import org.http4s.jdkhttpclient.JdkWSClient
-import org.http4s.netty.client.NettyWSClientBuilder
+import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.websocket.WebSocketBuilder2
 import scodec.bits.ByteVector
 
-import java.net.http.HttpClient
+import scala.concurrent.duration._
 
-abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
-  import WebsocketTest._
-
+class EmberWebsocketTest extends IOSuite {
   val server: Fixture[Uri] = resourceFixture(
     for {
-      netty <- NettyServerBuilder[IO]
+      netty <- EmberServerBuilder
+        .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-        .withNioTransport
-        .withoutBanner
-        .bindAny()
-        .resource
+        .withPort(port"19999")
+        .withShutdownTimeout(1.second)
+        .build
         .map(s => httpToWsUri(s.baseUri))
     } yield netty,
     "server"
   )
 
-  val client: Fixture[WSClient[IO]] = resourceFixture(_client, "client")
+  val client: Fixture[WSClient[IO]] =
+    resourceFixture(NettyWSClientBuilder[IO].withNioTransport.resource, "client")
 
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"
@@ -70,7 +64,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
           WSFrame.Text("bar"),
           WSFrame.Binary(ByteVector(3, 99, 12)),
           WSFrame.Text("foo"),
-          WSFrame.Close(1000, "goodbye")
+          WSFrame.Close(1000, "")
         )
       )
   }
@@ -131,16 +125,10 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
         )
       )
   }
-}
 
-object WebsocketTest {
   def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] { case _ -> Root / "echo" =>
       ws.build(identity)
     }
+
 }
-
-class NettyWebsocketTest extends WebsocketTest(NettyWSClientBuilder[IO].withNioTransport.resource)
-
-class JDKClientWebsocketTest
-    extends WebsocketTest(Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient())))

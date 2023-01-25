@@ -28,7 +28,7 @@ import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
-import org.http4s.netty.server.internal.Trampoline
+import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
@@ -39,8 +39,11 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.util.Failure
+import scala.util.Success
 import scala.util.control.NoStackTrace
 import scala.util.control.NonFatal
 
@@ -68,6 +71,22 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 ) extends ChannelInboundHandlerAdapter {
   import Http4sNettyHandler.InvalidMessageException
 
+  // By using the Netty event loop assigned to this channel we get two benefits:
+  //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
+  //     only pass events up and down from within the event loop to which it is assigned.
+  //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
+  //  2. We get serialization of execution: the EventLoop is a serial execution queue so
+  //     we can rest easy knowing that no two events will be executed in parallel.
+  private[this] var eventLoopContext_ : ExecutionContext = _
+
+  // Note that this must be called from within the handlers EventLoop
+  private[this] def getEventLoopExecutionContext(ctx: ChannelHandlerContext): ExecutionContext = {
+    if (eventLoopContext_ == null) {
+      eventLoopContext_ = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+    }
+    eventLoopContext_
+  }
+
   // We keep track of whether there are requests in flight.  If there are, we don't respond to read
   // complete, since back pressure is the responsibility of the streams.
   private[this] val requestsInFlight = new AtomicLong()
@@ -75,14 +94,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   // This is used essentially as a queue, each incoming request attaches callbacks to this
   // and replaces it to ensure that responses are written out in the same order that they came
   // in.
-  private[this] var lastResponseSent: Future[Unit] = Future.successful(())
-
-  // Cache the formatter thread locally
-  private[this] val RFC7231InstantFormatter =
-    DateTimeFormatter
-      .ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz")
-      .withLocale(Locale.US)
-      .withZone(ZoneId.of("GMT"))
+  private[this] var lastResponseSent: Future[Unit] = Future.unit
 
   // Compute the formatted date string only once per second, and cache the result.
   // This should help microscopically under load.
@@ -101,7 +113,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
-    val newTick: Long = System.currentTimeMillis() / 1000
+    val eventLoopContext = getEventLoopExecutionContext(ctx)
+    val newTick = System.currentTimeMillis() / 1000
     if (cachedDate < newTick) {
       cachedDateString = RFC7231InstantFormatter.format(Instant.ofEpochSecond(newTick))
       cachedDate = newTick
@@ -120,28 +133,36 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
           case Left(err) => F.delay(p.failure(err))
         })
         // This attaches all writes sequentially using
-        // LastResponseSent as a queue. `trampoline` ensures we do not
+        // LastResponseSent as a queue. `eventLoopContext` ensures we do not
         // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
-            .map[Unit] { case (response, cleanup) =>
-              if (requestsInFlight.decrementAndGet() == 0)
-                // Since we've now gone down to zero, we need to issue a
-                // read, in case we ignored an earlier read complete
-                ctx.read()
-              void {
-                ctx
-                  .writeAndFlush(response)
-                  .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
-              }
-            }(Trampoline)
-            .recover[Unit] { case NonFatal(e) =>
-              logger.warn(e)("Error caught during write action")
-              void {
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE)
-              }
-            }(Trampoline)
-        }(Trampoline)
+            .transform {
+              case Success((response, cleanup)) =>
+                if (requestsInFlight.decrementAndGet() == 0)
+                  // Since we've now gone down to zero, we need to issue a
+                  // read, in case we ignored an earlier read complete
+                  ctx.read()
+                void {
+                  ctx
+                    .writeAndFlush(response)
+                    .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
+                }
+                Success(())
+
+              case Failure(NonFatal(e)) =>
+                logger.warn(e)(
+                  "Error caught during service handling. Check the configured ServiceErrorHandler.")
+                void {
+                  sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                }
+                Failure(e)
+
+              case Failure(e) => // fatal: just let it go.
+                Failure(e)
+            }(eventLoopContext)
+        }(eventLoopContext)
+
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         // These are empty trailers... what do do???
         ()
@@ -208,16 +229,24 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   private def sendSimpleErrorResponse(
       ctx: ChannelHandlerContext,
       status: HttpResponseStatus): ChannelFuture = {
-    val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status)
+    val response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status)
     response.headers().set(HttpHeaderNames.CONNECTION, "close")
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, "0")
-    val f = ctx.channel().write(response)
-    f.addListener(ChannelFutureListener.CLOSE)
-    f
+    ctx
+      .writeAndFlush(response)
+      .addListener(ChannelFutureListener.CLOSE)
   }
 }
 
 object Http4sNettyHandler {
+
+  // `DateTimeFormatter` is immutable and thread safe, so we can share it.
+  private val RFC7231InstantFormatter =
+    DateTimeFormatter
+      .ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz")
+      .withLocale(Locale.US)
+      .withZone(ZoneId.of("GMT"))
+
   private[netty] case object InvalidMessageException extends Exception with NoStackTrace
 
   private class WebsocketHandler[F[_]](

@@ -26,9 +26,11 @@ import cats.syntax.all._
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.ChannelInitializer
+import io.netty.channel.ChannelOption
 import io.netty.channel.socket.SocketChannel
 import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpObjectAggregator
+import io.netty.handler.codec.http.websocketx._
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.Uri
@@ -48,6 +50,8 @@ class NettyWSClientBuilder[F[_]](
     eventLoopThreads: Int,
     transport: NettyTransport,
     sslContext: SSLContextOption,
+    subprotocol: Option[String],
+    maxFramePayloadLength: Int,
     nettyChannelOptions: NettyChannelOptions
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
@@ -61,6 +65,8 @@ class NettyWSClientBuilder[F[_]](
       eventLoopThreads: Int = eventLoopThreads,
       transport: NettyTransport = transport,
       sslContext: SSLContextOption = sslContext,
+      subprotocol: Option[String] = subprotocol,
+      maxFramePayloadLength: Int = maxFramePayloadLength,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
   ): NettyWSClientBuilder[F] =
     new NettyWSClientBuilder[F](
@@ -68,6 +74,8 @@ class NettyWSClientBuilder[F[_]](
       eventLoopThreads,
       transport,
       sslContext,
+      subprotocol,
+      maxFramePayloadLength,
       nettyChannelOptions
     )
 
@@ -87,6 +95,14 @@ class NettyWSClientBuilder[F[_]](
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
 
+  def withSubprotocol(protocol: Option[String]): Self =
+    copy(subprotocol = protocol)
+
+  def withFrameMaxPayloadLength(max: Int): Self = {
+    require(max > 0, "Must be positive")
+    copy(maxFramePayloadLength = max)
+  }
+
   /** Socket selector threads.
     * @param nThreads
     *   number of selector threads. Use <code>0</code> for netty default
@@ -99,6 +115,10 @@ class NettyWSClientBuilder[F[_]](
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
       EventLoopHolder.fromTransport(transport, eventLoopThreads).configure(bootstrap)
+      bootstrap
+        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Int.box(5 * 1000))
+        .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
+        .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
       nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) =>
         boot.option(opt, value)
       }
@@ -129,7 +149,19 @@ class NettyWSClientBuilder[F[_]](
       val conn = for {
         queue <- Queue.unbounded[F, Either[Throwable, WSFrame]]
         closed <- Deferred[F, Unit]
-        connection <- Async[F].async[Resource[F, WSConnection[F]]] { callback =>
+        config = WebSocketClientProtocolConfig
+          .newBuilder()
+          .webSocketUri(req.uri.renderString)
+          .subprotocol(subprotocol.orNull)
+          .handleCloseFrames(false)
+          .version(WebSocketVersion.V13)
+          .sendCloseFrame(null)
+          .allowExtensions(true)
+          .customHeaders(new NettyModelConversion[F].toNettyHeaders(req.headers))
+          .maxFramePayloadLength(maxFramePayloadLength)
+          .build()
+        websocketinit = new WebSocketClientProtocolHandler(config)
+        connection <- Async[F].async[WSConnection[F]] { callback =>
           bs.handler(new ChannelInitializer[SocketChannel] {
             override def initChannel(ch: SocketChannel): Unit = void {
               logger.trace("initChannel")
@@ -150,10 +182,20 @@ class NettyWSClientBuilder[F[_]](
               }
 
               pipeline.addLast("http", new HttpClientCodec())
-              pipeline.addLast("aggregate", new HttpObjectAggregator(8192))
+              pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
+              pipeline.addLast("protocol-handler", websocketinit)
+              pipeline.addLast(
+                "aggregate2",
+                new WebSocketFrameAggregator(config.maxFramePayloadLength()))
               pipeline.addLast(
                 "websocket",
-                new Http4sWebsocketHandler[F](req, queue, closed, dispatcher, callback))
+                new Http4sWebsocketHandler[F](
+                  websocketinit.handshaker(),
+                  queue,
+                  closed,
+                  dispatcher,
+                  callback)
+              )
               if (idleTimeout.isFinite && idleTimeout.length > 0)
                 pipeline
                   .addLast(
@@ -161,13 +203,11 @@ class NettyWSClientBuilder[F[_]](
                     new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
             }
           })
-          F.delay(bs.connect(socketAddress))
-            .liftToFWithChannel
-            .map(c => Some(F.delay(c.close()).liftToF))
+          F.delay(bs.connect(socketAddress).sync()).as(None)
         }
       } yield connection
 
-      Resource.eval(conn).flatMap(identity)
+      Resource.eval(conn)
     }
 }
 
@@ -178,6 +218,8 @@ object NettyWSClientBuilder {
       eventLoopThreads = 0,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
+      subprotocol = None,
+      maxFramePayloadLength = 65536,
       nettyChannelOptions = NettyChannelOptions.empty
     )
 }
