@@ -219,7 +219,7 @@ object NettyWSClientBuilder {
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
       subprotocol = None,
-      maxFramePayloadLength = 65_536,
+      maxFramePayloadLength = 65536,
       nettyChannelOptions = NettyChannelOptions.empty
     )
 }
