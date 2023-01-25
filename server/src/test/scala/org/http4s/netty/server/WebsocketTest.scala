@@ -97,14 +97,14 @@ abstract class WebsocketTest(client: (Option[SSLContext]) => Resource[IO, WSClie
 }
 
 class NettyWebsocketTest
-    extends WebsocketTest {
+    extends WebsocketTest({
       case Some(ctx) => NettyWSClientBuilder[IO].withSSLContext(ctx).withNioTransport.resource
       case None => NettyWSClientBuilder[IO].withNioTransport.resource
-    }
+    })
 
 class JDKClientWebsocketTest
-    extends WebsocketTest {
+    extends WebsocketTest({
       case Some(ctx) =>
         Resource.pure(JdkWSClient[IO](HttpClient.newBuilder().sslContext(ctx).build()))
       case None => Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient()))
-    }
+    })
