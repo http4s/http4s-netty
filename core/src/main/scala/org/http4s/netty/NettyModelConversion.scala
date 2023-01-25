@@ -401,9 +401,9 @@ object NettyModelConversion {
   private[NettyModelConversion] val CachedEmpty: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
 
-  def bytebufToArray(buf: ByteBuf): Array[Byte] = {
+  def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
     val array = ByteBufUtil.getBytes(buf)
-    ReferenceCountUtil.release(buf)
+    if (release) ReferenceCountUtil.release(buf)
     array
   }
 }
