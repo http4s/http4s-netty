@@ -50,6 +50,8 @@ class NettyWSClientBuilder[F[_]](
     eventLoopThreads: Int,
     transport: NettyTransport,
     sslContext: SSLContextOption,
+    subprotocol: Option[String],
+    maxFramePayloadLength: Int,
     nettyChannelOptions: NettyChannelOptions
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
@@ -63,6 +65,8 @@ class NettyWSClientBuilder[F[_]](
       eventLoopThreads: Int = eventLoopThreads,
       transport: NettyTransport = transport,
       sslContext: SSLContextOption = sslContext,
+      subprotocol: Option[String] = subprotocol,
+      maxFramePayloadLength: Int = maxFramePayloadLength,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
   ): NettyWSClientBuilder[F] =
     new NettyWSClientBuilder[F](
@@ -70,6 +74,8 @@ class NettyWSClientBuilder[F[_]](
       eventLoopThreads,
       transport,
       sslContext,
+      subprotocol,
+      maxFramePayloadLength,
       nettyChannelOptions
     )
 
@@ -88,6 +94,14 @@ class NettyWSClientBuilder[F[_]](
 
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
+
+  def withSubprotocol(protocol: Option[String]): Self =
+    copy(subprotocol = protocol)
+
+  def withFrameMaxPayloadLength(max: Int): Self = {
+    require(max > 0, "Must be positive")
+    copy(maxFramePayloadLength = max)
+  }
 
   /** Socket selector threads.
     * @param nThreads
@@ -138,12 +152,13 @@ class NettyWSClientBuilder[F[_]](
         config = WebSocketClientProtocolConfig
           .newBuilder()
           .webSocketUri(req.uri.renderString)
-          .subprotocol(null)
+          .subprotocol(subprotocol.orNull)
           .handleCloseFrames(false)
           .version(WebSocketVersion.V13)
           .sendCloseFrame(null)
           .allowExtensions(true)
           .customHeaders(new NettyModelConversion[F].toNettyHeaders(req.headers))
+          .maxFramePayloadLength(maxFramePayloadLength)
           .build()
         websocketinit = new WebSocketClientProtocolHandler(config)
         connection <- Async[F].async[WSConnection[F]] { callback =>
@@ -188,7 +203,6 @@ class NettyWSClientBuilder[F[_]](
                     new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
             }
           })
-          // bs.connect(socketAddress)
           F.delay(bs.connect(socketAddress).sync()).as(None)
         }
       } yield connection
@@ -204,6 +218,8 @@ object NettyWSClientBuilder {
       eventLoopThreads = 0,
       transport = NettyTransport.Native,
       sslContext = SSLContextOption.TryDefaultSSLContext,
+      subprotocol = None,
+      maxFramePayloadLength = 65_536,
       nettyChannelOptions = NettyChannelOptions.empty
     )
 }
