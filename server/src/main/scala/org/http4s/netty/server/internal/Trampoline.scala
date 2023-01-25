@@ -21,6 +21,9 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutor
 
+@deprecated(
+  message = "This is dead code and remains due to binary compatibility reasons",
+  since = "0.5.5")
 private[server] object Trampoline extends ExecutionContextExecutor {
   private val local = new ThreadLocal[ThreadLocalTrampoline]
 
