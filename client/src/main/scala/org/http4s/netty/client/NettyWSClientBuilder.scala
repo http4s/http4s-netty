@@ -142,6 +142,7 @@ class NettyWSClientBuilder[F[_]](
           .handleCloseFrames(false)
           .version(WebSocketVersion.V13)
           .sendCloseFrame(null)
+          .allowExtensions(true)
           .customHeaders(new NettyModelConversion[F].toNettyHeaders(req.headers))
           .build()
         websocketinit = new WebSocketClientProtocolHandler(config)
@@ -188,7 +189,7 @@ class NettyWSClientBuilder[F[_]](
             }
           })
           // bs.connect(socketAddress)
-          F.delay(bs.connect(socketAddress)).liftToF.as(None)
+          F.delay(bs.connect(socketAddress).sync()).as(None)
         }
       } yield connection
 

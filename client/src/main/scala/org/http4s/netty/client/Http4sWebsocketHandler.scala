@@ -33,7 +33,7 @@ import org.http4s.netty.client.Http4sWebsocketHandler.fromWSFrame
 import org.http4s.netty.client.Http4sWebsocketHandler.toWSFrame
 import scodec.bits.ByteVector
 
-import java.nio.channels.ClosedChannelException
+import scala.concurrent.ExecutionContext
 
 private[client] class Http4sWebsocketHandler[F[_]](
     handshaker: WebSocketClientHandshaker,
@@ -66,16 +66,19 @@ private[client] class Http4sWebsocketHandler[F[_]](
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = void {
     logger.error(cause)("something failed")
     callback(Left(cause))
-    // dispatcher.unsafeRunAndForget(queue.offer(Left(cause)) >> closed.complete(()) >> F.cede)
+    dispatcher.unsafeRunAndForget(queue.offer(Left(cause)) >> closed.complete(()))
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit =
     evt match {
+      case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_ISSUED =>
+        logger.trace("Handshake issued")
       case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_COMPLETE =>
         logger.trace("Handshake complete")
         ctx.read()
         callback(new Conn(handshaker.actualSubprotocol(), ctx, queue, closed).asRight[Throwable])
-      case _ => super.userEventTriggered(ctx, evt)
+      case _ =>
+        super.userEventTriggered(ctx, evt)
     }
 
   class Conn(
@@ -84,41 +87,22 @@ private[client] class Http4sWebsocketHandler[F[_]](
       queue: Queue[F, Either[Throwable, WSFrame]],
       closed: Deferred[F, Unit])
       extends WSConnection[F] {
-
-    def sendImpl(wsf: WSFrame): F[Unit] = F.async_ { callback =>
-      val future = if (ctx.channel().isOpen && ctx.channel().isWritable) {
-        ctx.writeAndFlush(fromWSFrame(wsf))
-      } else {
-        ctx.newSucceededFuture().addListener(ChannelFutureListener.CLOSE)
-      }
-      void {
-        future.addListener((future: ChannelFuture) =>
-          if (future.isSuccess) {
-            callback(Right(()))
-          } else {
-            val cause = future.cause()
-            cause match {
-              case _: ClosedChannelException =>
-                logger.info(cause)(s"Channel closed while writing $wsf")
-                callback(Left(cause))
-              case _: Throwable =>
-                callback(Left(cause))
-              case null =>
-                callback(Left(new IllegalStateException("failed with unknown reason")))
-            }
-          })
-      }
-    }
+    private val runInNetty = F.evalOnK(ExecutionContext.fromExecutor(ctx.executor()))
 
     override def send(wsf: WSFrame): F[Unit] = {
       logger.trace(s"writing $wsf")
-      sendImpl(wsf).recoverWith { case _: ClosedChannelException =>
-        close
-      }
+      runInNetty(F.delay(ctx.writeAndFlush(fromWSFrame(wsf)))).liftToF
     }
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
-      G.traverse_(wsfs)(wsf => send(wsf))
+      runInNetty(F.delay {
+        if (ctx.channel().isOpen && ctx.channel().isWritable) {
+          val list = wsfs.toList
+          list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
+          ctx.flush()
+        }
+        ()
+      })
 
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>

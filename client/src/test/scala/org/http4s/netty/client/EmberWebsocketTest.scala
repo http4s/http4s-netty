@@ -26,6 +26,8 @@ import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.websocket.WebSocketBuilder2
 import scodec.bits.ByteVector
 
+import scala.concurrent.duration._
+
 class EmberWebsocketTest extends IOSuite {
   val server: Fixture[Uri] = resourceFixture(
     for {
@@ -33,6 +35,7 @@ class EmberWebsocketTest extends IOSuite {
         .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
         .withPort(port"9999")
+        .withShutdownTimeout(1.second)
         .build
         .map(s => httpToWsUri(s.baseUri))
     } yield netty,
