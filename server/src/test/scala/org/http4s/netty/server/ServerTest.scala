@@ -17,6 +17,7 @@
 package org.http4s.netty.server
 
 import cats.data.Kleisli
+import cats.effect.Deferred
 import cats.effect.IO
 import cats.effect.Resource
 import cats.implicits._
@@ -115,6 +116,35 @@ abstract class ServerTest extends IOSuite {
       client().statusFromUri(uri).map { status =>
         assertEquals(status, InternalServerError)
       }
+    }
+  }
+
+  test("requests can be cancelled") {
+    val ref: Deferred[IO, Boolean] = Deferred.unsafe[IO, Boolean]
+    val route = HttpRoutes
+      .of[IO] { case GET -> Root / "cancel" =>
+        (IO.never *> IO.defer(Ok(""))).onCancel(ref.complete(true).void)
+      }
+      .orNotFound
+
+    val server: Resource[IO, Server] = NettyServerBuilder[IO]
+      .withHttpApp(route)
+      .withEventLoopThreads(1)
+      .withIdleTimeout(
+        1.seconds
+      ) // Basically going to send the request and hope it times out immediately.
+      .withoutBanner
+      .bindAny()
+      .resource
+
+    server.use { server =>
+      val uri = server.baseUri / "cancel"
+      val resp = client().statusFromUri(uri).timeout(15.seconds).attempt.map { case other =>
+        fail(s"unexpectedly received a result: $other")
+      }
+
+      IO.race(resp, ref.get.map(assert(_)))
+        .map(_.merge)
     }
   }
 }
