@@ -135,7 +135,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
               case Failure(NonFatal(e)) =>
                 logger.warn(e)(
-                  "Error caught during service handling. Check the configure ServiceErrorHandler.")
+                  "Error caught during service handling. Check the configured ServiceErrorHandler.")
                 void {
                   sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
                 }
