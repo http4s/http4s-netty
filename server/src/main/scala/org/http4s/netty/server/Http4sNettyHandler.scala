@@ -33,7 +33,6 @@ import org.http4s.netty.server.internal.Trampoline
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
-
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
@@ -42,6 +41,7 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.util.{Failure, Success}
 import scala.util.control.NoStackTrace
 import scala.util.control.NonFatal
 
@@ -118,22 +118,29 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
         // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
-            .map[Unit] { case (response, cleanup) =>
-              if (requestsInFlight.decrementAndGet() == 0)
-                // Since we've now gone down to zero, we need to issue a
-                // read, in case we ignored an earlier read complete
-                ctx.read()
-              void {
-                ctx
-                  .writeAndFlush(response)
-                  .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
-              }
-            }(Trampoline)
-            .recover[Unit] { case NonFatal(e) =>
-              logger.warn(e)("Error caught during service handling. Check the ServiceErrorHandler")
-              void {
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
-              }
+            .transform {
+              case Success((response, cleanup)) =>
+                if (requestsInFlight.decrementAndGet() == 0)
+                  // Since we've now gone down to zero, we need to issue a
+                  // read, in case we ignored an earlier read complete
+                  ctx.read()
+                void {
+                  ctx
+                    .writeAndFlush(response)
+                    .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
+                }
+                Success(())
+
+              case Failure(NonFatal(e)) =>
+                logger.warn(e)(
+                  "Error caught during service handling. Check the configure ServiceErrorHandler.")
+                void {
+                  sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                }
+                Failure(e)
+
+              case Failure(e) => // fatal: just let it go.
+                Failure(e)
             }(Trampoline)
         }(Trampoline)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
@@ -205,7 +212,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
     val response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status)
     response.headers().set(HttpHeaderNames.CONNECTION, "close")
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, "0")
-    ctx.writeAndFlush(response)
+    ctx
+      .writeAndFlush(response)
       .addListener(ChannelFutureListener.CLOSE)
   }
 }
@@ -245,8 +253,7 @@ object Http4sNettyHandler {
           .fromNettyRequest(channel, request)
           .flatMap { req =>
             Resource
-              .eval(D.defer(app(req)).recoverWith(
-                serviceErrorHandler(req)))
+              .eval(D.defer(app(req)).recoverWith(serviceErrorHandler(req)))
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
                   b.webSocketKey,

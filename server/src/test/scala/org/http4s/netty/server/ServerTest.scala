@@ -100,7 +100,7 @@ abstract class ServerTest extends IOSuite {
     }
   }
 
-  test("Unhandled exceptions will be turned into a 500 response") {
+  test("Unhandled service exceptions will be turned into a 500 response") {
     val server: Resource[IO, Server] = NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withServiceErrorHandler(_ => PartialFunction.empty)
