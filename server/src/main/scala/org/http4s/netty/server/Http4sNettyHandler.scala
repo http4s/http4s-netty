@@ -33,6 +33,7 @@ import org.http4s.netty.server.internal.Trampoline
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
+
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
@@ -41,7 +42,8 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.Future
 import scala.concurrent.Promise
-import scala.util.{Failure, Success}
+import scala.util.Failure
+import scala.util.Success
 import scala.util.control.NoStackTrace
 import scala.util.control.NonFatal
 
