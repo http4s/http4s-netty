@@ -42,20 +42,19 @@ private[client] class Http4sWebsocketHandler[F[_]](
     dispatcher: Dispatcher[F],
     callback: (Either[Throwable, WSConnection[F]]) => Unit
 )(implicit F: Async[F])
-    extends SimpleChannelInboundHandler[AnyRef] {
+    extends SimpleChannelInboundHandler[WebSocketFrame] {
   private val logger = org.log4s.getLogger
 
-  override def channelRead0(ctx: ChannelHandlerContext, msg: Object): Unit = {
+  override def channelRead0(ctx: ChannelHandlerContext, msg: WebSocketFrame): Unit = {
     logger.trace("got> " + msg.getClass)
     void(msg match {
       case frame: CloseWebSocketFrame =>
         val op =
-          queue.offer(Right(toWSFrame(frame))) >> closed.complete(())
+          queue.offer(Right(toWSFrame(frame))) >> closed.complete(()) >> F.delay(ctx.close())
         dispatcher.unsafeRunSync(op)
       case frame: WebSocketFrame =>
         val op = queue.offer(Right(toWSFrame(frame)))
         dispatcher.unsafeRunSync(op)
-      case _ =>
     })
   }
 
@@ -66,7 +65,8 @@ private[client] class Http4sWebsocketHandler[F[_]](
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = void {
     logger.error(cause)("something failed")
     callback(Left(cause))
-    dispatcher.unsafeRunAndForget(queue.offer(Left(cause)) >> closed.complete(()))
+    dispatcher.unsafeRunAndForget(
+      queue.offer(Left(cause)) >> closed.complete(()) >> F.delay(ctx.close()))
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit =
@@ -124,12 +124,14 @@ private[client] object Http4sWebsocketHandler {
     frame match {
       case t: TextWebSocketFrame => WSFrame.Text(t.text(), t.isFinalFragment)
       case p: PingWebSocketFrame =>
-        WSFrame.Ping(ByteVector.apply(NettyModelConversion.bytebufToArray(p.content(), false)))
+        WSFrame.Ping(
+          ByteVector.apply(NettyModelConversion.bytebufToArray(p.content(), release = false)))
       case p: PongWebSocketFrame =>
-        WSFrame.Pong(ByteVector.apply(NettyModelConversion.bytebufToArray(p.content(), false)))
+        WSFrame.Pong(
+          ByteVector.apply(NettyModelConversion.bytebufToArray(p.content(), release = false)))
       case b: BinaryWebSocketFrame =>
         WSFrame.Binary(
-          ByteVector.apply(NettyModelConversion.bytebufToArray(b.content(), false)),
+          ByteVector.apply(NettyModelConversion.bytebufToArray(b.content(), release = false)),
           b.isFinalFragment)
       case c: CloseWebSocketFrame => WSFrame.Close(c.statusCode(), c.reasonText())
       case _ => WSFrame.Close(1000, "Unknown websocket frame")

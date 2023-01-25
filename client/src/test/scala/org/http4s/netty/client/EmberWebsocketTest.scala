@@ -34,7 +34,7 @@ class EmberWebsocketTest extends IOSuite {
       netty <- EmberServerBuilder
         .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-        .withPort(port"9999")
+        .withPort(port"19999")
         .withShutdownTimeout(1.second)
         .build
         .map(s => httpToWsUri(s.baseUri))
