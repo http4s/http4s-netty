@@ -182,7 +182,7 @@ class NettyWSClientBuilder[F[_]](
               }
 
               pipeline.addLast("http", new HttpClientCodec())
-              pipeline.addLast("aggregate", new HttpObjectAggregator(8192))
+              pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
                 "aggregate2",

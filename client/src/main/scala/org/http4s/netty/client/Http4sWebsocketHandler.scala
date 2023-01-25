@@ -91,7 +91,12 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def send(wsf: WSFrame): F[Unit] = {
       logger.trace(s"writing $wsf")
-      runInNetty(F.delay(ctx.writeAndFlush(fromWSFrame(wsf)))).liftToF
+      runInNetty(F.delay {
+        if (ctx.channel().isOpen && ctx.channel().isWritable) {
+          ctx.writeAndFlush(fromWSFrame(wsf))
+          ()
+        }
+      })
     }
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
