@@ -50,7 +50,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     void(msg match {
       case frame: CloseWebSocketFrame =>
         val op =
-          queue.offer(Right(toWSFrame(frame))) >> closed.complete(()) >> F.delay(ctx.close())
+          queue.offer(Right(toWSFrame(frame))) >> closed.complete(())
         dispatcher.unsafeRunSync(op)
       case frame: WebSocketFrame =>
         val op = queue.offer(Right(toWSFrame(frame)))
@@ -65,8 +65,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = void {
     logger.error(cause)("something failed")
     callback(Left(cause))
-    dispatcher.unsafeRunAndForget(
-      queue.offer(Left(cause)) >> closed.complete(()) >> F.delay(ctx.close()))
+    dispatcher.unsafeRunAndForget(closed.complete(()) >> F.delay(ctx.close()).liftToF)
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: Any): Unit =
@@ -112,7 +111,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>
         logger.trace("closing")
-        none[WSFrame].pure[F]
+        F.delay(ctx.close()).void >> none[WSFrame].pure[F]
       case None =>
         queue.take.rethrow.map(_.some)
     }
@@ -120,7 +119,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     override def subprotocol: Option[String] = Option(sub)
 
     def close: F[Unit] =
-      closed.complete(()).void >> F.delay(ctx.close).liftToF
+      closed.complete(()).void
   }
 }
 
