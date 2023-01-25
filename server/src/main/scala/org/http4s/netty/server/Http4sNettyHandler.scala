@@ -130,9 +130,9 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
               }
             }(Trampoline)
             .recover[Unit] { case NonFatal(e) =>
-              logger.warn(e)("Error caught during write action")
+              logger.warn(e)("Error caught during service handling. Check the ServiceErrorHandler")
               void {
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE)
+                sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
               }
             }(Trampoline)
         }(Trampoline)
@@ -202,12 +202,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   private def sendSimpleErrorResponse(
       ctx: ChannelHandlerContext,
       status: HttpResponseStatus): ChannelFuture = {
-    val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status)
+    val response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status)
     response.headers().set(HttpHeaderNames.CONNECTION, "close")
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, "0")
-    val f = ctx.channel().write(response)
-    f.addListener(ChannelFutureListener.CLOSE)
-    f
+    ctx.writeAndFlush(response)
+      .addListener(ChannelFutureListener.CLOSE)
   }
 }
 
@@ -246,7 +245,8 @@ object Http4sNettyHandler {
           .fromNettyRequest(channel, request)
           .flatMap { req =>
             Resource
-              .eval(D.defer(app(req)).recoverWith(serviceErrorHandler(req)))
+              .eval(D.defer(app(req)).recoverWith(
+                serviceErrorHandler(req)))
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
                   b.webSocketKey,
