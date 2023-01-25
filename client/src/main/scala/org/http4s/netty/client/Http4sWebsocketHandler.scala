@@ -48,6 +48,19 @@ private[client] class Http4sWebsocketHandler[F[_]](
       WebSocketClientProtocolHandler.ClientHandshakeStateEvent] {
   private val logger = org.log4s.getLogger
 
+  override def channelActive(ctx: ChannelHandlerContext): Unit = void {
+    super.channelActive(ctx)
+    if (!ctx.channel().config().isAutoRead) {
+      ctx.read()
+    }
+  }
+
+  @SuppressWarnings(Array("deprecation"))
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
+    logger.warn("Handshake issued")
+    super.exceptionCaught(ctx, cause)
+  }
+
   override def eventReceived(
       ctx: ChannelHandlerContext,
       evt: WebSocketClientProtocolHandler.ClientHandshakeStateEvent): Unit =
@@ -57,9 +70,15 @@ private[client] class Http4sWebsocketHandler[F[_]](
       case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_COMPLETE =>
         logger.trace("Handshake complete")
         ctx.read()
-        val publisher = new HandlerPublisher(ctx.executor(), classOf[WebSocketFrame])
+        val publisher = new HandlerPublisher(ctx.executor(), classOf[WebSocketFrame]) {
+          override def requestDemand(): Unit = void {
+            if (!ctx.channel().config().isAutoRead) {
+              ctx.read()
+            }
+          }
+        }
         ctx.pipeline().addBefore(ctx.name(), "stream-publisher", publisher)
-        ctx.pipeline().remove(this)
+        // ctx.pipeline().remove(this)
         publisher.subscribe(new Subscriber[WebSocketFrame] {
 
           def isCloseFrame(ws: WSFrame) = ws.isInstanceOf[WSFrame.Close]
@@ -67,38 +86,32 @@ private[client] class Http4sWebsocketHandler[F[_]](
           override def onSubscribe(s: Subscription): Unit =
             s.request(Long.MaxValue)
 
-          override def onNext(t: WebSocketFrame): Unit = {
+          override def onNext(t: WebSocketFrame): Unit = void {
             val converted = toWSFrame(t)
-            println("on next")
             val offer = queue.offer(Right(converted))
             val op = if (isCloseFrame(converted)) {
-              println("Close frame")
               offer >> closed.complete(())
             } else {
               offer
             }
-            dispatcher.unsafeRunAndForget(op)
-            println("next after dispatching")
+            dispatcher.unsafeRunSync(op)
           }
 
-          override def onError(t: Throwable): Unit = {
-            println("on error")
-            dispatcher.unsafeRunAndForget(
-              queue.offer(Left(t)) >> closed.complete(()) >> F.delay(ctx.close()))
-            println("on error after dispatching")
+          override def onError(t: Throwable): Unit = void {
+            dispatcher.unsafeRunSync(queue.offer(Left(t)) >> closed.complete(()))
+            ctx.close()
           }
 
-          override def onComplete(): Unit = {
-            println("on complete")
-            dispatcher.unsafeRunAndForget(closed.complete(()))
-            println("on complete after dispatching")
+          override def onComplete(): Unit = void {
+            dispatcher.unsafeRunSync(closed.complete(()))
+            ctx.close()
           }
         })
 
         callback(new Conn(handshaker.actualSubprotocol(), ctx, queue, closed).asRight[Throwable])
 
-      case _ =>
-        super.userEventTriggered(ctx, evt)
+      case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_TIMEOUT =>
+        callback(Left(new IllegalStateException("Handshake timeout")))
     }
 
   private class Conn(
@@ -131,11 +144,9 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>
-        println("WHAT THE HELL")
-        logger.warn("closing")
+        logger.trace("closing")
         F.delay(ctx.close()).void >> none[WSFrame].pure[F]
       case None =>
-        println("on recieve")
         queue.take.rethrow.map(_.some)
     }
 
