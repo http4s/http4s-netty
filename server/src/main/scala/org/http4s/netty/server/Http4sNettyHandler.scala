@@ -29,7 +29,6 @@ import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.HttpApp
 import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
-import org.http4s.netty.server.internal.Trampoline
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
@@ -40,6 +39,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.util.control.NoStackTrace
@@ -69,6 +69,22 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 ) extends ChannelInboundHandlerAdapter {
   import Http4sNettyHandler.InvalidMessageException
 
+  // By using the Netty event loop assigned to this channel we get two benefits:
+  //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
+  //     only pass events up and down from within the event loop to which it is assigned.
+  //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
+  //  2. We get serialization of execution: the EventLoop is a serial execution queue so
+  //     we can rest easy knowing that no two events will be executed in parallel.
+  private[this] var eventLoopContext_ : ExecutionContext = _
+
+  // Note that this must be called from within the handlers EventLoop
+  private[this] def getEventLoopExecutionContext(ctx: ChannelHandlerContext): ExecutionContext = {
+    if (eventLoopContext_ == null) {
+      eventLoopContext_ = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+    }
+    eventLoopContext_
+  }
+
   // We keep track of whether there are requests in flight.  If there are, we don't respond to read
   // complete, since back pressure is the responsibility of the streams.
   private[this] val requestsInFlight = new AtomicLong()
@@ -95,7 +111,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
-    val newTick: Long = System.currentTimeMillis() / 1000
+    val eventLoopContext = getEventLoopExecutionContext(ctx)
+    val newTick = System.currentTimeMillis() / 1000
     if (cachedDate < newTick) {
       cachedDateString = RFC7231InstantFormatter.format(Instant.ofEpochSecond(newTick))
       cachedDate = newTick
@@ -114,28 +131,29 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
           case Left(err) => F.delay(p.failure(err))
         })
         // This attaches all writes sequentially using
-        // LastResponseSent as a queue. `trampoline` ensures we do not
+        // LastResponseSent as a queue. `eventLoopContext` ensures we do not
         // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
             .map[Unit] { case (response, cleanup) =>
-              if (requestsInFlight.decrementAndGet() == 0)
+              if (requestsInFlight.decrementAndGet() == 0) {
                 // Since we've now gone down to zero, we need to issue a
                 // read, in case we ignored an earlier read complete
                 ctx.read()
+              }
               void {
                 ctx
                   .writeAndFlush(response)
                   .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
               }
-            }(Trampoline)
+            }(eventLoopContext)
             .recover[Unit] { case NonFatal(e) =>
               logger.warn(e)("Error caught during write action")
               void {
                 sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE)
               }
-            }(Trampoline)
-        }(Trampoline)
+            }(eventLoopContext)
+        }(eventLoopContext)
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         // These are empty trailers... what do do???
         ()
