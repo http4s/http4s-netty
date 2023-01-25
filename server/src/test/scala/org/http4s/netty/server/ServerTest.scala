@@ -92,6 +92,31 @@ abstract class ServerTest extends IOSuite {
     val uri = server().baseUri / "timeout"
     client().expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
   }
+
+  test("default error handler results in 500 response") {
+    val uri = server().baseUri / "boom"
+    client().statusFromUri(uri).map { status =>
+      assertEquals(status, InternalServerError)
+    }
+  }
+
+  test("Unhandled service exceptions will be turned into a 500 response") {
+    val server: Resource[IO, Server] = NettyServerBuilder[IO]
+      .withHttpApp(ServerTest.routes)
+      .withServiceErrorHandler(_ => PartialFunction.empty)
+      .withEventLoopThreads(1)
+      .withIdleTimeout(2.seconds)
+      .withoutBanner
+      .bindAny()
+      .resource
+
+    server.use { server =>
+      val uri = server.baseUri / "boom"
+      client().statusFromUri(uri).map { status =>
+        assertEquals(status, InternalServerError)
+      }
+    }
+  }
 }
 
 class JDKServerTest extends ServerTest {
@@ -127,6 +152,7 @@ object ServerTest {
         case GET -> Root / "not-found" => NotFound("not found")
         case GET -> Root / "empty-not-found" => NotFound()
         case GET -> Root / "internal-error" => InternalServerError()
+        case GET -> Root / "boom" => throw new Exception("so sad")
       }
       .orNotFound
 }

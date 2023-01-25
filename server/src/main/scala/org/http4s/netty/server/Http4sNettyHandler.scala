@@ -42,6 +42,8 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
+import scala.util.Failure
+import scala.util.Success
 import scala.util.control.NoStackTrace
 import scala.util.control.NonFatal
 
@@ -135,25 +137,32 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
         // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           p.future
-            .map[Unit] { case (response, cleanup) =>
-              if (requestsInFlight.decrementAndGet() == 0) {
-                // Since we've now gone down to zero, we need to issue a
-                // read, in case we ignored an earlier read complete
-                ctx.read()
-              }
-              void {
-                ctx
-                  .writeAndFlush(response)
-                  .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
-              }
-            }(eventLoopContext)
-            .recover[Unit] { case NonFatal(e) =>
-              logger.warn(e)("Error caught during write action")
-              void {
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.SERVICE_UNAVAILABLE)
-              }
+            .transform {
+              case Success((response, cleanup)) =>
+                if (requestsInFlight.decrementAndGet() == 0)
+                  // Since we've now gone down to zero, we need to issue a
+                  // read, in case we ignored an earlier read complete
+                  ctx.read()
+                void {
+                  ctx
+                    .writeAndFlush(response)
+                    .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
+                }
+                Success(())
+
+              case Failure(NonFatal(e)) =>
+                logger.warn(e)(
+                  "Error caught during service handling. Check the configured ServiceErrorHandler.")
+                void {
+                  sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                }
+                Failure(e)
+
+              case Failure(e) => // fatal: just let it go.
+                Failure(e)
             }(eventLoopContext)
         }(eventLoopContext)
+
       case LastHttpContent.EMPTY_LAST_CONTENT =>
         // These are empty trailers... what do do???
         ()
@@ -220,12 +229,12 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   private def sendSimpleErrorResponse(
       ctx: ChannelHandlerContext,
       status: HttpResponseStatus): ChannelFuture = {
-    val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, status)
+    val response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status)
     response.headers().set(HttpHeaderNames.CONNECTION, "close")
     response.headers().set(HttpHeaderNames.CONTENT_LENGTH, "0")
-    val f = ctx.channel().write(response)
-    f.addListener(ChannelFutureListener.CLOSE)
-    f
+    ctx
+      .writeAndFlush(response)
+      .addListener(ChannelFutureListener.CLOSE)
   }
 }
 
