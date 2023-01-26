@@ -62,14 +62,17 @@ class EmberWebsocketTest extends IOSuite {
           recv <- conn.receiveStream.compile.toList
         } yield recv
       }
-      .assertEquals(
-        List(
-          WSFrame.Text("bar"),
-          WSFrame.Binary(ByteVector(3, 99, 12)),
-          WSFrame.Text("foo"),
-          WSFrame.Close(1000, "")
-        )
-      )
+      .map { list =>
+        println(list)
+        assertEquals(
+          list,
+          List(
+            WSFrame.Text("bar"),
+            WSFrame.Binary(ByteVector(3, 99, 12)),
+            WSFrame.Text("foo"),
+            WSFrame.Close(1000, "")
+          ))
+      }
   }
 
   test("send and receive frames in high-level mode") {

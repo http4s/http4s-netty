@@ -70,27 +70,40 @@ private[client] class Http4sWebsocketHandler[F[_]](
       case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_COMPLETE =>
         logger.trace("Handshake complete")
         ctx.read()
+
+        def complete =
+          closed.complete(()).flatTap(set => F.delay(println(s"completing... $set"))).void >> F
+            .delay(ctx.close())
+            .void
+
         val publisher = new HandlerPublisher(ctx.executor(), classOf[WebSocketFrame]) {
           override def requestDemand(): Unit = void {
             if (!ctx.channel().config().isAutoRead) {
               ctx.read()
             }
           }
+
+          override def cancelled(): Unit =
+            dispatcher.unsafeRunAndForget(complete)
         }
         ctx.pipeline().addBefore(ctx.name(), "stream-publisher", publisher)
         // ctx.pipeline().remove(this)
+
         publisher.subscribe(new Subscriber[WebSocketFrame] {
+          var sub: Option[Subscription] = None
 
           def isCloseFrame(ws: WSFrame) = ws.isInstanceOf[WSFrame.Close]
 
-          override def onSubscribe(s: Subscription): Unit =
+          override def onSubscribe(s: Subscription): Unit = {
             s.request(Long.MaxValue)
+            sub = Some(s)
+          }
 
           override def onNext(t: WebSocketFrame): Unit = void {
             val converted = toWSFrame(t)
             val offer = queue.offer(Right(converted))
             val op = if (isCloseFrame(converted)) {
-              offer >> closed.complete(())
+              complete >> offer
             } else {
               offer
             }
@@ -98,13 +111,11 @@ private[client] class Http4sWebsocketHandler[F[_]](
           }
 
           override def onError(t: Throwable): Unit = void {
-            dispatcher.unsafeRunSync(queue.offer(Left(t)) >> closed.complete(()))
-            ctx.close()
+            dispatcher.unsafeRunSync(complete >> queue.offer(Left(t)))
           }
 
           override def onComplete(): Unit = void {
-            dispatcher.unsafeRunSync(closed.complete(()))
-            ctx.close()
+            dispatcher.unsafeRunSync(complete)
           }
         })
 
@@ -153,7 +164,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     override def subprotocol: Option[String] = Option(sub)
 
     def close: F[Unit] =
-      closed.complete(()).void
+      F.unit
   }
 }
 
