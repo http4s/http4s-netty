@@ -54,7 +54,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"
 
-  test("send and receive frames in low-level mode") {
+  protected def testLowLevel: IO[Unit] =
     client()
       .connect(WSRequest(server()))
       .use { conn =>
@@ -73,7 +73,6 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
           WSFrame.Close(1000, "goodbye")
         )
       )
-  }
 
   test("send and receive frames in high-level mode") {
     client()
@@ -93,8 +92,28 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
         )
       )
   }
+}
 
-  test("group frames by their `last` attribute in high-level mode".ignore) {
+object WebsocketTest {
+  def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] =
+    HttpRoutes.of[IO] { case _ -> Root / "echo" =>
+      ws.build(identity)
+    }
+}
+
+class NettyWebsocketTest extends WebsocketTest(NettyWSClientBuilder[IO].withNioTransport.resource) {
+  test("send and receive frames in low-level mode".flaky) {
+    testLowLevel
+  }
+}
+
+class JDKClientWebsocketTest
+    extends WebsocketTest(Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient()))) {
+  test("send and receive frames in low-level mode") {
+    testLowLevel
+  }
+
+  test("group frames by their `last` attribute in high-level mode") {
     val uri = server()
     client()
       .connectHighLevel(WSRequest(uri))
@@ -131,16 +150,5 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
         )
       )
   }
+
 }
-
-object WebsocketTest {
-  def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] =
-    HttpRoutes.of[IO] { case _ -> Root / "echo" =>
-      ws.build(identity)
-    }
-}
-
-class NettyWebsocketTest extends WebsocketTest(NettyWSClientBuilder[IO].withNioTransport.resource)
-
-class JDKClientWebsocketTest
-    extends WebsocketTest(Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient())))

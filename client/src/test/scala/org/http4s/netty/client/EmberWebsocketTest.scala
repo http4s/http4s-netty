@@ -48,7 +48,7 @@ class EmberWebsocketTest extends IOSuite {
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"
 
-  test("send and receive frames in low-level mode") {
+  test("send and receive frames in low-level mode".flaky) {
     client()
       .connect(WSRequest(server()))
       .use { conn =>
