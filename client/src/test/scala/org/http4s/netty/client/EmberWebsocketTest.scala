@@ -43,7 +43,9 @@ class EmberWebsocketTest extends IOSuite {
   )
 
   val client: Fixture[WSClient[IO]] =
-    resourceFixture(NettyWSClientBuilder[IO].withNioTransport.resource, "client")
+    resourceFixture(
+      NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource,
+      "client")
 
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"

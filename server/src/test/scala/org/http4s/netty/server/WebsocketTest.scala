@@ -32,6 +32,7 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import scodec.bits.ByteVector
 
 import java.net.http.HttpClient
+import scala.concurrent.duration.DurationInt
 
 abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
   import WebsocketTest._
@@ -101,7 +102,9 @@ object WebsocketTest {
     }
 }
 
-class NettyWebsocketTest extends WebsocketTest(NettyWSClientBuilder[IO].withNioTransport.resource) {
+class NettyWebsocketTest
+    extends WebsocketTest(
+      NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource) {
   test("send and receive frames in low-level mode".flaky) {
     testLowLevel
   }
