@@ -50,7 +50,7 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
           .attempt
           .map { res =>
             cb(res)
-            ctx.pipeline().remove(this)
+            safeRemove(ctx)
           }
         dispatcher.unsafeRunAndForget(responseResourceF)
       case _ =>
@@ -73,7 +73,14 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
     cb(Left(e))
     ctx.channel().close()
+    safeRemove(ctx)
+  }
+
+  def safeRemove(ctx: ChannelHandlerContext): Unit = try {
     ctx.pipeline().remove(this)
+    ()
+  } catch {
+    case _: NoSuchElementException => ()
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
