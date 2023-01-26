@@ -40,7 +40,7 @@ abstract class ServerTest extends IOSuite {
   val server: Fixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
-      .withEventLoopThreads(10)
+      .withEventLoopThreads(2)
       .withIdleTimeout(2.seconds)
       .withoutBanner
       .bindAny()
@@ -50,20 +50,20 @@ abstract class ServerTest extends IOSuite {
 
   def client: Fixture[Client[IO]]
 
-  test("simple") { /* (server: Server[IO], client: Client[IO]) =>*/
+  test("simple") {
     val uri = server().baseUri / "simple"
     client().expect[String](uri).map(body => assertEquals(body, "simple path"))
 
   }
 
-  test("no-content") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test("no-content") {
     val uri = server().baseUri / "no-content"
     client().statusFromUri(uri).map { status =>
       assertEquals(status, NoContent)
     }
   }
 
-  test("delayed") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test("delayed") {
     val uri = server().baseUri / "delayed"
 
     client().expect[String](uri).map { body =>
@@ -71,14 +71,14 @@ abstract class ServerTest extends IOSuite {
     }
   }
 
-  test("echo") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test("echo") {
     val uri = server().baseUri / "echo"
 
     client().expect[String](Request[IO](POST, uri).withEntity("hello")).map { body =>
       assertEquals(body, "hello")
     }
   }
-  test("chunked") { /*(server: Server[IO], client: Client[IO]) =>*/
+  test("chunked") {
     val uri = server().baseUri / "chunked"
 
     client().run(Request[IO](POST, uri).withEntity("hello")).use { res =>
@@ -89,16 +89,16 @@ abstract class ServerTest extends IOSuite {
       }
     }
   }
-  test("timeout") { /*(server: Server[IO], client: Client[IO]) =>*/
-    val uri = server().baseUri / "timeout"
-    client().expect[String](uri).timeout(5.seconds).attempt.map(e => assert(e.isLeft))
-  }
-
   test("default error handler results in 500 response") {
     val uri = server().baseUri / "boom"
     client().statusFromUri(uri).map { status =>
       assertEquals(status, InternalServerError)
     }
+  }
+
+  test("timeout") {
+    val uri = server().baseUri / "timeout"
+    client().expect[String](uri).timeout(1.seconds).attempt.map(e => assert(e.isLeft))
   }
 
   test("Unhandled service exceptions will be turned into a 500 response") {
@@ -182,7 +182,7 @@ object ServerTest {
         case GET -> Root / "not-found" => NotFound("not found")
         case GET -> Root / "empty-not-found" => NotFound()
         case GET -> Root / "internal-error" => InternalServerError()
-        case GET -> Root / "boom" => throw new Exception("so sad")
+        case GET -> Root / "boom" => IO.raiseError(new Exception("so sad"))
       }
       .orNotFound
 }
