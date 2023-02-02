@@ -25,7 +25,7 @@ val netty = "4.1.87.Final"
 
 val munit = "0.7.29"
 
-val io_uring = "0.0.16.Final"
+val io_uring = "0.0.17.Final"
 
 val nativeNettyModules =
   Seq(
