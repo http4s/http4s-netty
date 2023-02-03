@@ -21,11 +21,11 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s.Response
+import org.http4s.client.RequestKey
+import org.http4s._
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
@@ -38,7 +38,7 @@ import scala.util.Success
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
-  private[this] val logger = org.log4s.getLogger
+  private val logger = org.log4s.getLogger
   private val modelConversion = new NettyModelConversion[F]
   private val promises =
     collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
@@ -48,13 +48,41 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
   //  2. We get serialization of execution: the EventLoop is a serial execution queue so
   //     we can rest easy knowing that no two events will be executed in parallel.
-  private[this] var eventLoopContext: ExecutionContext = _
+  private var eventLoopContext: ExecutionContext = _
+  private var ctx: ChannelHandlerContext = _
 
   private var pending: Future[Unit] = Future.unit
 
-  private[netty] def addCallback(
-      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit =
-    void(promises.enqueue(callback))
+  private[netty] def dispatch(request: Request[F]): Resource[F, Response[F]] = {
+    val key = RequestKey.fromRequest(request)
+
+    modelConversion
+      .toNettyRequest(request)
+      .evalMap { nettyRequest =>
+        F.async[Resource[F, Response[F]]] { cb =>
+          addCallback(cb).addListener { (future: ChannelFuture) =>
+            if (future.isCancelled || !future.isSuccess) {
+              ctx.fireChannelInactive()
+            } else {
+              logger.trace(s"Sending request to $key")
+              ctx.writeAndFlush(nettyRequest)
+              logger.trace(s"After request to $key")
+            }
+          }
+          F.delay(Some(F.delay(ctx.close()).liftToF))
+        }
+      }
+      .flatMap(identity)
+  }
+
+  private def addCallback(
+      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): ChannelFuture =
+    if (ctx.executor().inEventLoop()) {
+      promises.enqueue(callback)
+      ctx.newSucceededFuture()
+    } else {
+      ctx.newPromise().addListener((_: ChannelFuture) => promises.enqueue(callback)).setSuccess()
+    }
 
   override def isSharable: Boolean = false
 
@@ -89,6 +117,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     if (eventLoopContext == null) void {
       // Initialize our ExecutionContext
       eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+      this.ctx = ctx
     }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =

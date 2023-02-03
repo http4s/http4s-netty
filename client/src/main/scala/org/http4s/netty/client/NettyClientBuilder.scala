@@ -131,20 +131,10 @@ class NettyClientBuilder[F[_]](
   private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
-      val nettyConverter = new NettyModelConversion[F]
-
       for {
         channelTuple <- pool.resource(key)
-        (channel, handler) = channelTuple
-        nettyReq <- nettyConverter.toNettyRequest(req)
-        responseResource <- Resource
-          .eval(F.async_[Resource[F, Response[F]]] { cb =>
-            handler.addCallback(cb)
-            logger.trace(s"Sending request to $key")
-            channel.writeAndFlush(nettyReq).sync()
-            logger.trace(s"After request to $key")
-          })
-        response <- responseResource
+        (_, handler) = channelTuple
+        response <- handler.dispatch(req)
       } yield response
     }
 }
