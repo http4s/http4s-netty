@@ -49,8 +49,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
     msg match {
       case h: HttpResponse =>
-        val attr = ctx.channel().attr(Http4sChannelPoolMap.attr)
-        val promise = promises.getOrElseUpdate(attr.get(), Promise())
+        val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
+        val promise = promises(key)
 
         val responseResourceF = modelConversion
           .fromNettyResponse(h)
@@ -58,11 +58,9 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
             Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
           .attempt
-          .map { res =>
-            promise.complete(res.toTry)
-          }
-        dispatcher.unsafeRunSync(responseResourceF)
-        promises.remove(attr.get())
+        val result = dispatcher.unsafeRunSync(responseResourceF)
+        promise.complete(result.toTry)
+        promises.remove(key)
       case _ =>
         super.channelRead(ctx, msg)
     }
@@ -82,9 +80,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
-    val attr = ctx.channel().attr(Http4sChannelPoolMap.attr)
-    val promise = promises.getOrElseUpdate(attr.get(), Promise())
-    promise.failure(e)
+    val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
+    promises.get(key).foreach(_.failure(e))
     ctx.channel().close()
   }
 
