@@ -142,6 +142,39 @@ abstract class ServerTest extends IOSuite {
         .map(_.merge)
     }
   }
+
+  test("H2 Prior Knowledge is supported") {
+    // We need to specifically use the Jetty client and configure
+    // prior knowledge support. Unfortunately the other clients already
+    // on the classpath don't support prior-knowledge.
+
+    import org.eclipse.jetty.http2.client.HTTP2Client
+    import org.eclipse.jetty.http2.client.http.HttpClientTransportOverHTTP2
+    import org.eclipse.jetty.client.HttpClient
+
+    val server: Resource[IO, Server] = NettyServerBuilder[IO]
+      .withHttpApp(ServerTest.routes)
+      .withEventLoopThreads(1)
+      .withoutBanner
+      .bindAny()
+      .resource
+
+    server.use { server =>
+      IO.delay {
+        val http2 = new HttpClientTransportOverHTTP2(new HTTP2Client())
+        http2.setUseALPN(false)
+
+        val client = new HttpClient(http2)
+        client.start()
+        try {
+          val resp = client.GET(s"${server.baseUri}simple")
+          assert(resp.getStatus == 200)
+          assert(resp.getContentAsString == "simple path")
+        } finally
+          client.stop()
+      }
+    }
+  }
 }
 
 class JDKServerTest extends ServerTest {

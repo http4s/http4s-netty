@@ -220,6 +220,13 @@ final class NettyServerBuilder[F[_]] private (
       if (socketAddress.isUnresolved)
         new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
       else socketAddress
+
+    val config = NegotiationHandler.Config(
+      maxInitialLineLength,
+      maxHeaderSize,
+      maxChunkSize,
+      idleTimeout,
+      wsMaxFrameLength)
     val loop = getEventLoop
     val server = new ServerBootstrap()
     server.option(ChannelOption.SO_BACKLOG, Int.box(1024))
@@ -227,25 +234,28 @@ final class NettyServerBuilder[F[_]] private (
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = void {
-          val negotiationHandler = new NegotiationHandler(
-            NegotiationHandler.Config(
-              maxInitialLineLength,
-              maxHeaderSize,
-              maxChunkSize,
-              idleTimeout,
-              wsMaxFrameLength),
-            httpApp,
-            serviceErrorHandler,
-            dispatcher
-          )
-
           val pipeline = ch.pipeline()
           sslConfig.toHandler(ch.alloc()) match {
             case Some(handler) =>
+              logger.debug("Starting pipeline with TLS support and deferring protocol to ALPN")
+              val negotiationHandler = new NegotiationHandler(
+                config,
+                httpApp,
+                serviceErrorHandler,
+                dispatcher
+              )
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
+
             case None =>
-              negotiationHandler.addToPipeline(pipeline, http1 = true)
+              logger.debug("Starting pipeline cleartext with HTTP/2 prior knowledge detection")
+              val h2PriorKnowledgeDetection = new PriorKnowledgeDetectionHandler[F](
+                config,
+                httpApp,
+                serviceErrorHandler,
+                dispatcher
+              )
+              pipeline.addLast("h2-prior-knowledge-detection", h2PriorKnowledgeDetection)
           }
         }
       })
@@ -295,8 +305,6 @@ final class NettyServerBuilder[F[_]] private (
         .channel(runtimeClass)
         .option(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
         .childOption(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
-      // .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
-      // TODO: Why did we even need this ^ ?
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
     }
 
