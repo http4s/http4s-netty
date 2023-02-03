@@ -143,6 +143,11 @@ abstract class ServerTest extends IOSuite {
     }
   }
 
+  test("timeout") {
+    val uri = server().baseUri / "timeout"
+    client().expect[String](uri).attempt.map(e => assert(e.isLeft))
+  }
+
   test("H2 Prior Knowledge is supported") {
     // We need to specifically use the Jetty client and configure
     // prior knowledge support. Unfortunately the other clients already
@@ -180,11 +185,6 @@ abstract class ServerTest extends IOSuite {
 class JDKServerTest extends ServerTest {
   val client: Fixture[Client[IO]] =
     resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
-
-  test("timeout") {
-    val uri = server().baseUri / "timeout"
-    client().expect[String](uri).attempt.map(e => assert(e.isLeft))
-  }
 }
 
 class NettyClientServerTest extends ServerTest {
@@ -194,15 +194,6 @@ class NettyClientServerTest extends ServerTest {
       .resource,
     "client"
   )
-
-  test("timeout".ignore) {
-    val uri = server().baseUri / "timeout"
-    NettyClientBuilder[IO]
-      .withEventLoopThreads(2)
-      .withIdleTimeout(3.seconds)
-      .resource
-      .use(client => client.expect[String](uri).attempt.map { e => println(e); assert(e.isLeft) })
-  }
 }
 
 object ServerTest {
