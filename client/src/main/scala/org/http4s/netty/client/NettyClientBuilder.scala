@@ -17,8 +17,7 @@
 package org.http4s.netty
 package client
 
-import cats.effect.Async
-import cats.effect.Resource
+import cats.effect.{Async, Resource}
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
 import org.http4s.Response
@@ -134,15 +133,14 @@ class NettyClientBuilder[F[_]](
       val nettyConverter = new NettyModelConversion[F]
 
       for {
-        channel <- pool.resource(key)
+        channelTuple <- pool.resource(key)
+        (channel, handler) = channelTuple
         nettyReq <- nettyConverter.toNettyRequest(req)
-        ec <- Resource.eval(F.executionContext)
         responseResource <- Resource
           .eval(F.async_[Resource[F, Response[F]]] { cb =>
-            val promise = pool.handler.createPromise(key)
-            promise.future.onComplete(t => cb(t.toEither))(ec)
+            handler.addCallback(cb)
             logger.trace(s"Sending request to $key")
-            channel.writeAndFlush(nettyReq)
+            channel.writeAndFlush(nettyReq).sync()
             logger.trace(s"After request to $key")
           })
         response <- responseResource

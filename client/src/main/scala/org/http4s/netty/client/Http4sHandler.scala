@@ -17,54 +17,75 @@
 package org.http4s.netty
 package client
 
-import cats.effect.Async
-import cats.effect.Resource
+import cats.effect.{Async, Resource}
 import cats.effect.std.Dispatcher
 import cats.implicits._
-import io.netty.channel.ChannelHandler.Sharable
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.Response
-import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
-import scala.concurrent.Promise
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
-@Sharable
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
   private[this] val logger = org.log4s.getLogger
   private val modelConversion = new NettyModelConversion[F]
-  private val promises = collection.mutable.Map[RequestKey, Promise[Resource[F, Response[F]]]]()
+  private val promises =
+    collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
+  // By using the Netty event loop assigned to this channel we get two benefits:
+  //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
+  //     only pass events up and down from within the event loop to which it is assigned.
+  //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
+  //  2. We get serialization of execution: the EventLoop is a serial execution queue so
+  //     we can rest easy knowing that no two events will be executed in parallel.
+  private[this] var eventLoopContext: ExecutionContext = _
 
-  private[netty] def createPromise(key: RequestKey): Promise[Resource[F, Response[F]]] =
-    promises.getOrElseUpdate(key, Promise())
+  private var pending: Future[Unit] = Future.unit
 
-  override def isSharable: Boolean = true
+  private[netty] def addCallback(
+      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit =
+    void(promises.enqueue(callback))
+
+  override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
     msg match {
       case h: HttpResponse =>
-        val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
-        val promise = promises.remove(key)
-
         val responseResourceF = modelConversion
           .fromNettyResponse(h)
           .map { case (res, cleanup) =>
             Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
-          .attempt
-        val result = dispatcher.unsafeRunSync(responseResourceF)
-        promise.filterNot(_.isCompleted).foreach(_.complete(result.toTry))
+
+        val result = dispatcher.unsafeToFuture(responseResourceF)
+
+        pending = pending.flatMap { _ =>
+          val promise = promises.dequeue()
+          result.transform {
+            case Failure(exception) =>
+              promise(Left(exception))
+              Failure(exception)
+            case Success(res) =>
+              promise(Right(res))
+              Success(())
+          }(eventLoopContext)
+        }(eventLoopContext)
       case _ =>
         super.channelRead(ctx, msg)
     }
   }
+
+  override def handlerAdded(ctx: ChannelHandlerContext): Unit =
+    if (eventLoopContext == null) void {
+      // Initialize our ExecutionContext
+      eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+    }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
     onException(ctx, new ClosedChannelException())
@@ -83,8 +104,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
-    val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
-    promises.remove(key).filterNot(_.isCompleted).foreach(_.failure(e))
+    promises.foreach(cb => cb(Left(e)))
+    promises.clear()
     ctx.channel().close()
   }
 

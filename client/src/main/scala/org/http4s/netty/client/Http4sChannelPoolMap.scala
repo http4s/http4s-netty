@@ -48,15 +48,14 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
     dispatcher: Dispatcher[F]
 ) extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
-  val handler = new Http4sHandler[F](dispatcher)
-
-  def resource(key: RequestKey): Resource[F, Channel] = {
-    val pool = get(key)
+  def resource(key: RequestKey): Resource[F, (Channel, Http4sHandler[F])] = {
+    val pool = get(key).asInstanceOf[MyFixedChannelPool]
 
     Resource
       .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
         Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
       }
+      .map(c => c -> c.pipeline().get(classOf[Http4sHandler[F]]))
   }
 
   override def newPool(key: RequestKey): FixedChannelPool =
@@ -145,7 +144,7 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
       }
-      pipeline.addLast("http4s", handler)
+      pipeline.addLast("http4s", new Http4sHandler[F](dispatcher))
     }
   }
 }

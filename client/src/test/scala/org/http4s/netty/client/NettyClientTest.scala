@@ -20,6 +20,9 @@ import cats.effect._
 import org.http4s.client.Client
 import org.http4s.client.testkit.ClientRouteTestBattery
 
+import scala.concurrent.duration.DurationInt
+
 class NettyClientTest extends ClientRouteTestBattery("NettyClient") {
-  def clientResource: Resource[IO, Client[IO]] = NettyClientBuilder[IO].resource
+  def clientResource: Resource[IO, Client[IO]] =
+    NettyClientBuilder[IO].withIdleTimeout(10.seconds).resource
 }
