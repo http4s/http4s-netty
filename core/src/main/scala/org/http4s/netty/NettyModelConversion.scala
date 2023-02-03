@@ -60,25 +60,31 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
     val uri = request.uri.toOriginForm.renderString
+    // reparse to avoid sending split attack to server
+    Uri.fromString(uri) match {
+      case Left(value) =>
+        Resource.eval(F.raiseError(new IllegalArgumentException("Not a valid URI", value)))
+      case Right(_) =>
+        val req =
+          if (notAllowedWithBody.contains(request.method)) {
+            val defaultReq = new DefaultFullHttpRequest(version, method, uri)
+            request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
+            Resource.pure[F, HttpRequest](defaultReq)
+          } else {
+            StreamUnicastPublisher(
+              request.body.chunks
+                .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
+              val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
+              transferEncoding(request.headers, false, streamedReq)
+              streamedReq
+            }
+          }
 
-    val req =
-      if (notAllowedWithBody.contains(request.method)) {
-        val defaultReq = new DefaultFullHttpRequest(version, method, uri)
-        request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
-        Resource.pure[F, HttpRequest](defaultReq)
-      } else {
-        StreamUnicastPublisher(
-          request.body.chunks
-            .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
-          val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
-          transferEncoding(request.headers, false, streamedReq)
-          streamedReq
+        req.map { r =>
+          request.uri.authority.foreach(authority =>
+            r.headers().add("Host", authority.renderString))
+          r
         }
-      }
-
-    req.map { r =>
-      request.uri.authority.foreach(authority => r.headers().add("Host", authority.renderString))
-      r
     }
   }
 
