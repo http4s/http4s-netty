@@ -72,7 +72,7 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.8.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
@@ -91,6 +91,7 @@ lazy val client = project
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-handler-proxy" % netty,
+      "org.http4s" %% "http4s-client-testkit" % http4sVersion % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
@@ -99,7 +100,7 @@ lazy val client = project
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
       "org.gaul" % "httpbin" % "1.3.0" % Test,
-      "org.typelevel" %% "munit-cats-effect-3" % "1.0.7" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(

@@ -16,21 +16,10 @@
 
 package org.http4s.netty.client
 
-import cats.effect.IO
-import cats.effect.Resource
-import munit.CatsEffectSuite
-import munit.catseffect.IOFixture
+import cats.effect._
+import org.http4s.client.Client
+import org.http4s.client.testkit.ClientRouteTestBattery
 
-abstract class IOSuite extends CatsEffectSuite {
-
-  private val fixtures = List.newBuilder[IOFixture[_]]
-
-  def resourceFixture[A](resource: Resource[IO, A], name: String): IOFixture[A] = {
-    val fixture = ResourceSuiteLocalFixture(name, resource)
-    fixtures += fixture
-    fixture
-  }
-
-  override def munitFixtures: Seq[IOFixture[_]] = fixtures.result()
-
+class NettyClientTest extends ClientRouteTestBattery("NettyClient") {
+  def clientResource: Resource[IO, Client[IO]] = NettyClientBuilder[IO].resource
 }

@@ -18,6 +18,7 @@ package org.http4s.netty.client
 
 import cats.effect._
 import cats.syntax.all._
+import munit.catseffect.IOFixture
 import org.gaul.httpbin.HttpBin
 import org.http4s._
 import org.http4s.client.Client
@@ -26,9 +27,9 @@ import java.net.URI
 
 class HttpBinTest extends IOSuite {
 
-  val httpBin: Fixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val httpBin: IOFixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
 
-  val client: Fixture[Client[IO]] = resourceFixture(NettyClientBuilder[IO].resource, "client")
+  val client: IOFixture[Client[IO]] = resourceFixture(NettyClientBuilder[IO].resource, "client")
 
   test("status 200") {
     val base = httpBin()

@@ -22,6 +22,7 @@ import cats.effect.IO
 import cats.effect.Resource
 import cats.implicits._
 import fs2._
+import munit.catseffect.IOFixture
 import org.http4s.HttpRoutes
 import org.http4s.Request
 import org.http4s.Response
@@ -37,7 +38,7 @@ import scala.concurrent.duration._
 
 abstract class ServerTest extends IOSuite {
 
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withNioTransport
@@ -48,7 +49,7 @@ abstract class ServerTest extends IOSuite {
     "server"
   )
 
-  def client: Fixture[Client[IO]]
+  def client: IOFixture[Client[IO]]
 
   test("simple") {
     val uri = server().baseUri / "simple"
@@ -183,12 +184,12 @@ abstract class ServerTest extends IOSuite {
 }
 
 class JDKServerTest extends ServerTest {
-  val client: Fixture[Client[IO]] =
+  val client: IOFixture[Client[IO]] =
     resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 }
 
 class NettyClientServerTest extends ServerTest {
-  val client: Fixture[Client[IO]] = resourceFixture(
+  val client: IOFixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withEventLoopThreads(2)
       .resource,

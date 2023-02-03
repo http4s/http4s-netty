@@ -22,6 +22,7 @@ import cats.effect.Sync
 import cats.syntax.all._
 import com.comcast.ip4s._
 import com.github.monkeywie.proxyee.server.HttpProxyServer
+import munit.catseffect.IOFixture
 import org.http4s.Uri
 
 import java.net.ServerSocket
@@ -29,9 +30,9 @@ import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
 
-  val httpbin: Fixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val httpbin: IOFixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
 
-  val proxy: Fixture[HttpProxy] = resourceFixture(
+  val proxy: IOFixture[HttpProxy] = resourceFixture(
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
       _ <- Resource {
