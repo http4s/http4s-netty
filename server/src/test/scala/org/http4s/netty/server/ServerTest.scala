@@ -142,16 +142,16 @@ abstract class ServerTest extends IOSuite {
         .map(_.merge)
     }
   }
-}
-
-class JDKServerTest extends ServerTest {
-  val client: Fixture[Client[IO]] =
-    resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 
   test("timeout") {
     val uri = server().baseUri / "timeout"
     client().expect[String](uri).attempt.map(e => assert(e.isLeft))
   }
+}
+
+class JDKServerTest extends ServerTest {
+  val client: Fixture[Client[IO]] =
+    resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
 }
 
 class NettyClientServerTest extends ServerTest {
@@ -161,15 +161,6 @@ class NettyClientServerTest extends ServerTest {
       .resource,
     "client"
   )
-
-  test("timeout".ignore) {
-    val uri = server().baseUri / "timeout"
-    NettyClientBuilder[IO]
-      .withEventLoopThreads(2)
-      .withIdleTimeout(3.seconds)
-      .resource
-      .use(client => client.expect[String](uri).attempt.map { e => println(e); assert(e.isLeft) })
-  }
 }
 
 object ServerTest {

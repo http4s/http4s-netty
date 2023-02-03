@@ -20,15 +20,17 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import cats.implicits._
+import cats.syntax.all._
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.Response
+import org.http4s.Status
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
+import scala.concurrent.TimeoutException
 
 private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
     implicit F: Async[F])
@@ -45,7 +47,9 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
         val responseResourceF = modelConversion
           .fromNettyResponse(h)
           .map { case (res, cleanup) =>
-            Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
+            Resource
+              .make(F.pure(res))(_ => cleanup(ctx.channel()))
+              .onCancel(Resource.eval(F.delay(ctx.close()).liftToF))
           }
           .attempt
           .map { res =>
@@ -56,6 +60,12 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
       case _ =>
         super.channelRead(ctx, msg)
     }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+    cb(Right(Resource.pure(Response(Status.RequestTimeout))))
+    ctx.close()
+    safeRemove(ctx)
+  }
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -86,8 +96,9 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
+        println("Idle timeout")
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.channel().close()
+        onException(ctx, new TimeoutException("Idle timeout"))
       case _ => super.userEventTriggered(ctx, evt)
     }
   }
