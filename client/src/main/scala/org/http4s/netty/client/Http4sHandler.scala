@@ -61,12 +61,14 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       .evalMap { nettyRequest =>
         F.async[Resource[F, Response[F]]] { cb =>
           addCallback(cb).addListener { (future: ChannelFuture) =>
-            if (future.isCancelled || !future.isSuccess) {
-              ctx.fireChannelInactive()
-            } else {
-              logger.trace(s"Sending request to $key")
-              ctx.writeAndFlush(nettyRequest)
-              logger.trace(s"After request to $key")
+            void {
+              if (future.isCancelled || !future.isSuccess) {
+                ctx.fireChannelInactive()
+              } else {
+                logger.trace(s"Sending request to $key")
+                ctx.writeAndFlush(nettyRequest)
+                logger.trace(s"After request to $key")
+              }
             }
           }
           F.delay(Some(F.delay(ctx.close()).liftToF))

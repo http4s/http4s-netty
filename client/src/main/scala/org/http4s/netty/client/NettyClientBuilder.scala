@@ -21,7 +21,6 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
-import org.http4s.Response
 import org.http4s.client.Client
 import org.http4s.client.RequestKey
 
@@ -40,8 +39,6 @@ class NettyClientBuilder[F[_]](
     nettyChannelOptions: NettyChannelOptions,
     proxy: Option[Proxy]
 )(implicit F: Async[F]) {
-  private[this] val logger = org.log4s.getLogger
-
   type Self = NettyClientBuilder[F]
 
   private def copy(
