@@ -24,8 +24,8 @@ import cats.implicits._
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s.client.RequestKey
 import org.http4s._
+import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
