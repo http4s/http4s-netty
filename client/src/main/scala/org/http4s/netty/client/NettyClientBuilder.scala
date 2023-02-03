@@ -17,7 +17,8 @@
 package org.http4s.netty
 package client
 
-import cats.effect.{Async, Resource}
+import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
 import org.http4s.Response

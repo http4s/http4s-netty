@@ -17,10 +17,12 @@
 package org.http4s.netty
 package client
 
-import cats.effect.{Async, Resource}
+import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
-import io.netty.channel.{ChannelHandlerContext, ChannelInboundHandlerAdapter}
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.Response
@@ -28,8 +30,10 @@ import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
 
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
