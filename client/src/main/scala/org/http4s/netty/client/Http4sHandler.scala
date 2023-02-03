@@ -21,27 +21,37 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
+import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.Response
+import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
+import scala.concurrent.Promise
 
-private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
-    implicit F: Async[F])
+@Sharable
+private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
   private[this] val logger = org.log4s.getLogger
-  val modelConversion = new NettyModelConversion[F]
+  private val modelConversion = new NettyModelConversion[F]
+  private val promises = collection.mutable.Map[RequestKey, Promise[Resource[F, Response[F]]]]()
 
-  override def isSharable: Boolean = false
+  private[netty] def createPromise(key: RequestKey): Promise[Resource[F, Response[F]]] =
+    promises.getOrElseUpdate(key, Promise())
 
-  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
+  override def isSharable: Boolean = true
+
+  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
     msg match {
       case h: HttpResponse =>
+        val attr = ctx.channel().attr(Http4sChannelPoolMap.attr)
+        val promise = promises.getOrElseUpdate(attr.get(), Promise())
+
         val responseResourceF = modelConversion
           .fromNettyResponse(h)
           .map { case (res, cleanup) =>
@@ -49,13 +59,14 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
           }
           .attempt
           .map { res =>
-            cb(res)
-            safeRemove(ctx)
+            promise.complete(res.toTry)
           }
-        dispatcher.unsafeRunAndForget(responseResourceF)
+        dispatcher.unsafeRunSync(responseResourceF)
+        promises.remove(attr.get())
       case _ =>
         super.channelRead(ctx, msg)
     }
+  }
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -71,16 +82,10 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
     }
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
-    cb(Left(e))
+    val attr = ctx.channel().attr(Http4sChannelPoolMap.attr)
+    val promise = promises.getOrElseUpdate(attr.get(), Promise())
+    promise.failure(e)
     ctx.channel().close()
-    safeRemove(ctx)
-  }
-
-  def safeRemove(ctx: ChannelHandlerContext): Unit = try {
-    ctx.pipeline().remove(this)
-    ()
-  } catch {
-    case _: NoSuchElementException => ()
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
@@ -91,8 +96,4 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
       case _ => super.userEventTriggered(ctx, evt)
     }
   }
-}
-
-object Http4sHandler {
-  type CB[F[_]] = (Either[Throwable, Resource[F, Response[F]]]) => Unit
 }

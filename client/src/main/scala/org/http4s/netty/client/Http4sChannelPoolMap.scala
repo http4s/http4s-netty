@@ -19,6 +19,7 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
+import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
@@ -43,9 +44,11 @@ import scala.concurrent.duration.Duration
 
 private[client] class Http4sChannelPoolMap[F[_]: Async](
     bootstrap: Bootstrap,
-    config: Http4sChannelPoolMap.Config)
-    extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
+    config: Http4sChannelPoolMap.Config,
+    dispatcher: Dispatcher[F]
+) extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
+  val handler = new Http4sHandler[F](dispatcher)
 
   def resource(key: RequestKey): Resource[F, Channel] = {
     val pool = get(key)
@@ -136,11 +139,13 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
           false))
       pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
 
-      if (config.idleTimeout.isFinite && config.idleTimeout.length > 0)
+      if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
         pipeline
           .addLast(
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+      }
+      pipeline.addLast("http4s", handler)
     }
   }
 }

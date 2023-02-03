@@ -125,24 +125,24 @@ class NettyClientBuilder[F[_]](
             proxy,
             sslContext
           )
-          mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
+          mkClient(new Http4sChannelPoolMap[F](bs, config, disp))
         })
 
-  private def mkClient(pool: Http4sChannelPoolMap[F], dispatcher: Dispatcher[F]) =
+  private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
-      val pipelineKey = s"http4s-$key"
       val nettyConverter = new NettyModelConversion[F]
 
       for {
         channel <- pool.resource(key)
         nettyReq <- nettyConverter.toNettyRequest(req)
+        ec <- Resource.eval(F.executionContext)
         responseResource <- Resource
           .eval(F.async_[Resource[F, Response[F]]] { cb =>
-            val http4sHandler = new Http4sHandler[F](cb, dispatcher)
-            channel.pipeline().addLast(pipelineKey, http4sHandler)
+            val promise = pool.handler.createPromise(key)
+            promise.future.onComplete(t => cb(t.toEither))(ec)
             logger.trace(s"Sending request to $key")
-            dispatcher.unsafeRunAndForget(F.delay(channel.writeAndFlush(nettyReq)).liftToF)
+            channel.writeAndFlush(nettyReq)
             logger.trace(s"After request to $key")
           })
         response <- responseResource
