@@ -31,6 +31,7 @@ import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
 
 import java.io.IOException
+import java.nio.channels.ClosedChannelException
 import scala.concurrent.Promise
 
 @Sharable
@@ -50,7 +51,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     msg match {
       case h: HttpResponse =>
         val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
-        val promise = promises(key)
+        val promise = promises.remove(key)
 
         val responseResourceF = modelConversion
           .fromNettyResponse(h)
@@ -59,12 +60,14 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           }
           .attempt
         val result = dispatcher.unsafeRunSync(responseResourceF)
-        promise.complete(result.toTry)
-        promises.remove(key)
+        promise.filterNot(_.isCompleted).foreach(_.complete(result.toTry))
       case _ =>
         super.channelRead(ctx, msg)
     }
   }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit =
+    onException(ctx, new ClosedChannelException())
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -81,7 +84,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
     val key = ctx.channel().attr(Http4sChannelPoolMap.attr).get()
-    promises.get(key).foreach(_.failure(e))
+    promises.remove(key).filterNot(_.isCompleted).foreach(_.failure(e))
     ctx.channel().close()
   }
 
