@@ -145,8 +145,6 @@ private[client] class Http4sWebsocketHandler[F[_]](
             val list = wsfs.toList
             list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
             ctx.flush()
-          } else {
-            dispatcher.unsafeRunAndForget(closed.complete(()))
           }
           ()
         })
