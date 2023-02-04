@@ -140,14 +140,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
       if (ctx.channel().isActive) {
-        runInNetty(F.delay {
-          if (ctx.channel().isActive) {
-            val list = wsfs.toList
-            list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
-            ctx.flush()
-          }
-          ()
-        })
+        wsfs.traverse_(wsf => runInNetty(F.delay(ctx.writeAndFlush(fromWSFrame(wsf))).liftToF))
       } else {
         closed.complete(()).void
       }
