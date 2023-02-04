@@ -61,7 +61,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       .toNettyRequest(request)
       .evalMap { nettyRequest =>
         F.async[Resource[F, Response[F]]] { cb =>
-          if (ctx.channel().isOpen) {
+          if (ctx.channel().isActive) {
             if (ctx.executor().inEventLoop()) {
               safedispatch(nettyRequest, key, cb).run()
             } else {
@@ -72,7 +72,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           } else {
             cb(Left(new ClosedChannelException))
           }
-          F.delay(Some(F.delay(ctx.close()).liftToF))
+          F.delay(Some(F.delay(ctx.close()).void))
         }
       }
       .flatMap(identity)
@@ -85,7 +85,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     void {
       promises.enqueue(callback)
       logger.trace(s"Sending request to $key")
-      ctx.writeAndFlush(request)
+      ctx.writeAndFlush(request).sync()
       logger.trace(s"After request to $key")
     }
 
@@ -99,32 +99,19 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           .map { case (res, cleanup) =>
             Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
-        if (ctx.channel().isOpen) {
-          val result = dispatcher.unsafeToFuture(responseResourceF)
+        val result = dispatcher.unsafeToFuture(responseResourceF)
 
-          pending = pending.flatMap { _ =>
-            val promise = promises.dequeue()
-            result.transform {
-              case Failure(exception) =>
-                promise(Left(exception))
-                Failure(exception)
-              case Success(res) =>
-                promise(Right(res))
-                Success(())
-            }(eventLoopContext)
+        pending = pending.flatMap { _ =>
+          val promise = promises.dequeue()
+          result.transform {
+            case Failure(exception) =>
+              promise(Left(exception))
+              Failure(exception)
+            case Success(res) =>
+              promise(Right(res))
+              Success(())
           }(eventLoopContext)
-        } else {
-          pending = pending.flatMap { _ =>
-            val exception = new ClosedChannelException
-            if (promises.isEmpty) {
-              Future.failed(exception)
-            } else {
-              promises.foreach(_(Left(exception)))
-              promises.clear()
-              Future.successful(())
-            }
-          }(eventLoopContext)
-        }
+        }(eventLoopContext)
       case _ =>
         super.channelRead(ctx, msg)
     }

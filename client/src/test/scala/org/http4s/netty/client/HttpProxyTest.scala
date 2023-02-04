@@ -23,14 +23,20 @@ import cats.syntax.all._
 import com.comcast.ip4s._
 import com.github.monkeywie.proxyee.server.HttpProxyServer
 import munit.catseffect.IOFixture
+import org.http4s.HttpRoutes
+import org.http4s.Response
 import org.http4s.Uri
+import org.http4s.client.testkit.scaffold.ServerScaffold
 
 import java.net.ServerSocket
 import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
 
-  val httpbin: IOFixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val server: IOFixture[Uri] = resourceFixture(
+    ServerScaffold[IO](1, false, HttpRoutes.pure(Response[IO]().withEntity("Hello from origin")))
+      .map(_.servers.head.uri),
+    "server")
 
   val proxy: IOFixture[HttpProxy] = resourceFixture(
     for {
@@ -55,7 +61,7 @@ class HttpProxyTest extends IOSuite {
       .withProxy(proxy())
       .resource
       .use { client =>
-        val base = httpbin()
+        val base = server()
         client.expect[String](base / "get").map { s =>
           assert(s.nonEmpty)
         }
