@@ -21,6 +21,8 @@ inThisBuild(
 
 val http4sVersion = "0.23.18"
 
+val jetty = "11.0.13"
+
 val netty = "4.1.87.Final"
 
 val munit = "0.7.29"
@@ -60,6 +62,9 @@ lazy val server = project
     name := "http4s-netty-server",
     libraryDependencies ++= List(
       "io.netty" % "netty-codec-http2" % netty,
+      "org.eclipse.jetty" % "jetty-client" % jetty % Test,
+      "org.eclipse.jetty.http2" % "http2-client" % jetty % Test,
+      "org.eclipse.jetty.http2" % "http2-http-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
