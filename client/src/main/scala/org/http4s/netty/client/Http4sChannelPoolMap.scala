@@ -35,6 +35,8 @@ import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AttributeKey
 import io.netty.util.concurrent.Future
+import org.http4s.Request
+import org.http4s.Response
 import org.http4s.Uri
 import org.http4s.Uri.Scheme
 import org.http4s.client.RequestKey
@@ -48,14 +50,16 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
     dispatcher: Dispatcher[F]
 ) extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
-  def resource(key: RequestKey): Resource[F, (Channel, Http4sHandler[F])] = {
-    val pool = get(key).asInstanceOf[MyFixedChannelPool]
+
+  def run(request: Request[F]): Resource[F, Response[F]] = {
+    val key = RequestKey.fromRequest(request)
+    val pool = get(key)
 
     Resource
       .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
         Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
       }
-      .map(c => c -> c.pipeline().get(classOf[Http4sHandler[F]]))
+      .flatMap(_.pipeline().get(classOf[Http4sHandler[F]]).dispatch(request))
   }
 
   override def newPool(key: RequestKey): FixedChannelPool =

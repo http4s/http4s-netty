@@ -22,7 +22,6 @@ import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
 import org.http4s.client.Client
-import org.http4s.client.RequestKey
 
 import javax.net.ssl.SSLContext
 import scala.concurrent.duration._
@@ -122,18 +121,9 @@ class NettyClientBuilder[F[_]](
             proxy,
             sslContext
           )
-          mkClient(new Http4sChannelPoolMap[F](bs, config, disp))
+          Client[F](new Http4sChannelPoolMap[F](bs, config, disp).run)
         })
 
-  private def mkClient(pool: Http4sChannelPoolMap[F]) =
-    Client[F] { req =>
-      val key = RequestKey.fromRequest(req)
-      for {
-        channelTuple <- pool.resource(key)
-        (_, handler) = channelTuple
-        response <- handler.dispatch(req)
-      } yield response
-    }
 }
 
 object NettyClientBuilder {
