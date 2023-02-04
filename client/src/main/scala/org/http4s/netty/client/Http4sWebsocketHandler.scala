@@ -32,7 +32,8 @@ import org.http4s.client.websocket.WSFrame
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.client.Http4sWebsocketHandler.fromWSFrame
 import org.http4s.netty.client.Http4sWebsocketHandler.toWSFrame
-import org.reactivestreams.{Subscriber, Subscription}
+import org.reactivestreams.Subscriber
+import org.reactivestreams.Subscription
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
