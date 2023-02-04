@@ -185,9 +185,14 @@ class NettyWSClientBuilder[F[_]](
               pipeline.addLast("http", new HttpClientCodec())
               pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
               pipeline.addLast("protocol-handler", websocketinit)
-              /*pipeline.addLast(
-                "aggregate2",
-                new WebSocketFrameAggregator(config.maxFramePayloadLength()))*/
+              pipeline.addLast(
+                "websocket-aggregate",
+                new WebSocketFrameAggregator(config.maxFramePayloadLength()))
+              if (idleTimeout.isFinite && idleTimeout.length > 0)
+                pipeline
+                  .addLast(
+                    "timeout",
+                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
               pipeline.addLast(
                 "websocket",
                 new Http4sWebsocketHandler[F](
@@ -197,11 +202,6 @@ class NettyWSClientBuilder[F[_]](
                   dispatcher,
                   callback)
               )
-              if (idleTimeout.isFinite && idleTimeout.length > 0)
-                pipeline
-                  .addLast(
-                    "timeout",
-                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
             }
           })
           F.delay(bs.connect(socketAddress).sync()).as(None)
