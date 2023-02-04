@@ -99,20 +99,32 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           .map { case (res, cleanup) =>
             Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
+        if (ctx.channel().isOpen) {
+          val result = dispatcher.unsafeToFuture(responseResourceF)
 
-        val result = dispatcher.unsafeToFuture(responseResourceF)
-
-        pending = pending.flatMap { _ =>
-          val promise = promises.dequeue()
-          result.transform {
-            case Failure(exception) =>
-              promise(Left(exception))
-              Failure(exception)
-            case Success(res) =>
-              promise(Right(res))
-              Success(())
+          pending = pending.flatMap { _ =>
+            val promise = promises.dequeue()
+            result.transform {
+              case Failure(exception) =>
+                promise(Left(exception))
+                Failure(exception)
+              case Success(res) =>
+                promise(Right(res))
+                Success(())
+            }(eventLoopContext)
           }(eventLoopContext)
-        }(eventLoopContext)
+        } else {
+          pending = pending.flatMap { _ =>
+            val exception = new ClosedChannelException
+            if (promises.isEmpty) {
+              Future.failed(exception)
+            } else {
+              promises.foreach(_(Left(exception)))
+              promises.clear()
+              Future.successful(())
+            }
+          }(eventLoopContext)
+        }
       case _ =>
         super.channelRead(ctx, msg)
     }
