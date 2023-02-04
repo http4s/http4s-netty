@@ -28,6 +28,7 @@ import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
 import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
+import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
@@ -39,7 +40,6 @@ import scala.util.Success
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
-  private val logger = org.log4s.getLogger
   private val modelConversion = new NettyModelConversion[F]
   private val promises =
     collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
@@ -61,18 +61,14 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       .toNettyRequest(request)
       .evalMap { nettyRequest =>
         F.async[Resource[F, Response[F]]] { cb =>
-          if (ctx.channel().isActive) {
-            if (ctx.executor().inEventLoop()) {
-              safedispatch(nettyRequest, key, cb).run()
-            } else {
-              ctx
-                .executor()
-                .submit(safedispatch(nettyRequest, key, cb))
-            }
+          if (ctx.executor.inEventLoop) {
+            safedispatch(nettyRequest, key, cb)
           } else {
-            cb(Left(new ClosedChannelException))
+            ctx.executor
+              .execute(() => safedispatch(nettyRequest, key, cb))
           }
-          F.delay(Some(F.delay(ctx.close()).void))
+          // This is only used to cleanup if the resource is interrupted.
+          F.pure(Some(F.delay(ctx.close()).void))
         }
       }
       .flatMap(identity)
@@ -81,13 +77,21 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   private def safedispatch(
       request: HttpRequest,
       key: RequestKey,
-      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Runnable = () =>
-    void {
+      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit = void {
+    val ch = ctx.channel
+    if (ch.isActive) {
       promises.enqueue(callback)
-      logger.trace(s"Sending request to $key")
-      ctx.writeAndFlush(request).sync()
-      logger.trace(s"After request to $key")
+      logger.trace(s"ch $ch: sending request to $key")
+      // The voidPromise lets us receive failed-write signals from the
+      // exceptionCaught method.
+      ctx.writeAndFlush(request, ch.voidPromise)
+      logger.trace(s"ch $ch: after request to $key")
+    } else {
+      logger.info(
+        s"ch $ch: message dispatched by closed channel to destination ${ch.remoteAddress}.")
+      callback(Left(new ClosedChannelException))
     }
+  }
 
   override def isSharable: Boolean = false
 
@@ -154,4 +158,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       case _ => super.userEventTriggered(ctx, evt)
     }
   }
+}
+
+private object Http4sHandler {
+  private val logger = org.log4s.getLogger
 }
