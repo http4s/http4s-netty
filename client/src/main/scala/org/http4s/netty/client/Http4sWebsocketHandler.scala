@@ -139,11 +139,11 @@ private[client] class Http4sWebsocketHandler[F[_]](
       sendMany(List(wsf))
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
-      if (ctx.channel().isOpen) {
+      if (ctx.channel().isActive) {
         runInNetty(F.delay {
-          if (ctx.channel().isOpen && ctx.channel().isWritable) {
+          if (ctx.channel().isActive) {
             val list = wsfs.toList
-            list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
+            list.foreach(wsf => ctx.write(fromWSFrame(wsf)).sync())
             ctx.flush()
           }
           ()
@@ -155,7 +155,8 @@ private[client] class Http4sWebsocketHandler[F[_]](
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>
         logger.trace("closing")
-        F.delay(ctx.close()).void >> none[WSFrame].pure[F]
+        ctx.close()
+        none[WSFrame].pure[F]
       case None =>
         queue.take.rethrow.map(_.some)
     }
