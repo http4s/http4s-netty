@@ -110,7 +110,7 @@ class NettyClientBuilder[F[_]](
 
   def resource: Resource[F, Client[F]] =
     Dispatcher
-      .sequential[F](await = true)
+      .parallel[F](await = true)
       .flatMap(disp =>
         createBootstrap.map { bs =>
           val config = Http4sChannelPoolMap.Config(
