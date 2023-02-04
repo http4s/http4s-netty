@@ -72,9 +72,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
         ctx.read()
 
         def complete =
-          closed.complete(()).flatTap(set => F.delay(println(s"completing... $set"))).void >> F
-            .delay(ctx.close())
-            .void
+          closed.complete(()).void >> F.delay(ctx.close()).void
 
         val publisher = new HandlerPublisher(ctx.executor(), classOf[WebSocketFrame]) {
           override def requestDemand(): Unit = void {
@@ -87,17 +85,13 @@ private[client] class Http4sWebsocketHandler[F[_]](
             dispatcher.unsafeRunAndForget(complete)
         }
         ctx.pipeline().addBefore(ctx.name(), "stream-publisher", publisher)
-        // ctx.pipeline().remove(this)
 
         publisher.subscribe(new Subscriber[WebSocketFrame] {
-          var sub: Option[Subscription] = None
 
           def isCloseFrame(ws: WSFrame) = ws.isInstanceOf[WSFrame.Close]
 
-          override def onSubscribe(s: Subscription): Unit = {
+          override def onSubscribe(s: Subscription): Unit =
             s.request(Long.MaxValue)
-            sub = Some(s)
-          }
 
           override def onNext(t: WebSocketFrame): Unit = void {
             val converted = toWSFrame(t)
@@ -119,7 +113,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
           }
         })
 
-        callback(new Conn(handshaker.actualSubprotocol(), ctx, queue, closed).asRight[Throwable])
+        callback(new Conn(handshaker.actualSubprotocol(), ctx).asRight[Throwable])
 
       case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_TIMEOUT =>
         callback(Left(new IllegalStateException("Handshake timeout")))
@@ -127,31 +121,28 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
   private class Conn(
       sub: String,
-      ctx: ChannelHandlerContext,
-      queue: Queue[F, Either[Throwable, WSFrame]],
-      closed: Deferred[F, Unit])
-      extends WSConnection[F] {
+      ctx: ChannelHandlerContext
+  ) extends WSConnection[F] {
     private val runInNetty = F.evalOnK(ExecutionContext.fromExecutor(ctx.executor()))
 
-    override def send(wsf: WSFrame): F[Unit] = {
-      logger.trace(s"writing $wsf")
-      runInNetty(F.delay {
-        if (ctx.channel().isOpen && ctx.channel().isWritable) {
-          ctx.writeAndFlush(fromWSFrame(wsf))
-          ()
-        }
-      })
-    }
+    override def send(wsf: WSFrame): F[Unit] =
+      sendMany(List(wsf))
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
-      runInNetty(F.delay {
-        if (ctx.channel().isOpen && ctx.channel().isWritable) {
-          val list = wsfs.toList
-          list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
-          ctx.flush()
-        }
-        ()
-      })
+      if (ctx.channel().isOpen) {
+        runInNetty(F.delay {
+          if (ctx.channel().isOpen && ctx.channel().isWritable) {
+            val list = wsfs.toList
+            list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
+            ctx.flush()
+          } else {
+            dispatcher.unsafeRunAndForget(closed.complete(()))
+          }
+          ()
+        })
+      } else {
+        closed.complete(()).void
+      }
 
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>

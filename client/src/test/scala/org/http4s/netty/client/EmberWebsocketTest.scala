@@ -35,7 +35,7 @@ class EmberWebsocketTest extends IOSuite {
       netty <- EmberServerBuilder
         .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-        .withPort(port"19999")
+        .withPort(port"0")
         .withShutdownTimeout(100.milli)
         .build
         .map(s => httpToWsUri(s.baseUri))
@@ -62,17 +62,13 @@ class EmberWebsocketTest extends IOSuite {
           recv <- conn.receiveStream.compile.toList
         } yield recv
       }
-      .map { list =>
-        println(list)
-        assertEquals(
-          list,
-          List(
-            WSFrame.Text("bar"),
-            WSFrame.Binary(ByteVector(3, 99, 12)),
-            WSFrame.Text("foo"),
-            WSFrame.Close(1000, "")
-          ))
-      }
+      .assertEquals(
+        List(
+          WSFrame.Text("bar"),
+          WSFrame.Binary(ByteVector(3, 99, 12)),
+          WSFrame.Text("foo"),
+          WSFrame.Close(1000, "")
+        ))
   }
 
   test("send and receive frames in high-level mode") {
