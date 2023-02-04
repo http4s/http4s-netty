@@ -152,9 +152,9 @@ private[client] class Http4sWebsocketHandler[F[_]](
           logger.trace("closing")
           ctx.close()
         }
-        println("connection closed, emitting elems until end")
+        logger.trace("connection closed, emitting elems until end")
         OptionT(queue.tryTake).semiflatMap { err =>
-          println("elem on queue> " + err)
+          logger.trace("elem on queue> " + err)
           F.fromEither(err)
         }.value
       case None =>

@@ -67,7 +67,7 @@ lazy val server = project
       "org.eclipse.jetty.http2" % "http2-http-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
