@@ -72,7 +72,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           } else {
             cb(Left(new ClosedChannelException))
           }
-          F.delay(Some(F.delay(ctx.close()).liftToF))
+          F.delay(Some(F.delay(ctx.close()).void))
         }
       }
       .flatMap(identity)
@@ -85,7 +85,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     void {
       promises.enqueue(callback)
       logger.trace(s"Sending request to $key")
-      ctx.writeAndFlush(request)
+      ctx.writeAndFlush(request).sync()
       logger.trace(s"After request to $key")
     }
 
