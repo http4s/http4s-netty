@@ -143,7 +143,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
         runInNetty(F.delay {
           if (ctx.channel().isActive) {
             val list = wsfs.toList
-            list.foreach(wsf => ctx.write(fromWSFrame(wsf)).sync())
+            list.foreach(wsf => ctx.write(fromWSFrame(wsf)))
             ctx.flush()
           }
           ()
