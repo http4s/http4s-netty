@@ -132,7 +132,9 @@ lazy val client = project
         "org.http4s.netty.client.Http4sChannelPoolMap.this"),
       ProblemFilters.exclude[MissingClassProblem]("org.http4s.netty.client.Http4sHandler$"),
       ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap.resource")
+        "org.http4s.netty.client.Http4sChannelPoolMap.resource"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.Http4sWebsocketHandler#Conn.this")
     )
   )
 
