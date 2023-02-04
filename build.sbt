@@ -56,7 +56,7 @@ lazy val core = project
   )
 
 lazy val server = project
-  .dependsOn(core, client % Test)
+  .dependsOn(core, client % "compile->test")
   .settings(CommonSettings.settings)
   .settings(
     name := "http4s-netty-server",
@@ -99,7 +99,6 @@ lazy val client = project
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
-      "org.gaul" % "httpbin" % "1.3.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules,

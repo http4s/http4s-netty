@@ -20,10 +20,16 @@ import cats.effect.IO
 import cats.effect.Resource
 import munit.catseffect.IOFixture
 import org.bbottema.javasocksproxyserver.SocksServer
+import org.http4s.HttpRoutes
+import org.http4s.Response
 import org.http4s.Uri
+import org.http4s.client.testkit.scaffold.ServerScaffold
 
 class SocksProxyTest extends IOSuite {
-  val httpBin: IOFixture[Uri] = resourceFixture(HttpBinTest.httpBin, "httpbin")
+  val server: IOFixture[Uri] = resourceFixture(
+    ServerScaffold[IO](1, false, HttpRoutes.pure(Response[IO]().withEntity("Hello from origin")))
+      .map(_.servers.head.uri),
+    "server")
 
   val socks: IOFixture[(Socks4, Socks5)] = resourceFixture(
     for {
@@ -46,7 +52,7 @@ class SocksProxyTest extends IOSuite {
       .withProxy(socks()._1)
       .resource
       .use { client =>
-        val base = httpBin()
+        val base = server()
         client.expect[String](base / "get").map { s =>
           assert(s.nonEmpty)
         }
@@ -58,7 +64,7 @@ class SocksProxyTest extends IOSuite {
       .withProxy(socks()._2)
       .resource
       .use { client =>
-        val base = httpBin()
+        val base = server()
         client.expect[String](base / "get").map { s =>
           assert(s.nonEmpty)
         }
