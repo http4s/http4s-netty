@@ -22,6 +22,7 @@ import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
 import io.netty.channel._
+import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
@@ -60,16 +61,16 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       .toNettyRequest(request)
       .evalMap { nettyRequest =>
         F.async[Resource[F, Response[F]]] { cb =>
-          addCallback(cb).addListener { (future: ChannelFuture) =>
-            void {
-              if (future.isCancelled || !future.isSuccess) {
-                ctx.fireChannelInactive()
-              } else {
-                logger.trace(s"Sending request to $key")
-                ctx.writeAndFlush(nettyRequest)
-                logger.trace(s"After request to $key")
-              }
+          if (ctx.channel().isOpen) {
+            if (ctx.executor().inEventLoop()) {
+              safedispatch(nettyRequest, key, cb).run()
+            } else {
+              ctx
+                .executor()
+                .submit(safedispatch(nettyRequest, key, cb))
             }
+          } else {
+            cb(Left(new ClosedChannelException))
           }
           F.delay(Some(F.delay(ctx.close()).liftToF))
         }
@@ -77,13 +78,15 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       .flatMap(identity)
   }
 
-  private def addCallback(
-      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): ChannelFuture =
-    if (ctx.executor().inEventLoop()) {
+  private def safedispatch(
+      request: HttpRequest,
+      key: RequestKey,
+      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Runnable = () =>
+    void {
       promises.enqueue(callback)
-      ctx.newSucceededFuture()
-    } else {
-      ctx.newPromise().addListener((_: ChannelFuture) => promises.enqueue(callback)).setSuccess()
+      logger.trace(s"Sending request to $key")
+      ctx.writeAndFlush(request)
+      logger.trace(s"After request to $key")
     }
 
   override def isSharable: Boolean = false
