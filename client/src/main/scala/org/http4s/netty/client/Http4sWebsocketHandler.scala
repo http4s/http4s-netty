@@ -18,6 +18,7 @@ package org.http4s.netty
 package client
 
 import cats.Foldable
+import cats.data.OptionT
 import cats.effect.kernel.Async
 import cats.effect.kernel.Deferred
 import cats.effect.std.Dispatcher
@@ -27,6 +28,7 @@ import com.typesafe.netty.HandlerPublisher
 import io.netty.buffer.Unpooled
 import io.netty.channel._
 import io.netty.handler.codec.http.websocketx._
+import io.netty.util.ReferenceCountUtil
 import org.http4s.client.websocket.WSConnection
 import org.http4s.client.websocket.WSFrame
 import org.http4s.netty.NettyModelConversion
@@ -45,8 +47,8 @@ private[client] class Http4sWebsocketHandler[F[_]](
     dispatcher: Dispatcher[F],
     callback: (Either[Throwable, WSConnection[F]]) => Unit
 )(implicit F: Async[F])
-    extends SimpleUserEventChannelHandler[
-      WebSocketClientProtocolHandler.ClientHandshakeStateEvent] {
+    extends SimpleUserEventChannelHandler[WebSocketClientProtocolHandler.ClientHandshakeStateEvent](
+      false) {
   private val logger = org.log4s.getLogger
   private var callbackIssued = false
 
@@ -147,9 +149,12 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>
-        logger.trace("closing")
-        ctx.close()
-        none[WSFrame].pure[F]
+        if (ctx.channel().isActive) {
+          logger.trace("closing")
+          ctx.close()
+        }
+        logger.trace("connection closed, emitting elems until end")
+        OptionT(queue.tryTake).semiflatMap(F.fromEither).value
       case None =>
         queue.take.rethrow.map(_.some)
     }
@@ -162,8 +167,8 @@ private[client] class Http4sWebsocketHandler[F[_]](
 }
 
 private[client] object Http4sWebsocketHandler {
-  def toWSFrame(frame: WebSocketFrame): WSFrame =
-    frame match {
+  def toWSFrame(frame: WebSocketFrame): WSFrame = {
+    val converted = frame match {
       case t: TextWebSocketFrame => WSFrame.Text(t.text(), t.isFinalFragment)
       case p: PingWebSocketFrame =>
         WSFrame.Ping(
@@ -178,6 +183,9 @@ private[client] object Http4sWebsocketHandler {
       case c: CloseWebSocketFrame => WSFrame.Close(c.statusCode(), c.reasonText())
       case _ => WSFrame.Close(1000, "Unknown websocket frame")
     }
+    ReferenceCountUtil.release(frame)
+    converted
+  }
 
   def fromWSFrame(frame: WSFrame): WebSocketFrame =
     frame match {
