@@ -18,6 +18,7 @@ package org.http4s.netty
 package client
 
 import cats.Foldable
+import cats.data.OptionT
 import cats.effect.kernel.Async
 import cats.effect.kernel.Deferred
 import cats.effect.std.Dispatcher
@@ -147,9 +148,15 @@ private[client] class Http4sWebsocketHandler[F[_]](
 
     override def receive: F[Option[WSFrame]] = closed.tryGet.flatMap {
       case Some(_) =>
-        logger.trace("closing")
-        ctx.close()
-        none[WSFrame].pure[F]
+        if (ctx.channel().isActive) {
+          logger.trace("closing")
+          ctx.close()
+        }
+        println("connection closed, emitting elems until end")
+        OptionT(queue.tryTake).semiflatMap { err =>
+          println("elem on queue> " + err)
+          F.fromEither(err)
+        }.value
       case None =>
         queue.take.rethrow.map(_.some)
     }
