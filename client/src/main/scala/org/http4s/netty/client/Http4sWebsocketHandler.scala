@@ -38,8 +38,6 @@ import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import scodec.bits.ByteVector
 
-import scala.concurrent.ExecutionContext
-
 private[client] class Http4sWebsocketHandler[F[_]](
     handshaker: WebSocketClientHandshaker,
     queue: Queue[F, Either[Throwable, WSFrame]],
@@ -135,14 +133,27 @@ private[client] class Http4sWebsocketHandler[F[_]](
       sub: String,
       ctx: ChannelHandlerContext
   ) extends WSConnection[F] {
-    private val runInNetty = F.evalOnK(ExecutionContext.fromExecutor(ctx.executor()))
 
     override def send(wsf: WSFrame): F[Unit] =
       sendMany(List(wsf))
 
     override def sendMany[G[_], A <: WSFrame](wsfs: G[A])(implicit G: Foldable[G]): F[Unit] =
       if (ctx.channel().isActive) {
-        wsfs.traverse_(wsf => runInNetty(F.delay(ctx.writeAndFlush(fromWSFrame(wsf))).liftToF))
+        def writeAll(): Unit = void {
+          wsfs.toList.foreach { elem =>
+            ctx.write(fromWSFrame(elem), ctx.channel.voidPromise())
+          }
+          ctx.flush()
+        }
+
+        F.delay {
+          if (ctx.executor.inEventLoop()) {
+            writeAll()
+          } else {
+            ctx.executor().execute(() => writeAll())
+          }
+        }
+
       } else {
         closed.complete(()).void
       }
