@@ -48,6 +48,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
     extends SimpleUserEventChannelHandler[
       WebSocketClientProtocolHandler.ClientHandshakeStateEvent] {
   private val logger = org.log4s.getLogger
+  private var callbackIssued = false
 
   override def channelActive(ctx: ChannelHandlerContext): Unit = void {
     super.channelActive(ctx)
@@ -56,10 +57,17 @@ private[client] class Http4sWebsocketHandler[F[_]](
     }
   }
 
-  @SuppressWarnings(Array("deprecation"))
-  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = {
-    logger.warn("Handshake issued")
-    super.exceptionCaught(ctx, cause)
+  private def safeRunCallback(result: Either[Throwable, WSConnection[F]]): Unit =
+    if (!callbackIssued) {
+      callback(result)
+      callbackIssued = true
+    }
+
+  override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit = void {
+    logger.error(cause)("something failed")
+    safeRunCallback(Left(cause))
+    dispatcher.unsafeRunAndForget(
+      queue.offer(Left(cause)) >> closed.complete(()) >> F.delay(ctx.close()))
   }
 
   override def eventReceived(
@@ -113,11 +121,12 @@ private[client] class Http4sWebsocketHandler[F[_]](
             dispatcher.unsafeRunSync(complete)
           }
         })
-
-        callback(new Conn(handshaker.actualSubprotocol(), ctx).asRight[Throwable])
+        safeRunCallback(new Conn(handshaker.actualSubprotocol(), ctx).asRight[Throwable])
 
       case WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_TIMEOUT =>
-        callback(Left(new IllegalStateException("Handshake timeout")))
+        safeRunCallback(
+          Left(new IllegalStateException("Handshake timeout"))
+        )
     }
 
   private class Conn(
