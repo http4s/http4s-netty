@@ -35,8 +35,8 @@ class EmberWebsocketTest extends IOSuite {
       netty <- EmberServerBuilder
         .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-        .withPort(port"19999")
-        .withShutdownTimeout(1.second)
+        .withPort(port"0")
+        .withShutdownTimeout(100.milli)
         .build
         .map(s => httpToWsUri(s.baseUri))
     } yield netty,
@@ -68,8 +68,7 @@ class EmberWebsocketTest extends IOSuite {
           WSFrame.Binary(ByteVector(3, 99, 12)),
           WSFrame.Text("foo"),
           WSFrame.Close(1000, "")
-        )
-      )
+        ))
   }
 
   test("send and receive frames in high-level mode") {

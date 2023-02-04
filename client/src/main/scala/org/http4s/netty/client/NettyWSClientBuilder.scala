@@ -119,6 +119,7 @@ class NettyWSClientBuilder[F[_]](
         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, Int.box(5 * 1000))
         .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
         .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
+        .option(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
       nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) =>
         boot.option(opt, value)
       }
@@ -127,7 +128,7 @@ class NettyWSClientBuilder[F[_]](
 
   def resource: Resource[F, WSClient[F]] = for {
     bs <- createBootstrap
-    disp <- Dispatcher.parallel[F]
+    disp <- Dispatcher.parallel[F](await = true)
   } yield mkWSClient(bs, disp)
 
   private def mkWSClient(bs: Bootstrap, dispatcher: Dispatcher[F]) =
@@ -185,8 +186,13 @@ class NettyWSClientBuilder[F[_]](
               pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
-                "aggregate2",
+                "websocket-aggregate",
                 new WebSocketFrameAggregator(config.maxFramePayloadLength()))
+              if (idleTimeout.isFinite && idleTimeout.length > 0)
+                pipeline
+                  .addLast(
+                    "timeout",
+                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
               pipeline.addLast(
                 "websocket",
                 new Http4sWebsocketHandler[F](
@@ -196,11 +202,6 @@ class NettyWSClientBuilder[F[_]](
                   dispatcher,
                   callback)
               )
-              if (idleTimeout.isFinite && idleTimeout.length > 0)
-                pipeline
-                  .addLast(
-                    "timeout",
-                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
             }
           })
           F.delay(bs.connect(socketAddress).sync()).as(None)
