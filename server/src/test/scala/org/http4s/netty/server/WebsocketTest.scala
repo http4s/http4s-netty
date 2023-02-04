@@ -19,6 +19,7 @@ package org.http4s.netty.server
 import cats.effect.IO
 import cats.effect.Resource
 import cats.syntax.all._
+import munit.catseffect.IOFixture
 import org.http4s.HttpRoutes
 import org.http4s.Uri
 import org.http4s.client.websocket.WSClient
@@ -37,7 +38,7 @@ import scala.concurrent.duration.DurationInt
 abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
   import WebsocketTest._
 
-  val server: Fixture[Uri] = resourceFixture(
+  val server: IOFixture[Uri] = resourceFixture(
     for {
       netty <- NettyServerBuilder[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
@@ -50,7 +51,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
     "server"
   )
 
-  val client: Fixture[WSClient[IO]] = resourceFixture(_client, "client")
+  val client: IOFixture[WSClient[IO]] = resourceFixture(_client, "client")
 
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"

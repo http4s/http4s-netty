@@ -19,6 +19,7 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
+import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
@@ -43,17 +44,18 @@ import scala.concurrent.duration.Duration
 
 private[client] class Http4sChannelPoolMap[F[_]: Async](
     bootstrap: Bootstrap,
-    config: Http4sChannelPoolMap.Config)
-    extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
+    config: Http4sChannelPoolMap.Config,
+    dispatcher: Dispatcher[F]
+) extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
-
-  def resource(key: RequestKey): Resource[F, Channel] = {
-    val pool = get(key)
+  def resource(key: RequestKey): Resource[F, (Channel, Http4sHandler[F])] = {
+    val pool = get(key).asInstanceOf[MyFixedChannelPool]
 
     Resource
       .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
         Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
       }
+      .map(c => c -> c.pipeline().get(classOf[Http4sHandler[F]]))
   }
 
   override def newPool(key: RequestKey): FixedChannelPool =
@@ -136,11 +138,13 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
           false))
       pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
 
-      if (config.idleTimeout.isFinite && config.idleTimeout.length > 0)
+      if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
         pipeline
           .addLast(
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+      }
+      pipeline.addLast("http4s", new Http4sHandler[F](dispatcher))
     }
   }
 }

@@ -19,6 +19,7 @@ package org.http4s.netty.client
 import cats.effect.IO
 import cats.syntax.all._
 import com.comcast.ip4s._
+import munit.catseffect.IOFixture
 import org.http4s._
 import org.http4s.client.websocket._
 import org.http4s.dsl.io._
@@ -29,7 +30,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
 class EmberWebsocketTest extends IOSuite {
-  val server: Fixture[Uri] = resourceFixture(
+  val server: IOFixture[Uri] = resourceFixture(
     for {
       netty <- EmberServerBuilder
         .default[IO]
@@ -42,7 +43,7 @@ class EmberWebsocketTest extends IOSuite {
     "server"
   )
 
-  val client: Fixture[WSClient[IO]] =
+  val client: IOFixture[WSClient[IO]] =
     resourceFixture(
       NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource,
       "client")

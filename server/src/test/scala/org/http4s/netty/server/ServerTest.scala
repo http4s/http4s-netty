@@ -22,6 +22,7 @@ import cats.effect.IO
 import cats.effect.Resource
 import cats.implicits._
 import fs2._
+import munit.catseffect.IOFixture
 import org.http4s.HttpRoutes
 import org.http4s.Request
 import org.http4s.Response
@@ -37,7 +38,7 @@ import scala.concurrent.duration._
 
 abstract class ServerTest extends IOSuite {
 
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withNioTransport
@@ -48,7 +49,7 @@ abstract class ServerTest extends IOSuite {
     "server"
   )
 
-  def client: Fixture[Client[IO]]
+  def client: IOFixture[Client[IO]]
 
   test("simple") {
     val uri = server().baseUri / "simple"
@@ -143,6 +144,11 @@ abstract class ServerTest extends IOSuite {
     }
   }
 
+  test("timeout") {
+    val uri = server().baseUri / "timeout"
+    client().expect[String](uri).attempt.map(e => assert(e.isLeft))
+  }
+
   test("H2 Prior Knowledge is supported") {
     // We need to specifically use the Jetty client and configure
     // prior knowledge support. Unfortunately the other clients already
@@ -178,31 +184,17 @@ abstract class ServerTest extends IOSuite {
 }
 
 class JDKServerTest extends ServerTest {
-  val client: Fixture[Client[IO]] =
+  val client: IOFixture[Client[IO]] =
     resourceFixture(Resource.pure(JdkHttpClient[IO](HttpClient.newHttpClient())), "client")
-
-  test("timeout") {
-    val uri = server().baseUri / "timeout"
-    client().expect[String](uri).attempt.map(e => assert(e.isLeft))
-  }
 }
 
 class NettyClientServerTest extends ServerTest {
-  val client: Fixture[Client[IO]] = resourceFixture(
+  val client: IOFixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withEventLoopThreads(2)
       .resource,
     "client"
   )
-
-  test("timeout".ignore) {
-    val uri = server().baseUri / "timeout"
-    NettyClientBuilder[IO]
-      .withEventLoopThreads(2)
-      .withIdleTimeout(3.seconds)
-      .resource
-      .use(client => client.expect[String](uri).attempt.map { e => println(e); assert(e.isLeft) })
-  }
 }
 
 object ServerTest {

@@ -21,7 +21,6 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
-import org.http4s.Response
 import org.http4s.client.Client
 import org.http4s.client.RequestKey
 
@@ -40,8 +39,6 @@ class NettyClientBuilder[F[_]](
     nettyChannelOptions: NettyChannelOptions,
     proxy: Option[Proxy]
 )(implicit F: Async[F]) {
-  private[this] val logger = org.log4s.getLogger
-
   type Self = NettyClientBuilder[F]
 
   private def copy(
@@ -113,7 +110,7 @@ class NettyClientBuilder[F[_]](
 
   def resource: Resource[F, Client[F]] =
     Dispatcher
-      .parallel[F]
+      .parallel[F](await = true)
       .flatMap(disp =>
         createBootstrap.map { bs =>
           val config = Http4sChannelPoolMap.Config(
@@ -125,27 +122,16 @@ class NettyClientBuilder[F[_]](
             proxy,
             sslContext
           )
-          mkClient(new Http4sChannelPoolMap[F](bs, config), disp)
+          mkClient(new Http4sChannelPoolMap[F](bs, config, disp))
         })
 
-  private def mkClient(pool: Http4sChannelPoolMap[F], dispatcher: Dispatcher[F]) =
+  private def mkClient(pool: Http4sChannelPoolMap[F]) =
     Client[F] { req =>
       val key = RequestKey.fromRequest(req)
-      val pipelineKey = s"http4s-$key"
-      val nettyConverter = new NettyModelConversion[F]
-
       for {
-        channel <- pool.resource(key)
-        nettyReq <- nettyConverter.toNettyRequest(req)
-        responseResource <- Resource
-          .eval(F.async_[Resource[F, Response[F]]] { cb =>
-            val http4sHandler = new Http4sHandler[F](cb, dispatcher)
-            channel.pipeline().addLast(pipelineKey, http4sHandler)
-            logger.trace(s"Sending request to $key")
-            dispatcher.unsafeRunAndForget(F.delay(channel.writeAndFlush(nettyReq)).liftToF)
-            logger.trace(s"After request to $key")
-          })
-        response <- responseResource
+        channelTuple <- pool.resource(key)
+        (_, handler) = channelTuple
+        response <- handler.dispatch(req)
       } yield response
     }
 }
