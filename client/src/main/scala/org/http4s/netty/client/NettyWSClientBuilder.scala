@@ -204,7 +204,7 @@ class NettyWSClientBuilder[F[_]](
               )
             }
           })
-          F.delay(bs.connect(socketAddress).sync()).as(None)
+          F.delay(bs.connect(socketAddress)).as(None)
         }
       } yield connection
 
