@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty
+package server
 
 import cats.effect.Resource
 import cats.effect.Sync
@@ -232,34 +233,43 @@ final class NettyServerBuilder[F[_]] private (
       if (unresolved.isUnresolved) new InetSocketAddress(unresolved.getHostName, unresolved.getPort)
       else unresolved
     }
+
+    val config = NegotiationHandler.Config(
+      maxInitialLineLength,
+      maxHeaderSize,
+      maxChunkSize,
+      idleTimeout,
+      wsMaxFrameLength)
     val loop = getEventLoop
     val server = new ServerBootstrap()
     server.option(ChannelOption.SO_BACKLOG, Int.box(1024))
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
-        override def initChannel(ch: SocketChannel): Unit = {
-          val negotiationHandler = new NegotiationHandler(
-            NegotiationHandler.Config(
-              maxInitialLineLength,
-              maxHeaderSize,
-              maxChunkSize,
-              idleTimeout,
-              wsMaxFrameLength),
-            httpApp,
-            serviceErrorHandler,
-            dispatcher
-          )
-
+        override def initChannel(ch: SocketChannel): Unit = void {
           val pipeline = ch.pipeline()
           sslConfig.toHandler(ch.alloc()) match {
             case Some(handler) =>
+              logger.debug("Starting pipeline with TLS support and deferring protocol to ALPN")
+              val negotiationHandler = new NegotiationHandler(
+                config,
+                httpApp,
+                serviceErrorHandler,
+                dispatcher
+              )
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
+
             case None =>
-              negotiationHandler.addToPipeline(pipeline, true)
+              logger.debug("Starting pipeline cleartext with HTTP/2 prior knowledge detection")
+              val h2PriorKnowledgeDetection = new PriorKnowledgeDetectionHandler[F](
+                config,
+                httpApp,
+                serviceErrorHandler,
+                dispatcher
+              )
+              pipeline.addLast("h2-prior-knowledge-detection", h2PriorKnowledgeDetection)
           }
-          ()
         }
       })
       .bind(resolvedAddress)
@@ -270,7 +280,7 @@ final class NettyServerBuilder[F[_]] private (
 
   def resource: Resource[F, Server] =
     for {
-      dispatcher <- Dispatcher[F]
+      dispatcher <- Dispatcher.parallel[F]
       bound <- Resource.make(Sync[F].delay(bind(dispatcher))) {
         case Bound(address, loop, channel) =>
           Sync[F].delay {
@@ -309,8 +319,6 @@ final class NettyServerBuilder[F[_]] private (
         .channel(runtimeClass)
         .option(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
         .childOption(ChannelOption.SO_REUSEADDR, java.lang.Boolean.TRUE)
-      // .childOption(ChannelOption.AUTO_READ, java.lang.Boolean.FALSE)
-      // TODO: Why did we even need this ^ ?
       nettyChannelOptions.foldLeft(configured) { case (c, (opt, optV)) => c.childOption(opt, optV) }
     }
 

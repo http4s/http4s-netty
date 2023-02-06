@@ -18,6 +18,7 @@ package org.http4s.netty.server
 
 import cats.effect.Async
 import cats.effect.IO
+import cats.effect.Resource
 import io.circe.Decoder
 import io.circe.Encoder
 import io.circe.Json
@@ -25,6 +26,7 @@ import io.circe.syntax.KeyOps
 import io.netty.handler.ssl.ClientAuth
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslContextBuilder
+import munit.catseffect.IOFixture
 import org.http4s.EntityDecoder
 import org.http4s.EntityEncoder
 import org.http4s.HttpRoutes
@@ -88,9 +90,9 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
         }
     }
 
-  def server: Fixture[Server]
+  def server: IOFixture[Server]
 
-  def client: Fixture[Client[IO]]
+  def client: IOFixture[Client[IO]]
 
   test(s"GET Root over $typ") {
     /*(server: Server[IO], client: Client[IO]) =>*/
@@ -118,24 +120,26 @@ abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
 }
 
 class JDKSslServerTest extends SslServerTest() {
-  val client: Fixture[Client[IO]] = resourceFixture(
-    JdkHttpClient[IO](
-      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
+  val client: IOFixture[Client[IO]] = resourceFixture(
+    Resource.pure(
+      JdkHttpClient[IO](
+        HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build())),
     "client")
 
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
 
 class JDKMTLSServerTest extends SslServerTest("mTLS") {
-  val client: Fixture[Client[IO]] = resourceFixture(
-    JdkHttpClient[IO](
-      HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build()),
+  val client: IOFixture[Client[IO]] = resourceFixture(
+    Resource.pure(
+      JdkHttpClient[IO](
+        HttpClient.newBuilder().sslContext(SslServerTest.sslContextForClient).build())),
     "client")
 
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     SslServerTest
       .sslServer(
         _ => routes,
@@ -146,27 +150,27 @@ class JDKMTLSServerTest extends SslServerTest("mTLS") {
 }
 
 class NettyClientSslServerTest extends SslServerTest() {
-  val client: Fixture[Client[IO]] = resourceFixture(
+  val client: IOFixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(SslServerTest.sslContextForClient)
       .withEventLoopThreads(2)
       .resource,
     "client"
   )
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     SslServerTest.sslServer(_ => routes, SslServerTest.sslContextForServer.build()).resource,
     "server"
   )
 }
 
 class NettyClientMTLSServerTest extends SslServerTest("mTLS") {
-  val client: Fixture[Client[IO]] = resourceFixture(
+  val client: IOFixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO]
       .withSSLContext(SslServerTest.sslContextForClient)
       .resource,
     "client"
   )
-  val server: Fixture[Server] = resourceFixture(
+  val server: IOFixture[Server] = resourceFixture(
     SslServerTest
       .sslServer(
         _ => routes,
@@ -216,7 +220,7 @@ object SslServerTest {
   ): NettyServerBuilder[IO] =
     NettyServerBuilder[IO]
       .withHttpWebSocketApp(routes(_).orNotFound)
-      .withEventLoopThreads(10)
+      .withNioTransport
       .withoutBanner
       .bindAny()
       .withSslContext(ctx)

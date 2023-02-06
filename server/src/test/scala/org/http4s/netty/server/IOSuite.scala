@@ -19,17 +19,18 @@ package org.http4s.netty.server
 import cats.effect.IO
 import cats.effect.Resource
 import munit.CatsEffectSuite
+import munit.catseffect.IOFixture
 
 abstract class IOSuite extends CatsEffectSuite {
 
-  private val fixtures = List.newBuilder[Fixture[_]]
+  private val fixtures = List.newBuilder[IOFixture[_]]
 
-  def resourceFixture[A](resource: Resource[IO, A], name: String): Fixture[A] = {
+  def resourceFixture[A](resource: Resource[IO, A], name: String): IOFixture[A] = {
     val fixture = ResourceSuiteLocalFixture(name, resource)
     fixtures += fixture
     fixture
   }
 
-  override def munitFixtures: Seq[Fixture[_]] = fixtures.result()
+  override def munitFixtures: Seq[IOFixture[_]] = fixtures.result()
 
 }

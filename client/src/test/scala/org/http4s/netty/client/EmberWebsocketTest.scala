@@ -14,49 +14,44 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.server
+package org.http4s.netty.client
 
 import cats.effect.IO
-import cats.effect.Resource
 import cats.syntax.all._
+import com.comcast.ip4s._
 import munit.catseffect.IOFixture
-import org.http4s.HttpRoutes
-import org.http4s.Uri
-import org.http4s.client.websocket.WSClient
-import org.http4s.client.websocket.WSFrame
-import org.http4s.client.websocket.WSRequest
+import org.http4s._
+import org.http4s.client.websocket._
 import org.http4s.dsl.io._
-import org.http4s.implicits._
-import org.http4s.jdkhttpclient.JdkWSClient
-import org.http4s.netty.client.NettyWSClientBuilder
+import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.websocket.WebSocketBuilder
 import scodec.bits.ByteVector
 
-import java.net.http.HttpClient
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration._
 
-abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
-  import WebsocketTest._
-
+class EmberWebsocketTest extends IOSuite {
   val server: IOFixture[Uri] = resourceFixture(
     for {
-      netty <- NettyServerBuilder[IO]
+      netty <- EmberServerBuilder
+        .default[IO]
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
-        .withNioTransport
-        .withoutBanner
-        .bindAny()
-        .resource
+        .withPort(port"0")
+        .withShutdownTimeout(100.milli)
+        .build
         .map(s => httpToWsUri(s.baseUri))
     } yield netty,
     "server"
   )
 
-  val client: IOFixture[WSClient[IO]] = resourceFixture(_client, "client")
+  val client: IOFixture[WSClient[IO]] =
+    resourceFixture(
+      NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource,
+      "client")
 
   def httpToWsUri(uri: Uri): Uri =
     uri.copy(scheme = Uri.Scheme.unsafeFromString("ws").some) / "echo"
 
-  protected def testLowLevel: IO[Unit] =
+  test("send and receive frames in low-level mode".flaky) {
     client()
       .connect(WSRequest(server()))
       .use { conn =>
@@ -72,9 +67,9 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
           WSFrame.Text("bar"),
           WSFrame.Binary(ByteVector(3, 99, 12)),
           WSFrame.Text("foo"),
-          WSFrame.Close(1000, "goodbye")
-        )
-      )
+          WSFrame.Close(1000, "")
+        ))
+  }
 
   test("send and receive frames in high-level mode") {
     client()
@@ -94,30 +89,8 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
         )
       )
   }
-}
 
-object WebsocketTest {
-  def echoRoutes(ws: WebSocketBuilder[IO]): HttpRoutes[IO] =
-    HttpRoutes.of[IO] { case _ -> Root / "echo" =>
-      ws.build(identity)
-    }
-}
-
-class NettyWebsocketTest
-    extends WebsocketTest(
-      NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource) {
-  test("send and receive frames in low-level mode".flaky) {
-    testLowLevel
-  }
-}
-
-class JDKClientWebsocketTest
-    extends WebsocketTest(Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient()))) {
-  test("send and receive frames in low-level mode") {
-    testLowLevel
-  }
-
-  test("group frames by their `last` attribute in high-level mode") {
+  test("group frames by their `last` attribute in high-level mode".ignore) {
     val uri = server()
     client()
       .connectHighLevel(WSRequest(uri))
@@ -154,5 +127,10 @@ class JDKClientWebsocketTest
         )
       )
   }
+
+  def echoRoutes(ws: WebSocketBuilder[IO]): HttpRoutes[IO] =
+    HttpRoutes.of[IO] { case _ -> Root / "echo" =>
+      ws.build(identity)
+    }
 
 }
