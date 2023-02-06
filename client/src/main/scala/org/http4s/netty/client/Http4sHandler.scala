@@ -79,17 +79,18 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       key: RequestKey,
       callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit = void {
     val ch = ctx.channel
+    // always enqueue
+    promises.enqueue(callback)
     if (ch.isActive) {
-      promises.enqueue(callback)
       logger.trace(s"ch $ch: sending request to $key")
       // The voidPromise lets us receive failed-write signals from the
       // exceptionCaught method.
       ctx.writeAndFlush(request, ch.voidPromise)
       logger.trace(s"ch $ch: after request to $key")
     } else {
-      logger.info(
-        s"ch $ch: message dispatched by closed channel to destination ${ch.remoteAddress}.")
-      callback(Left(new ClosedChannelException))
+      // make sure we call all enqueued promises
+      logger.info(s"ch $ch: message dispatched by closed channel to destination $key.")
+      onException(ctx, new ClosedChannelException)
     }
   }
 
