@@ -18,8 +18,7 @@ package org.http4s
 package netty
 
 import cats.effect._
-import cats.effect.std.Dispatcher
-import cats.implicits._
+import cats.syntax.all._
 import com.comcast.ip4s.SocketAddress
 import com.typesafe.netty.http._
 import fs2.Chunk
@@ -30,7 +29,6 @@ import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.channel.ChannelFuture
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
@@ -46,46 +44,51 @@ import scodec.bits.ByteVector
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLEngine
-import scala.collection.mutable.ListBuffer
 
 /** Helpers for converting http4s request/response objects to and from the netty model
   *
   * Adapted from NettyModelConversion.scala in
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
   */
-private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: Async[F]) {
+private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
+  import NettyModelConversion._
 
   protected[this] val logger = org.log4s.getLogger
 
   private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
-  def toNettyRequest(request: Request[F]): HttpRequest = {
+  def toNettyRequest(request: Request[F]): Resource[F, HttpRequest] = {
     logger.trace(s"Converting request $request")
     val version = HttpVersion.valueOf(request.httpVersion.toString)
     val method = HttpMethod.valueOf(request.method.name)
     val uri = request.uri.toOriginForm.renderString
+    // reparse to avoid sending split attack to server
+    Uri.fromString(uri) match {
+      case Left(value) =>
+        Resource.eval(F.raiseError(new IllegalArgumentException("Not a valid URI", value)))
+      case Right(_) =>
+        val req =
+          if (notAllowedWithBody.contains(request.method)) {
+            val defaultReq = new DefaultFullHttpRequest(version, method, uri)
+            request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
+            Resource.pure[F, HttpRequest](defaultReq)
+          } else {
+            StreamUnicastPublisher(
+              request.body.chunks
+                .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf)))).map {
+              publisher =>
+                val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
+                transferEncoding(request.headers, false, streamedReq)
+                streamedReq
+            }
+          }
 
-    val req =
-      if (notAllowedWithBody.contains(request.method)) {
-        val defaultReq = new DefaultFullHttpRequest(version, method, uri)
-        request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
-        defaultReq
-      } else {
-        val streamedReq = new DefaultStreamedHttpRequest(
-          version,
-          method,
-          uri,
-          StreamUnicastPublisher(
-            request.body.chunks
-              .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf))),
-            disp)
-        )
-        transferEncoding(request.headers, false, streamedReq)
-        streamedReq
-      }
-
-    request.uri.authority.foreach(authority => req.headers().add("Host", authority.renderString))
-    req
+        req.map { r =>
+          request.uri.authority.foreach(authority =>
+            r.headers().add("Host", authority.renderString))
+          r
+        }
+    }
   }
 
   def fromNettyResponse(response: HttpResponse): F[(Response[F], (Channel) => F[Unit])] = {
@@ -112,6 +115,12 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     Headers(buffer.result())
   }
 
+  def toNettyHeaders(headers: Headers): HttpHeaders = {
+    val defaultHeaders = new DefaultHttpHeaders()
+    headers.headers.foreach(h => defaultHeaders.add(h.name.toString, h.value))
+    defaultHeaders
+  }
+
   /** Turn a netty http request into an http4s request
     *
     * @param channel
@@ -132,13 +141,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     else {
       val (requestEntity, cleanup) = convertHttpBody(request)
       val uri: ParseResult[Uri] = Uri.fromString(request.uri())
-      val headerBuf = new ListBuffer[Header.Raw]
-      val headersIterator = request.headers().iteratorAsString()
-      var mapEntry: java.util.Map.Entry[String, String] = null
-      while (headersIterator.hasNext) {
-        mapEntry = headersIterator.next()
-        headerBuf += Header.Raw(CIString(mapEntry.getKey), mapEntry.getValue)
-      }
+      val headers = toHeaders(request.headers())
 
       val method: ParseResult[Method] = request.method() match {
         case HttpMethod.GET => Right(Method.GET)
@@ -179,7 +182,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
         m,
         u,
         v,
-        Headers(headerBuf.toList),
+        headers,
         requestEntity,
         attributeMap
       )) match {
@@ -245,19 +248,19 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     */
   private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
     F.delay {
-      if (isDrained.compareAndSet(false, true))
+      if (isDrained.compareAndSet(false, true)) {
         if (c.isOpen) {
           logger.info("Response body not drained to completion. Draining and closing connection")
-          c.close().addListener { (_: ChannelFuture) =>
-            // Drain the stream regardless. Some bytebufs often
-            // Remain in the buffers. Draining them solves this issue
-            disp.unsafeRunAndForget(f.compile.drain)
-          }
-          ()
+          // Drain the stream regardless. Some bytebufs often
+          // Remain in the buffers. Draining them solves this issue
+          F.delay(c.close()).liftToF >> f.compile.drain
         } else
           // Drain anyway, don't close the channel
-          disp.unsafeRunAndForget(f.compile.drain)
-    }
+          f.compile.drain
+      } else {
+        F.unit
+      }
+    }.flatMap(identity)
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
@@ -265,26 +268,6 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
       nettyHeaders.add(header.name.toString, header.value)
     ()
-  }
-
-  /** Create a Netty response from the result */
-  def toNettyResponse(
-      httpRequest: Request[F],
-      httpResponse: Response[F],
-      dateString: String
-  ): DefaultHttpResponse = {
-    // Http version is 1.0. We can assume it's most likely not.
-    var minorIs0 = false
-    val httpVersion: HttpVersion =
-      if (httpRequest.httpVersion == HV.`HTTP/1.1`)
-        HttpVersion.HTTP_1_1
-      else if (httpRequest.httpVersion == HV.`HTTP/1.0`) {
-        minorIs0 = true
-        HttpVersion.HTTP_1_0
-      } else
-        HttpVersion.valueOf(httpRequest.httpVersion.toString)
-
-    toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0)
   }
 
   /** Translate an Http4s response to a Netty response.
@@ -307,7 +290,7 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpVersion: HttpVersion,
       dateString: String,
       minorVersionIs0: Boolean
-  ): DefaultHttpResponse = {
+  ): Resource[F, DefaultHttpResponse] = {
     val response =
       if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD)
         canHaveBodyResponse(httpResponse, httpVersion, minorVersionIs0)
@@ -331,21 +314,23 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
             case _ => // no-op
           }
         }
-        r
+        Resource.pure[F, DefaultHttpResponse](r)
       }
-    // Add the cached date if not present
-    if (!response.headers().contains(HttpHeaderNames.DATE))
-      response.headers().add(HttpHeaderNames.DATE, dateString)
 
-    httpRequest.headers.get[ConnHeader] match {
-      case Some(conn) =>
-        response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
-      case None =>
-        if (minorVersionIs0) // Close by default for Http 1.0
-          response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+    response.map { response =>
+      // Add the cached date if not present
+      if (!response.headers().contains(HttpHeaderNames.DATE))
+        response.headers().add(HttpHeaderNames.DATE, dateString)
+
+      httpRequest.headers.get[ConnHeader] match {
+        case Some(conn) =>
+          response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
+        case None =>
+          if (minorVersionIs0) // Close by default for Http 1.0
+            response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+      }
+      response
     }
-
-    response
   }
 
   /** Translate an http4s request to an http request that is allowed a body based on the response
@@ -355,35 +340,41 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
       httpResponse: Response[F],
       httpVersion: HttpVersion,
       minorIs0: Boolean
-  ): DefaultHttpResponse = {
-    val response = httpResponse.entity match {
+  ): Resource[F, DefaultHttpResponse] = {
+    val resource = httpResponse.entity match {
       case Entity.Default(body, _) =>
-        new DefaultStreamedHttpResponse(
-          httpVersion,
-          HttpResponseStatus.valueOf(httpResponse.status.code),
-          false,
-          StreamUnicastPublisher(
-            body.chunks
-              .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf))),
-            disp)
-        )
+        StreamUnicastPublisher(
+          body.chunks
+            .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf)))
+        ).map(publisher =>
+          new DefaultStreamedHttpResponse(
+            httpVersion,
+            HttpResponseStatus.valueOf(httpResponse.status.code),
+            false,
+            publisher
+          ))
       case Entity.Strict(chunk) =>
-        new DefaultFullHttpResponse(
-          httpVersion,
-          HttpResponseStatus.valueOf(httpResponse.status.code),
-          chunkToNetty(Chunk.byteVector(chunk)),
-          false
-        )
+        Resource.pure[F, DefaultHttpResponse](
+          new DefaultFullHttpResponse(
+            httpVersion,
+            HttpResponseStatus.valueOf(httpResponse.status.code),
+            chunkToNetty(Chunk.byteVector(chunk)),
+            false
+          ))
       case Entity.Empty =>
-        new DefaultFullHttpResponse(
-          HttpVersion.HTTP_1_1,
-          HttpResponseStatus.valueOf(httpResponse.status.code),
-          Unpooled.EMPTY_BUFFER,
-          false
-        )
+        Resource.pure[F, DefaultHttpResponse](
+          new DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus.valueOf(httpResponse.status.code),
+            Unpooled.EMPTY_BUFFER,
+            false
+          ))
     }
-    transferEncoding(httpResponse.headers, minorIs0, response)
-    response
+
+    resource.map { res =>
+      transferEncoding(httpResponse.headers, minorIs0, res)
+      res
+    }
   }
 
   private def transferEncoding(headers: Headers, minorIs0: Boolean, response: HttpMessage): Unit = {
@@ -458,15 +449,15 @@ private[netty] class NettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F:
           Unpooled.wrappedBuffer(bytes.toArray)
       }
 
-  protected def bytebufToArray(buf: ByteBuf): Array[Byte] = {
-    val array = ByteBufUtil.getBytes(buf)
-    ReferenceCountUtil.release(buf)
-    array
-  }
-
 }
 
 object NettyModelConversion {
   private[NettyModelConversion] val CachedEmptyHttpContent: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
+
+  def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
+    val array = ByteBufUtil.getBytes(buf)
+    if (release) ReferenceCountUtil.release(buf)
+    array
+  }
 }

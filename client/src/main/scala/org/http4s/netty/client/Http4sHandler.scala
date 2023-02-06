@@ -14,31 +14,89 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.client
+package org.http4s.netty
+package client
 
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundHandlerAdapter
+import io.netty.channel._
+import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s.Response
+import org.http4s._
+import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
+import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
+import java.nio.channels.ClosedChannelException
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
 
-private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Dispatcher[F])(
-    implicit F: Async[F])
+private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
-  private[this] val logger = org.log4s.getLogger
-  val modelConversion = new NettyModelConversion[F](dispatcher)
+  private val modelConversion = new NettyModelConversion[F]
+  private val promises =
+    collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
+  // By using the Netty event loop assigned to this channel we get two benefits:
+  //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
+  //     only pass events up and down from within the event loop to which it is assigned.
+  //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
+  //  2. We get serialization of execution: the EventLoop is a serial execution queue so
+  //     we can rest easy knowing that no two events will be executed in parallel.
+  private var eventLoopContext: ExecutionContext = _
+  private var ctx: ChannelHandlerContext = _
+
+  private var pending: Future[Unit] = Future.unit
+
+  private[netty] def dispatch(request: Request[F]): Resource[F, Response[F]] = {
+    val key = RequestKey.fromRequest(request)
+
+    modelConversion
+      .toNettyRequest(request)
+      .evalMap { nettyRequest =>
+        F.async[Resource[F, Response[F]]] { cb =>
+          if (ctx.executor.inEventLoop) {
+            safedispatch(nettyRequest, key, cb)
+          } else {
+            ctx.executor
+              .execute(() => safedispatch(nettyRequest, key, cb))
+          }
+          // This is only used to cleanup if the resource is interrupted.
+          F.pure(Some(F.delay(ctx.close()).void))
+        }
+      }
+      .flatMap(identity)
+  }
+
+  private def safedispatch(
+      request: HttpRequest,
+      key: RequestKey,
+      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit = void {
+    val ch = ctx.channel
+    // always enqueue
+    promises.enqueue(callback)
+    if (ch.isActive) {
+      logger.trace(s"ch $ch: sending request to $key")
+      // The voidPromise lets us receive failed-write signals from the
+      // exceptionCaught method.
+      ctx.writeAndFlush(request, ch.voidPromise)
+      logger.trace(s"ch $ch: after request to $key")
+    } else {
+      // make sure we call all enqueued promises
+      logger.info(s"ch $ch: message dispatched by closed channel to destination $key.")
+      onException(ctx, new ClosedChannelException)
+    }
+  }
 
   override def isSharable: Boolean = false
 
-  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit =
+  override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
     msg match {
       case h: HttpResponse =>
         val responseResourceF = modelConversion
@@ -46,16 +104,33 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
           .map { case (res, cleanup) =>
             Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
           }
-          .attempt
-          .map { res =>
-            cb(res)
-            ctx.pipeline().remove(this)
-          }
-        dispatcher.unsafeRunAndForget(responseResourceF)
-        ()
+        val result = dispatcher.unsafeToFuture(responseResourceF)
+
+        pending = pending.flatMap { _ =>
+          val promise = promises.dequeue()
+          result.transform {
+            case Failure(exception) =>
+              promise(Left(exception))
+              Failure(exception)
+            case Success(res) =>
+              promise(Right(res))
+              Success(())
+          }(eventLoopContext)
+        }(eventLoopContext)
       case _ =>
         super.channelRead(ctx, msg)
     }
+  }
+
+  override def handlerAdded(ctx: ChannelHandlerContext): Unit =
+    if (eventLoopContext == null) void {
+      // Initialize our ExecutionContext
+      eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
+      this.ctx = ctx
+    }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit =
+    onException(ctx, new ClosedChannelException())
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -70,22 +145,22 @@ private[netty] class Http4sHandler[F[_]](cb: Http4sHandler.CB[F], dispatcher: Di
         onException(ctx, e)
     }
 
-  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = {
-    cb(Left(e))
+  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
+    promises.foreach(cb => cb(Left(e)))
+    promises.clear()
     ctx.channel().close()
-    ctx.pipeline().remove(this)
-    ()
   }
 
-  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit =
+  override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.channel().close(); ()
+        ctx.channel().close()
       case _ => super.userEventTriggered(ctx, evt)
     }
+  }
 }
 
-object Http4sHandler {
-  type CB[F[_]] = (Either[Throwable, Resource[F, Response[F]]]) => Unit
+private object Http4sHandler {
+  private val logger = org.log4s.getLogger
 }

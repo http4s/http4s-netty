@@ -17,8 +17,8 @@
 package org.http4s.netty.server
 
 import cats.effect.Async
+import cats.effect.Resource
 import cats.effect.kernel.Sync
-import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
@@ -42,6 +42,7 @@ import org.http4s.Request
 import org.http4s.Response
 import org.http4s.internal.tls._
 import org.http4s.netty.NettyModelConversion
+import org.http4s.netty.NettyModelConversion.bytebufToArray
 import org.http4s.server.SecureSession
 import org.http4s.server.ServerRequestKeys
 import org.http4s.websocket.WebSocketCombinedPipe
@@ -59,8 +60,8 @@ import scodec.bits.ByteVector
 
 import javax.net.ssl.SSLEngine
 
-final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: Async[F])
-    extends NettyModelConversion[F](disp) {
+private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F])
+    extends NettyModelConversion[F] {
   override protected def requestAttributes(
       optionalSslEngine: Option[SSLEngine],
       channel: Channel): Vault =
@@ -89,7 +90,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       httpResponse: Response[F],
       dateString: String,
       maxPayloadLength: Int
-  ): F[DefaultHttpResponse] = {
+  ): Resource[F, DefaultHttpResponse] = {
     // Http version is 1.0. We can assume it's most likely not.
     var minorIs0 = false
     val httpVersion: HttpVersion =
@@ -111,7 +112,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
           dateString,
           maxPayloadLength)
       case _ =>
-        F.pure(toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0))
+        toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0)
     }
   }
 
@@ -136,7 +137,7 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
       wsContext: WebSocketContext[F],
       dateString: String,
       maxPayloadLength: Int
-  ): F[DefaultHttpResponse] =
+  ): Resource[F, DefaultHttpResponse] =
     if (httpRequest.headers.headers.exists(h =>
         h.name.toString.equalsIgnoreCase("Upgrade") && h.value.equalsIgnoreCase("websocket"))) {
       val wsProtocol = if (httpRequest.isSecure.exists(identity)) "wss" else "ws"
@@ -156,36 +157,43 @@ final class ServerNettyModelConversion[F[_]](disp: Dispatcher[F])(implicit F: As
             stream => receiveSend(stream).map(wsbitsToNetty)
         }
 
-      StreamSubscriber[F, WebSocketFrame](1).flatMap { subscriber =>
-        F.delay {
-          val processor = new Processor[WSFrame, WSFrame] {
-            def onError(t: Throwable): Unit = subscriber.onError(t)
+      Resource
+        .eval(StreamSubscriber[F, WebSocketFrame](1))
+        .flatMap { subscriber =>
+          StreamUnicastPublisher(
+            subscriber
+              .stream(Sync[F].unit)
+              .through(receiveSend)
+              .onFinalizeWeak(wsContext.webSocket.onClose))
+            .map { publisher =>
+              val processor = new Processor[WSFrame, WSFrame] {
+                def onError(t: Throwable): Unit = subscriber.onError(t)
 
-            def onComplete(): Unit = subscriber.onComplete()
+                def onComplete(): Unit = subscriber.onComplete()
 
-            def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
+                def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
 
-            def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
+                def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
 
-            def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-              StreamUnicastPublisher(
-                subscriber
-                  .stream(Sync[F].unit)
-                  .through(receiveSend)
-                  .onFinalizeWeak(wsContext.webSocket.onClose),
-                disp)
-                .subscribe(s)
-          }
-          val resp: DefaultHttpResponse =
-            new DefaultWebSocketHttpResponse(httpVersion, HttpResponseStatus.OK, processor, factory)
-          wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
-          resp
-        }.handleErrorWith(_ =>
-          wsContext.failureResponse.map(
-            toNonWSResponse(httpRequest, _, httpVersion, dateString, true)))
-      }
+                def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
+                  publisher.subscribe(s)
+              }
+              val resp: DefaultHttpResponse =
+                new DefaultWebSocketHttpResponse(
+                  httpVersion,
+                  HttpResponseStatus.OK,
+                  processor,
+                  factory)
+              wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
+              resp
+            }
+        }
+        .handleErrorWith((_: Throwable) =>
+          Resource
+            .eval(wsContext.failureResponse)
+            .flatMap(res => toNonWSResponse(httpRequest, res, httpVersion, dateString, true)))
     } else
-      F.pure(toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, true))
+      toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, true)
 
   private[this] def appendAllToNetty(header: Header.Raw, nettyHeaders: HttpHeaders) = {
     nettyHeaders.add(header.name.toString, header.value)
