@@ -110,15 +110,18 @@ private[client] class Http4sWebsocketHandler[F[_]](
             } else {
               offer
             }
+            // we must wait that the queue has added the element
             dispatcher.unsafeRunSync(op)
           }
 
           override def onError(t: Throwable): Unit = void {
-            dispatcher.unsafeRunSync(complete >> queue.offer(Left(t)))
+            // Errors just needs to be scheduled, and we should stop processing
+            dispatcher.unsafeRunAndForget(complete >> queue.offer(Left(t)))
           }
 
           override def onComplete(): Unit = void {
-            dispatcher.unsafeRunSync(complete)
+            // dispatcher should just schedule this, as it may have already been set.
+            dispatcher.unsafeRunAndForget(complete)
           }
         })
         safeRunCallback(new Conn(handshaker.actualSubprotocol(), ctx).asRight[Throwable])
@@ -141,12 +144,14 @@ private[client] class Http4sWebsocketHandler[F[_]](
       if (ctx.channel().isActive) {
         def writeAll(): Unit = void {
           wsfs.toList.foreach { elem =>
+            // voidPromise makes any errors show up in exceptionCaught method
             ctx.write(fromWSFrame(elem), ctx.channel.voidPromise())
           }
           ctx.flush()
         }
 
         F.delay {
+          // avoid context switching if we can
           if (ctx.executor.inEventLoop()) {
             writeAll()
           } else {
