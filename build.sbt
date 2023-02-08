@@ -71,7 +71,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "0.8.0" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "0.9.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
