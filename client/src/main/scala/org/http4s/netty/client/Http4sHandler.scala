@@ -22,11 +22,8 @@ import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
 import io.netty.channel._
-import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s._
-import org.http4s.client.RequestKey
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.client.Http4sHandler.logger
 
@@ -37,12 +34,12 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 
-private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
+private[netty] class Http4sHandler[F[_]](
+    dispatcher: Dispatcher[F],
+    promises: collection.mutable.Queue[Http4sChannelPoolMap.Callback[F]])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
   private val modelConversion = new NettyModelConversion[F]
-  private val promises =
-    collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
   // By using the Netty event loop assigned to this channel we get two benefits:
   //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
   //     only pass events up and down from within the event loop to which it is assigned.
@@ -50,49 +47,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   //  2. We get serialization of execution: the EventLoop is a serial execution queue so
   //     we can rest easy knowing that no two events will be executed in parallel.
   private var eventLoopContext: ExecutionContext = _
-  private var ctx: ChannelHandlerContext = _
 
   private var pending: Future[Unit] = Future.unit
-
-  private[netty] def dispatch(request: Request[F]): Resource[F, Response[F]] = {
-    val key = RequestKey.fromRequest(request)
-
-    modelConversion
-      .toNettyRequest(request)
-      .evalMap { nettyRequest =>
-        F.async[Resource[F, Response[F]]] { cb =>
-          if (ctx.executor.inEventLoop) {
-            safedispatch(nettyRequest, key, cb)
-          } else {
-            ctx.executor
-              .execute(() => safedispatch(nettyRequest, key, cb))
-          }
-          // This is only used to cleanup if the resource is interrupted.
-          F.pure(Some(F.delay(ctx.close()).void))
-        }
-      }
-      .flatMap(identity)
-  }
-
-  private def safedispatch(
-      request: HttpRequest,
-      key: RequestKey,
-      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit = void {
-    val ch = ctx.channel
-    // always enqueue
-    promises.enqueue(callback)
-    if (ch.isActive) {
-      logger.trace(s"ch $ch: sending request to $key")
-      // The voidPromise lets us receive failed-write signals from the
-      // exceptionCaught method.
-      ctx.writeAndFlush(request, ch.voidPromise)
-      logger.trace(s"ch $ch: after request to $key")
-    } else {
-      // make sure we call all enqueued promises
-      logger.info(s"ch $ch: message dispatched by closed channel to destination $key.")
-      onException(ctx, new ClosedChannelException)
-    }
-  }
 
   override def isSharable: Boolean = false
 
@@ -126,7 +82,6 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     if (eventLoopContext == null) void {
       // Initialize our ExecutionContext
       eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
-      this.ctx = ctx
     }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
