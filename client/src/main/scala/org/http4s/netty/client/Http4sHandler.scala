@@ -18,7 +18,6 @@ package org.http4s.netty
 package client
 
 import cats.effect.Async
-import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
 import io.netty.channel._
@@ -29,60 +28,30 @@ import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
+import scala.collection.mutable
 
 private[netty] class Http4sHandler[F[_]](
     dispatcher: Dispatcher[F],
-    promises: collection.mutable.Queue[Http4sChannelPoolMap.Callback[F]])(implicit F: Async[F])
+    promises: java.util.concurrent.ConcurrentHashMap[
+      ChannelId,
+      mutable.Queue[Http4sChannelPoolMap.Callback[F]]])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
 
   private val modelConversion = new NettyModelConversion[F]
-  // By using the Netty event loop assigned to this channel we get two benefits:
-  //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
-  //     only pass events up and down from within the event loop to which it is assigned.
-  //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
-  //  2. We get serialization of execution: the EventLoop is a serial execution queue so
-  //     we can rest easy knowing that no two events will be executed in parallel.
-  private var eventLoopContext: ExecutionContext = _
-
-  private var pending: Future[Unit] = Future.unit
 
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
     msg match {
-      case h: HttpResponse =>
-        val responseResourceF = modelConversion
-          .fromNettyResponse(h)
-          .map { case (res, cleanup) =>
-            Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
-          }
-        val result = dispatcher.unsafeToFuture(responseResourceF)
-
-        pending = pending.flatMap { _ =>
-          val promise = promises.dequeue()
-          result.transform {
-            case Failure(exception) =>
-              promise(Left(exception))
-              Failure(exception)
-            case Success(res) =>
-              promise(Right(res))
-              Success(())
-          }(eventLoopContext)
-        }(eventLoopContext)
+      case res: HttpResponse =>
+        val promise = promises.get(Http4sChannelPoolMap.getRootId(ctx.channel())).dequeue()
+        val responseResourceF = modelConversion.nettyResponseResource(ctx.channel(), res)
+        val run = dispatcher.unsafeRunSync(responseResourceF.attempt)
+        promise(run)
       case _ =>
         super.channelRead(ctx, msg)
     }
   }
-
-  override def handlerAdded(ctx: ChannelHandlerContext): Unit =
-    if (eventLoopContext == null) void {
-      // Initialize our ExecutionContext
-      eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
-    }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
     onException(ctx, new ClosedChannelException())
@@ -101,8 +70,10 @@ private[netty] class Http4sHandler[F[_]](
     }
 
   private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
-    promises.foreach(cb => cb(Left(e)))
-    promises.clear()
+    Option(
+      promises
+        .get(Http4sChannelPoolMap.getRootId(ctx.channel()))).foreach(_.dequeueAll(_ => true)
+      .foreach(cb => cb(Left(e))))
     ctx.channel().close()
   }
 

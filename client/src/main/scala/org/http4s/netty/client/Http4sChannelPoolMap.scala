@@ -26,6 +26,8 @@ import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelId
+import io.netty.channel.ChannelPromise
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.FixedChannelPool
@@ -42,6 +44,8 @@ import org.http4s.client.RequestKey
 
 import java.net.ConnectException
 import java.nio.channels.ClosedChannelException
+import java.util.concurrent.CancellationException
+import scala.collection.mutable
 import scala.concurrent.duration.Duration
 
 private[client] class Http4sChannelPoolMap[F[_]](
@@ -63,6 +67,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
       .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
         Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
       }
+      .evalTap(_ => F.delay(handler.ready.awaitUninterruptibly(1000)).void)
       .flatMap(channel => handler.dispatch(channel, request))
   }
 
@@ -92,7 +97,11 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
   class PoolHandler(key: RequestKey, config: Http4sChannelPoolMap.Config)
       extends AbstractChannelPoolHandler {
-    private val promises = collection.mutable.Queue[Http4sChannelPoolMap.Callback[F]]()
+    var ready: ChannelPromise = _
+    private val mappedPromises =
+      new java.util.concurrent.ConcurrentHashMap[
+        ChannelId,
+        mutable.Queue[Http4sChannelPoolMap.Callback[F]]]()
 
     private[netty] def dispatch(channel: Channel, request: Request[F]): Resource[F, Response[F]] = {
       val key = RequestKey.fromRequest(request)
@@ -119,8 +128,8 @@ private[client] class Http4sChannelPoolMap[F[_]](
         key: RequestKey,
         callback: Http4sChannelPoolMap.Callback[F]): Unit = void {
       // always enqueue
-      promises.enqueue(callback)
       if (channel.isActive) {
+        mappedPromises.get(Http4sChannelPoolMap.getRootId(channel)).enqueue(callback)
         logger.trace(s"ch $channel: sending request to $key")
         // The voidPromise lets us receive failed-write signals from the
         // exceptionCaught method.
@@ -129,24 +138,28 @@ private[client] class Http4sChannelPoolMap[F[_]](
       } else {
         // make sure we call all enqueued promises
         logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
-        promises.foreach(cb => cb(Left(new ClosedChannelException)))
-        promises.clear()
+        callback(Left(new ClosedChannelException))
         channel.close()
       }
     }
 
-    override def channelAcquired(ch: Channel): Unit =
+    override def channelAcquired(ch: Channel): Unit = {
       logger.trace(s"Connected to $ch")
+      mappedPromises.computeIfAbsent(Http4sChannelPoolMap.getRootId(ch), _ => mutable.Queue.empty)
+    }
 
     override def channelCreated(ch: Channel): Unit = void {
       logger.trace(s"Created $ch")
+      ready = ch.newPromise()
       buildPipeline(ch)
     }
 
-    override def channelReleased(ch: Channel): Unit =
+    override def channelReleased(ch: Channel): Unit = {
       logger.trace(s"Releasing $ch")
+      mappedPromises.remove(Http4sChannelPoolMap.getRootId(ch))
+    }
 
-    private def buildPipeline(channel: Channel) = {
+    private def buildPipeline(channel: Channel) = void {
       val pipeline = channel.pipeline()
       config.proxy.foreach {
         case p: HttpProxy =>
@@ -186,13 +199,21 @@ private[client] class Http4sChannelPoolMap[F[_]](
             "timeout",
             new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
       }
-      pipeline.addLast("http4s", new Http4sHandler[F](dispatcher, promises))
+      pipeline.addLast("http4s", new Http4sHandler[F](dispatcher, mappedPromises))
+      ready.trySuccess()
     }
   }
 }
 
 private[client] object Http4sChannelPoolMap {
   type Callback[F[_]] = Either[Throwable, Resource[F, Response[F]]] => Unit
+
+  def getRootId(channel: Channel): ChannelId = {
+    var c = channel
+    while (c.parent() != null)
+      c = channel.parent()
+    c.id()
+  }
 
   final case class Config(
       maxInitialLength: Int,

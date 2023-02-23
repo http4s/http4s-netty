@@ -87,6 +87,11 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         }
     }
   }
+  def nettyResponseResource(channel: Channel, response: HttpResponse) =
+    fromNettyResponse(response)
+      .map { case (res, cleanup) =>
+        Resource.make(F.pure(res))(_ => cleanup(channel))
+      }
 
   def fromNettyResponse(response: HttpResponse): F[(Response[F], (Channel) => F[Unit])] = {
     logger.trace(s"converting response: $response")
