@@ -100,6 +100,7 @@ lazy val client = project
     name := "http4s-netty-client",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
+      "io.netty" % "netty-codec-http2" % netty,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.http4s" %% "http4s-client-testkit" % http4sVersion % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,

@@ -26,13 +26,17 @@ import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelId
+import io.netty.channel.ChannelPipeline
 import io.netty.channel.ChannelPromise
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.FixedChannelPool
 import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.ssl.ApplicationProtocolNames
+import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.concurrent.Future
@@ -176,23 +180,34 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
             val port = mayBePort.getOrElse(443)
             val engine = context.createSSLEngine(host.value, port)
-            val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
+            val params = TLSParameters(
+              endpointIdentificationAlgorithm = Some("HTTPS"),
+              applicationProtocols = Some(List(ApplicationProtocolNames.HTTP_1_1))
+            )
             engine.setUseClientMode(true)
             engine.setSSLParameters(params.toSSLParameters)
             pipeline.addLast("ssl", new SslHandler(engine))
+            pipeline.addLast(
+              "alpn",
+              new ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
+                override def configurePipeline(
+                    ctx: ChannelHandlerContext,
+                    protocol: String): Unit = {
+                  println("alpn: " + protocol)
+                  protocol match {
+                    case ApplicationProtocolNames.HTTP_1_1 =>
+                      configureHttp1(pipeline)
+                  }
+                }
+              }
+            )
           }
-        case _ => ()
+        case _ =>
+          configureHttp1(pipeline)
       }
+    }
 
-      pipeline.addLast(
-        "httpClientCodec",
-        new HttpClientCodec(
-          config.maxInitialLength,
-          config.maxHeaderSize,
-          config.maxChunkSize,
-          false))
-      pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
-
+    private def configureEndOfPipeline(pipeline: ChannelPipeline) = {
       if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
         pipeline
           .addLast(
@@ -201,6 +216,19 @@ private[client] class Http4sChannelPoolMap[F[_]](
       }
       pipeline.addLast("http4s", new Http4sHandler[F](dispatcher, mappedPromises))
       ready.trySuccess()
+    }
+
+    private def configureHttp1(pipeline: ChannelPipeline) = {
+      pipeline.addLast(
+        "httpClientCodec",
+        new HttpClientCodec(
+          config.maxInitialLength,
+          config.maxHeaderSize,
+          config.maxChunkSize,
+          false))
+      pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
+      configureEndOfPipeline(pipeline)
+
     }
   }
 }
