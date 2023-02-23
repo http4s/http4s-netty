@@ -16,27 +16,47 @@
 
 package org.http4s.netty.client
 
-import javax.net.ssl.SSLContext
+import io.netty.handler.ssl.ApplicationProtocolConfig
+import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolConfig.SelectorFailureBehavior
+import io.netty.handler.ssl.ApplicationProtocolNames
+import io.netty.handler.ssl.SslContext
+import io.netty.handler.ssl.SslContextBuilder
+
 import scala.util.control.NonFatal
 
 private[client] sealed trait SSLContextOption extends Product with Serializable
 
 private[client] object SSLContextOption {
+  val defaultALPNConfig = new ApplicationProtocolConfig(
+    Protocol.ALPN,
+    SelectorFailureBehavior.NO_ADVERTISE,
+    SelectedListenerFailureBehavior.ACCEPT,
+    //ApplicationProtocolNames.HTTP_2,
+    ApplicationProtocolNames.HTTP_1_1
+  )
+
   case object NoSSL extends SSLContextOption
 
   case object TryDefaultSSLContext extends SSLContextOption
 
-  final case class Provided(sslContext: SSLContext) extends SSLContextOption
+  final case class Provided(sslContext: SslContext) extends SSLContextOption
 
-  def toMaybeSSLContext(sco: SSLContextOption): Option[SSLContext] =
+  def toMaybeSSLContext(sco: SSLContextOption): Option[SslContext] =
     sco match {
       case SSLContextOption.NoSSL => None
       case SSLContextOption.TryDefaultSSLContext => tryDefaultSslContext
       case SSLContextOption.Provided(context) => Some(context)
     }
 
-  def tryDefaultSslContext: Option[SSLContext] =
-    try Some(SSLContext.getDefault())
+  def tryDefaultSslContext: Option[SslContext] =
+    try
+      Some(
+        SslContextBuilder
+          .forClient()
+          .applicationProtocolConfig(defaultALPNConfig)
+          .build())
     catch {
       case NonFatal(_) => None
     }

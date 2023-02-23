@@ -53,6 +53,13 @@ private[netty] class Http4sHandler[F[_]](
     }
   }
 
+  override def channelActive(ctx: ChannelHandlerContext): Unit = {
+    if (!ctx.channel().config().isAutoRead) {
+      ctx.read()
+    }
+    super.channelActive(ctx)
+  }
+
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
     onException(ctx, new ClosedChannelException())
 

@@ -23,7 +23,6 @@ import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.syntax.all._
-import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelOption
@@ -32,7 +31,9 @@ import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpObjectAggregator
 import io.netty.handler.codec.http.websocketx._
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketClientCompressionHandler
-import io.netty.handler.ssl.SslHandler
+import io.netty.handler.ssl.ClientAuth
+import io.netty.handler.ssl.IdentityCipherSuiteFilter
+import io.netty.handler.ssl.JdkSslContext
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.Uri
 import org.http4s.Uri.Authority
@@ -88,7 +89,16 @@ class NettyWSClientBuilder[F[_]](
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   def withSSLContext(sslContext: SSLContext): Self =
-    copy(sslContext = SSLContextOption.Provided(sslContext))
+    copy(sslContext = SSLContextOption.Provided(
+      new JdkSslContext(
+        sslContext,
+        true,
+        null,
+        IdentityCipherSuiteFilter.INSTANCE,
+        SSLContextOption.defaultALPNConfig,
+        ClientAuth.NONE,
+        null,
+        false)))
 
   def withoutSSL: Self =
     copy(sslContext = SSLContextOption.NoSSL)
@@ -179,13 +189,17 @@ class NettyWSClientBuilder[F[_]](
                 case (WSS, Some(context)) =>
                   void {
                     logger.trace("Creating SSL engine")
+                    val handler = context.newHandler(
+                      ch.alloc(),
+                      socketAddress.getHostName,
+                      socketAddress.getPort)
 
-                    val engine =
-                      context.createSSLEngine(socketAddress.getHostName, socketAddress.getPort)
-                    val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
-                    engine.setUseClientMode(true)
-                    engine.setSSLParameters(params.toSSLParameters)
-                    pipeline.addLast("ssl", new SslHandler(engine))
+                    val sslEngine = handler.engine()
+                    val sslParameters = sslEngine.getSSLParameters
+                    sslParameters.setEndpointIdentificationAlgorithm("HTTPS")
+                    sslEngine.setSSLParameters(sslParameters)
+
+                    pipeline.addLast("ssl", handler)
                   }
                 case _ => ()
               }

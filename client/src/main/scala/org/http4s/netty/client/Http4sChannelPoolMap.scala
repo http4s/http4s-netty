@@ -22,7 +22,6 @@ import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.typesafe.netty.http.HttpStreamsClientHandler
-import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
@@ -35,9 +34,12 @@ import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.FixedChannelPool
 import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpScheme
+import io.netty.handler.codec.http2.DefaultHttp2Connection
+import io.netty.handler.codec.http2.HttpToHttp2ConnectionHandlerBuilder
+import io.netty.handler.codec.http2.InboundHttp2ToHttpAdapterBuilder
 import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler
-import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.concurrent.Future
 import org.http4s.Request
@@ -48,7 +50,6 @@ import org.http4s.client.RequestKey
 
 import java.net.ConnectException
 import java.nio.channels.ClosedChannelException
-import java.util.concurrent.CancellationException
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 
@@ -147,7 +148,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
       }
     }
 
-    override def channelAcquired(ch: Channel): Unit = {
+    override def channelAcquired(ch: Channel): Unit = void {
       logger.trace(s"Connected to $ch")
       mappedPromises.computeIfAbsent(Http4sChannelPoolMap.getRootId(ch), _ => mutable.Queue.empty)
     }
@@ -158,7 +159,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
       buildPipeline(ch)
     }
 
-    override def channelReleased(ch: Channel): Unit = {
+    override def channelReleased(ch: Channel): Unit = void {
       logger.trace(s"Releasing $ch")
       mappedPromises.remove(Http4sChannelPoolMap.getRootId(ch))
     }
@@ -179,26 +180,39 @@ private[client] class Http4sChannelPoolMap[F[_]](
             logger.trace("Creating SSL engine")
 
             val port = mayBePort.getOrElse(443)
-            val engine = context.createSSLEngine(host.value, port)
-            val params = TLSParameters(
-              endpointIdentificationAlgorithm = Some("HTTPS"),
-              applicationProtocols = Some(List(ApplicationProtocolNames.HTTP_1_1))
-            )
-            engine.setUseClientMode(true)
-            engine.setSSLParameters(params.toSSLParameters)
-            pipeline.addLast("ssl", new SslHandler(engine))
+
+            val handler = context.newHandler(channel.alloc(), host.value, port)
+            val sslEngine = handler.engine()
+            val sslParameters = sslEngine.getSSLParameters
+            sslParameters.setEndpointIdentificationAlgorithm("HTTPS")
+            sslEngine.setSSLParameters(sslParameters)
+
+            pipeline.addLast("ssl", handler)
             pipeline.addLast(
               "alpn",
-              new ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
-                override def configurePipeline(
-                    ctx: ChannelHandlerContext,
-                    protocol: String): Unit = {
-                  println("alpn: " + protocol)
-                  protocol match {
-                    case ApplicationProtocolNames.HTTP_1_1 =>
-                      configureHttp1(pipeline)
+              new ApplicationProtocolNegotiationHandler("") {
+                override def configurePipeline(ctx: ChannelHandlerContext, protocol: String): Unit =
+                  void {
+                    protocol match {
+                      case ApplicationProtocolNames.HTTP_1_1 =>
+                        configureHttp1(pipeline)
+                      case ApplicationProtocolNames.HTTP_2 =>
+                        ctx.channel().config().setAutoRead(true)
+                        val connection = new DefaultHttp2Connection(false)
+                        pipeline.addLast(
+                          new HttpToHttp2ConnectionHandlerBuilder()
+                            .connection(connection)
+                            // TODO: We now only get http responses of max config.maxChunksize
+                            .frameListener(new InboundHttp2ToHttpAdapterBuilder(connection)
+                              .maxContentLength(config.maxChunkSize)
+                              .build())
+                            .httpScheme(HttpScheme.HTTPS)
+                            .build())
+                        configureEndOfPipeline(pipeline)
+                      case _ =>
+                        configureHttp1(pipeline)
+                    }
                   }
-                }
               }
             )
           }
@@ -208,6 +222,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
     }
 
     private def configureEndOfPipeline(pipeline: ChannelPipeline) = {
+      pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
       if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
         pipeline
           .addLast(
@@ -226,7 +241,6 @@ private[client] class Http4sChannelPoolMap[F[_]](
           config.maxHeaderSize,
           config.maxChunkSize,
           false))
-      pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
       configureEndOfPipeline(pipeline)
 
     }

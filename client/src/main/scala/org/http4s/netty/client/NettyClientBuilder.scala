@@ -21,6 +21,11 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
+import io.netty.handler.ssl.ClientAuth
+import io.netty.handler.ssl.IdentityCipherSuiteFilter
+import io.netty.handler.ssl.JdkSslContext
+import io.netty.util.internal.logging.InternalLoggerFactory
+import io.netty.util.internal.logging.Slf4JLoggerFactory
 import org.http4s.client.Client
 
 import javax.net.ssl.SSLContext
@@ -74,7 +79,16 @@ class NettyClientBuilder[F[_]](
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
   def withSSLContext(sslContext: SSLContext): Self =
-    copy(sslContext = SSLContextOption.Provided(sslContext))
+    copy(sslContext = SSLContextOption.Provided(
+      new JdkSslContext(
+        sslContext,
+        true,
+        null,
+        IdentityCipherSuiteFilter.INSTANCE,
+        SSLContextOption.defaultALPNConfig,
+        ClientAuth.NONE,
+        null,
+        false)))
 
   def withoutSSL: Self =
     copy(sslContext = SSLContextOption.NoSSL)
@@ -100,6 +114,7 @@ class NettyClientBuilder[F[_]](
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
+      InternalLoggerFactory.setDefaultFactory(Slf4JLoggerFactory.INSTANCE)
       EventLoopHolder.fromTransport(transport, eventLoopThreads).configure(bootstrap)
       nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) =>
         boot.option(opt, value)
