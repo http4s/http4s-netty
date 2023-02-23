@@ -145,7 +145,25 @@ lazy val client = project
       ProblemFilters.exclude[DirectMissingMethodProblem](
         "org.http4s.netty.client.Http4sChannelPoolMap.resource"),
       ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.Http4sWebsocketHandler#Conn.this")
+        "org.http4s.netty.client.Http4sWebsocketHandler#Conn.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap.attr"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap#MyFixedChannelPool.this"),
+      ProblemFilters.exclude[MissingClassProblem](
+        "org.http4s.netty.client.Http4sChannelPoolMap$WrappedChannelPoolHandler"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided.sslContext"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided.copy"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided.copy$default$1"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided.this"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided.apply"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem](
+        "org.http4s.netty.client.SSLContextOption#Provided._1")
     )
   )
 
