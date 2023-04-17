@@ -21,7 +21,7 @@ inThisBuild(
 
 val http4sVersion = "0.23.18"
 
-val jetty = "11.0.14"
+val jetty = "11.0.15"
 
 val netty = "4.1.90.Final"
 
@@ -51,7 +51,7 @@ lazy val core = project
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.4.8"
+      "org.typelevel" %% "cats-effect" % "3.4.9"
     )
   )
 
@@ -108,7 +108,7 @@ lazy val client = project
       "com.github.monkeywie" % "proxyee" % "1.7.4" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.12" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
