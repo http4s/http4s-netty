@@ -77,7 +77,8 @@ final class NettyServerBuilder[F[_]] private (
     banner: immutable.Seq[String],
     nettyChannelOptions: NettyChannelOptions,
     sslConfig: NettyServerBuilder.SslConfig,
-    wsMaxFrameLength: Int
+    wsMaxFrameLength: Int,
+    wsCompression: Boolean
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -95,7 +96,8 @@ final class NettyServerBuilder[F[_]] private (
       banner: immutable.Seq[String] = banner,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       sslConfig: NettyServerBuilder.SslConfig = sslConfig,
-      wsMaxFrameLength: Int = wsMaxFrameLength
+      wsMaxFrameLength: Int = wsMaxFrameLength,
+      wsCompression: Boolean = wsCompression
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -110,7 +112,8 @@ final class NettyServerBuilder[F[_]] private (
       banner,
       nettyChannelOptions,
       sslConfig,
-      wsMaxFrameLength
+      wsMaxFrameLength,
+      wsCompression
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -167,6 +170,8 @@ final class NettyServerBuilder[F[_]] private (
     copy(serviceErrorHandler = handler)
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
+  def withWebSocketCompression: Self = copy(wsCompression = true)
+  def withoutWebSocketCompression: Self = copy(wsCompression = false)
 
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. We only
     * look at the needClientAuth and wantClientAuth boolean params. For more control use overload.
@@ -226,7 +231,8 @@ final class NettyServerBuilder[F[_]] private (
       maxHeaderSize,
       maxChunkSize,
       idleTimeout,
-      wsMaxFrameLength)
+      wsMaxFrameLength,
+      wsCompression)
     val loop = getEventLoop
     val server = new ServerBootstrap()
     server.option(ChannelOption.SO_BACKLOG, Int.box(1024))
@@ -332,7 +338,8 @@ object NettyServerBuilder {
       banner = org.http4s.server.defaults.Banner,
       nettyChannelOptions = NettyChannelOptions.empty,
       sslConfig = NettyServerBuilder.NoSsl,
-      wsMaxFrameLength = DefaultWSMaxFrameLength
+      wsMaxFrameLength = DefaultWSMaxFrameLength,
+      wsCompression = false
     )
 
   private sealed trait SslConfig {
