@@ -79,7 +79,17 @@ lazy val server = project
       ProblemFilters.exclude[IncompatibleResultTypeProblem](
         "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket"),
       ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.ServerNettyModelConversion.this")
+        "org.http4s.netty.server.ServerNettyModelConversion.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NegotiationHandler#Config.copy"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NegotiationHandler#Config.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NegotiationHandler#Config.apply"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyServerBuilder.this"),
+      ProblemFilters.exclude[MissingTypesProblem](
+        "org.http4s.netty.server.NegotiationHandler$Config$")
     )
   )
 
