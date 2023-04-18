@@ -31,6 +31,7 @@ import io.netty.channel.socket.SocketChannel
 import io.netty.handler.codec.http.HttpClientCodec
 import io.netty.handler.codec.http.HttpObjectAggregator
 import io.netty.handler.codec.http.websocketx._
+import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketClientCompressionHandler
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.Uri
@@ -52,7 +53,8 @@ class NettyWSClientBuilder[F[_]](
     sslContext: SSLContextOption,
     subprotocol: Option[String],
     maxFramePayloadLength: Int,
-    nettyChannelOptions: NettyChannelOptions
+    nettyChannelOptions: NettyChannelOptions,
+    wsCompression: Boolean
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
   private val WS = Uri.Scheme.unsafeFromString("ws")
@@ -67,7 +69,8 @@ class NettyWSClientBuilder[F[_]](
       sslContext: SSLContextOption = sslContext,
       subprotocol: Option[String] = subprotocol,
       maxFramePayloadLength: Int = maxFramePayloadLength,
-      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions
+      nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
+      wsCompression: Boolean = wsCompression
   ): NettyWSClientBuilder[F] =
     new NettyWSClientBuilder[F](
       idleTimeout,
@@ -76,7 +79,8 @@ class NettyWSClientBuilder[F[_]](
       sslContext,
       subprotocol,
       maxFramePayloadLength,
-      nettyChannelOptions
+      nettyChannelOptions,
+      wsCompression
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.Native)
@@ -102,6 +106,10 @@ class NettyWSClientBuilder[F[_]](
     require(max > 0, "Must be positive")
     copy(maxFramePayloadLength = max)
   }
+
+  def withWebSocketCompression: Self = copy(wsCompression = true)
+
+  def withoutWebSocketCompression: Self = copy(wsCompression = false)
 
   /** Socket selector threads.
     * @param nThreads
@@ -184,6 +192,11 @@ class NettyWSClientBuilder[F[_]](
 
               pipeline.addLast("http", new HttpClientCodec())
               pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
+              if (wsCompression) {
+                pipeline.addLast(
+                  "websocket-compression",
+                  WebSocketClientCompressionHandler.INSTANCE)
+              }
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
                 "websocket-aggregate",
@@ -221,6 +234,7 @@ object NettyWSClientBuilder {
       sslContext = SSLContextOption.TryDefaultSSLContext,
       subprotocol = None,
       maxFramePayloadLength = 65536,
-      nettyChannelOptions = NettyChannelOptions.empty
+      nettyChannelOptions = NettyChannelOptions.empty,
+      wsCompression = false
     )
 }
