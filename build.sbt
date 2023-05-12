@@ -51,7 +51,7 @@ lazy val core = project
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.4.9"
+      "org.typelevel" %% "cats-effect" % "3.4.11"
     )
   )
 
