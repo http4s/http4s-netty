@@ -18,31 +18,19 @@ package org.http4s
 
 import cats.effect.Async
 import cats.syntax.all._
-import io.netty.channel.Channel
-import io.netty.channel.ChannelFuture
 
 package object netty {
-  implicit class NettyChannelFutureSyntax[F[_]](private val fcf: F[ChannelFuture]) extends AnyVal {
-    def liftToFWithChannel(implicit F: Async[F]): F[Channel] =
-      fcf.flatMap(cf =>
-        F.async_ { (callback: Either[Throwable, Channel] => Unit) =>
-          void(cf.addListener { (f: ChannelFuture) =>
-            if (f.isSuccess) callback(Right(f.channel()))
-            else callback(Left(f.cause()))
-          })
-        })
-  }
-
   implicit class NettyFutureSyntax[F[_], A <: io.netty.util.concurrent.Future[_]](
       private val ff: F[A]
   ) extends AnyVal {
     def liftToF(implicit F: Async[F]): F[Unit] =
       ff.flatMap(f =>
-        F.async_ { (callback: Either[Throwable, Unit] => Unit) =>
+        F.async { (callback: Either[Throwable, Unit] => Unit) =>
           void(f.addListener { (f: io.netty.util.concurrent.Future[_]) =>
             if (f.isSuccess) callback(Right(()))
             else callback(Left(f.cause()))
           })
+          F.delay(Some(F.delay(f.cancel(false)).void))
         })
   }
 
