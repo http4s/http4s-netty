@@ -19,6 +19,7 @@ package org.http4s.netty.client
 import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.Sync
+import cats.effect.kernel.Async
 import cats.syntax.all._
 import com.comcast.ip4s._
 import com.github.monkeywie.proxyee.server.HttpProxyServer
@@ -71,8 +72,8 @@ class HttpProxyTest extends IOSuite {
 }
 
 object HttpProxyTest {
-  def randomSocketAddress[F[_]: Sync]: F[SocketAddress[IpAddress]] = {
-    def getLoopBack = Dns[F].loopback
+  def randomSocketAddress[F[_]: Async]: F[SocketAddress[IpAddress]] = {
+    def getLoopBack = Dns.forAsync[F].loopback
     def randomPort = Sync[F].blocking {
       val s = new ServerSocket(0)
       s.close()
