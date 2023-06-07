@@ -1,4 +1,4 @@
-val Scala213 = "2.13.10"
+val Scala213 = "2.13.11"
 
 inThisBuild(
   Seq(
