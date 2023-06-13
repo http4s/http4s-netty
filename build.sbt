@@ -19,7 +19,7 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.23.19"
+val http4sVersion = "0.23.20"
 
 val jetty = "11.0.15"
 
@@ -105,7 +105,7 @@ lazy val client = project
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.7.4" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.7.5" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.12" % Test,
