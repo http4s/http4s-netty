@@ -8,7 +8,7 @@ inThisBuild(
       tlGitHubDev("hamnis", "Erlend Hamnaberg")
     ),
     licenses := Seq(License.Apache2),
-    tlBaseVersion := "0.6",
+    tlBaseVersion := "1.0",
     tlSonatypeUseLegacyHost := false,
     crossScalaVersions := Seq(Scala213, "3.2.2"),
     ThisBuild / scalaVersion := Scala213,
