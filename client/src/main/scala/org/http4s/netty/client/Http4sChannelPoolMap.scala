@@ -166,10 +166,12 @@ private[client] object Http4sChannelPoolMap {
       sslConfig: SSLContextOption)
 
   def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
-    Async[F].async_ { callback =>
+    Async[F].async { callback =>
+      val fut = future
       void(
-        future
+        fut
           .addListener((f: Future[A]) =>
             if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause()))))
+      Async[F].delay(Some(Async[F].delay(fut.cancel(false)).void))
     }
 }

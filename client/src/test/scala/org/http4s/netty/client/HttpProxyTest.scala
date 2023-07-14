@@ -72,7 +72,7 @@ class HttpProxyTest extends IOSuite {
 
 object HttpProxyTest {
   def randomSocketAddress[F[_]: Sync]: F[SocketAddress[IpAddress]] = {
-    def getLoopBack = Dns[F].loopback
+    def getLoopBack = Dns.forSync[F].loopback
     def randomPort = Sync[F].blocking {
       val s = new ServerSocket(0)
       s.close()
