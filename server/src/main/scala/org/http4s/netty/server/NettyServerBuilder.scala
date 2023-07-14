@@ -57,6 +57,7 @@ import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.defaults
 import org.http4s.server.websocket.WebSocketBuilder
+import org.typelevel.log4cats.LoggerFactory
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
@@ -338,7 +339,7 @@ final class NettyServerBuilder[F[_]] private (
 object NettyServerBuilder {
   private val DefaultWSMaxFrameLength = 65536
 
-  def apply[F[_]](implicit F: Async[F]): NettyServerBuilder[F] =
+  def apply[F[_]](implicit F: Async[F], lf: LoggerFactory[F]): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp = _ => HttpApp.notFound[F],
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],

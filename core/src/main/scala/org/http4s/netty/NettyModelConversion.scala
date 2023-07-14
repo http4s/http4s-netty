@@ -240,7 +240,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
               isDrained.compareAndSet(false, true)
               ()
             })
-        (Entity.Default(stream, length), drainBody(_, stream, isDrained))
+        (Entity.Streamed(stream, length), drainBody(_, stream, isDrained))
       case _: HttpRequest => empty
     }
 
@@ -342,7 +342,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       minorIs0: Boolean
   ): Resource[F, DefaultHttpResponse] = {
     val resource = httpResponse.entity match {
-      case Entity.Default(body, _) =>
+      case Entity.Streamed(body, _) =>
         StreamUnicastPublisher(
           body.chunks
             .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf)))
