@@ -287,7 +287,7 @@ final class NettyServerBuilder[F[_]] private (
 
   def resource: Resource[F, Server] =
     for {
-      dispatcher <- Dispatcher.parallel[F]
+      dispatcher <- Dispatcher.parallel[F](await = true)
       bound <- Resource.make(Sync[F].delay(bind(dispatcher))) {
         case Bound(address, loop, channel) =>
           Sync[F].delay {
