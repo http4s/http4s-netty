@@ -40,7 +40,6 @@ import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
 import org.http4s.Header
 import org.http4s.Request
 import org.http4s.Response
-import org.http4s.internal.tls._
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.NettyModelConversion.bytebufToArray
 import org.http4s.server.SecureSession
@@ -77,8 +76,8 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
             (
               Option(session.getId).map(ByteVector(_).toHex),
               Option(session.getCipherSuite),
-              Option(session.getCipherSuite).map(deduceKeyLength),
-              Option(getCertChain(session))
+              Option(session.getCipherSuite).map(internal.tls.deduceKeyLength),
+              Option(internal.tls.getCertChain(session))
             ).mapN(SecureSession.apply)
           }
       )

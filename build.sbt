@@ -1,4 +1,6 @@
-val Scala213 = "2.13.10"
+import com.typesafe.tools.mima.core._
+
+val Scala213 = "2.13.11"
 
 inThisBuild(
   Seq(
@@ -8,23 +10,23 @@ inThisBuild(
       tlGitHubDev("hamnis", "Erlend Hamnaberg")
     ),
     licenses := Seq(License.Apache2),
-    tlBaseVersion := "0.6",
+    tlBaseVersion := "1.0",
     tlSonatypeUseLegacyHost := false,
-    crossScalaVersions := Seq(Scala213, "3.2.2"),
+    crossScalaVersions := Seq(Scala213, "3.3.0"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
   )
 )
 
-val http4sVersion = "1.0.0-M39"
+val http4sVersion = "1.0.0-M40"
 
-val jetty = "11.0.13"
+val jetty = "11.0.15"
 
-val netty = "4.1.87.Final"
+val netty = "4.1.94.Final"
 
 val munit = "0.7.29"
 
-val io_uring = "0.0.17.Final"
+val io_uring = "0.0.21.Final"
 
 val nativeNettyModules =
   Seq(
@@ -42,13 +44,14 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.5.0",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.8")
+      "org.log4s" %% "log4s" % "1.10.0",
+      "co.fs2" %% "fs2-reactive-streams" % "3.7.0",
+      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.9")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.4.6"
+      "org.typelevel" %% "cats-effect" % "3.5.1"
     )
   )
 
@@ -71,7 +74,8 @@ lazy val server = project
       "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M9" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
-    libraryDependencies ++= nativeNettyModules
+    libraryDependencies ++= nativeNettyModules,
+    mimaBinaryIssueFilters := Nil
   )
 
 lazy val client = project
@@ -86,10 +90,10 @@ lazy val client = project
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.7.4" % Test,
+      "com.github.monkeywie" % "proxyee" % "1.7.6" % Test,
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.11" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.12" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules

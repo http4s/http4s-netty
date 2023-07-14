@@ -25,6 +25,7 @@ import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.http.HttpRequestDecoder
 import io.netty.handler.codec.http.HttpResponseEncoder
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
+import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder
 import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
@@ -92,13 +93,15 @@ private object NettyPipelineHelpers {
         new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
     }
 
-    pipeline
-      .addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
-      .addLast("serverStreamsHandler", new HttpStreamsServerHandler())
-      .addLast(
-        "http4s",
-        Http4sNettyHandler
-          .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
-      )
+    if (config.wsCompression) {
+      pipeline.addLast("websocket-compression", new WebSocketServerCompressionHandler)
+    }
+    pipeline.addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
+    pipeline.addLast("serverStreamsHandler", new HttpStreamsServerHandler())
+    pipeline.addLast(
+      "http4s",
+      Http4sNettyHandler
+        .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
+    )
   }
 }

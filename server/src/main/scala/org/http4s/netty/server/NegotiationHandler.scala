@@ -63,6 +63,7 @@ object NegotiationHandler {
       maxHeaderSize: Int,
       maxChunkSize: Int,
       idleTimeout: Duration,
-      wsMaxFrameLength: Int
+      wsMaxFrameLength: Int,
+      wsCompression: Boolean
   )
 }
