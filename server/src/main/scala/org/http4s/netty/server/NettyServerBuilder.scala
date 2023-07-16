@@ -20,6 +20,7 @@ package server
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.effect.kernel.Async
+import cats.effect.std.CountDownLatch
 import cats.effect.std.Dispatcher
 import cats.implicits._
 import com.comcast.ip4s.IpAddress
@@ -288,11 +289,13 @@ final class NettyServerBuilder[F[_]] private (
   def resource: Resource[F, Server] =
     for {
       dispatcher <- Dispatcher.parallel[F](await = true)
+      latch <- Resource.make(CountDownLatch[F](1))(_.await)
       bound <- Resource.make(Sync[F].delay(bind(dispatcher))) {
         case Bound(address, loop, channel) =>
           Sync[F].delay {
             channel.close().awaitUninterruptibly()
             loop.shutdown()
+            dispatcher.unsafeRunSync(latch.release)
             logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
           }
       }
