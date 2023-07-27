@@ -65,8 +65,9 @@ class NettyClientBuilder[F[_]](
       proxy
     )
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
+  def withTransport(transport: NettyTransport): Self = copy(transport = transport)
   def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
@@ -135,7 +136,7 @@ object NettyClientBuilder {
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
       maxConnectionsPerKey = 10,
-      transport = NettyTransport.Native,
+      transport = NettyTransport.defaultFor(Os.get),
       sslContext = SSLContextOption.TryDefaultSSLContext,
       nettyChannelOptions = NettyChannelOptions.empty,
       proxy = Proxy.fromSystemProperties
