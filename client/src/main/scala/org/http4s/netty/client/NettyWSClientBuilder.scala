@@ -83,7 +83,8 @@ class NettyWSClientBuilder[F[_]](
       wsCompression
     )
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
+  def withTransport(transport: NettyTransport): Self = copy(transport = transport)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
@@ -230,7 +231,7 @@ object NettyWSClientBuilder {
     new NettyWSClientBuilder[F](
       idleTimeout = 60.seconds,
       eventLoopThreads = 0,
-      transport = NettyTransport.Native,
+      transport = NettyTransport.defaultFor(Os.get),
       sslContext = SSLContextOption.TryDefaultSSLContext,
       subprotocol = None,
       maxFramePayloadLength = 65536,

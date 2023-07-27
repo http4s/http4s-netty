@@ -16,9 +16,47 @@
 
 package org.http4s.netty
 
+import java.util.Locale
+import scala.util.Properties
+
 sealed trait NettyTransport extends Product with Serializable
 
 object NettyTransport {
   case object Nio extends NettyTransport
-  case object Native extends NettyTransport
+  sealed trait Native extends NettyTransport
+
+  @deprecated("Use Auto instead of Native", since = "0.5.9")
+  case object Native extends Native
+  case object Auto extends Native
+  case object IOUring extends Native
+  case object Epoll extends Native
+  case object KQueue extends Native
+
+  def defaultFor(os: Os): NettyTransport =
+    os match {
+      case Os.Linux => Epoll
+      case Os.Mac => KQueue
+      case Os.Windows => Nio
+      case Os.Other => Nio
+    }
+}
+
+sealed trait Os extends Product with Serializable
+object Os {
+  def get: Os = {
+    val osName = Properties.osName.toLowerCase(Locale.ENGLISH)
+    if (osName.contains("mac") || osName.contains("darwin")) {
+      Os.Mac
+    } else if (osName.contains("win")) {
+      Os.Windows
+    } else if (osName.contains("nux")) {
+      Os.Linux
+    } else {
+      Os.Other
+    }
+  }
+  case object Linux extends Os
+  case object Mac extends Os
+  case object Windows extends Os
+  case object Other extends Os
 }
