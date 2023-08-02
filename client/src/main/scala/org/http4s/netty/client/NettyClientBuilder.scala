@@ -19,7 +19,6 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
-import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
 import org.http4s.client.Client
 
@@ -109,22 +108,18 @@ class NettyClientBuilder[F[_]](
     })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
 
   def resource: Resource[F, Client[F]] =
-    Dispatcher
-      .parallel[F](await = true)
-      .flatMap(disp =>
-        createBootstrap.map { bs =>
-          val config = Http4sChannelPoolMap.Config(
-            maxInitialLength,
-            maxHeaderSize,
-            maxChunkSize,
-            maxConnectionsPerKey,
-            idleTimeout,
-            proxy,
-            sslContext
-          )
-          Client[F](new Http4sChannelPoolMap[F](bs, config, disp).run)
-        })
-
+    createBootstrap.map { bs =>
+      val config = Http4sChannelPoolMap.Config(
+        maxInitialLength,
+        maxHeaderSize,
+        maxChunkSize,
+        maxConnectionsPerKey,
+        idleTimeout,
+        proxy,
+        sslContext
+      )
+      Client[F](new Http4sChannelPoolMap[F](bs, config).run)
+    }
 }
 
 object NettyClientBuilder {
