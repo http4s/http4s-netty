@@ -68,28 +68,28 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       http2Headers,
       modelConversion.notAllowedWithBody.contains(request.method))
 
-    def trailers: F[Unit] = request.trailerHeaders.flatMap { headers =>
+    def endOfStream: F[Unit] = request.trailerHeaders.flatMap { headers =>
       val trail =
-        if (headers.isEmpty) new DefaultHttp2HeadersFrame(EmptyHttp2Headers.INSTANCE, true)
+        if (headers.isEmpty) new DefaultHttp2DataFrame(true)
         else {
           new DefaultHttp2HeadersFrame(
             HttpConversionUtil.toHttp2Headers(modelConversion.toNettyHeaders(headers), false),
             true)
         }
-      F.delay(runInEventLoop(trail, channel, key))
+      F.delay(writeInEventLoop(trail, channel, key))
     }
 
     val body = if (!headersFrame.isEndStream) {
       (request.body.chunks
         .evalMap(chunk =>
           F.delay(
-            runInEventLoop(
-              new DefaultHttp2DataFrame(NettyModelConversion.chunkToBytebuf(chunk)),
+            writeInEventLoop(
+              new DefaultHttp2DataFrame(NettyModelConversion.chunkToBytebuf(chunk), false),
               channel,
-              key))) ++ fs2.Stream.eval(trailers)).compile.drain
+              key))) ++ fs2.Stream.eval(endOfStream)).compile.drain
     } else F.unit
 
-    F.delay(runInEventLoop(headersFrame, channel, key)) >> body
+    F.delay(writeInEventLoop(headersFrame, channel, key)) >> body
   }
 
   private[client] def dispatch(
@@ -111,14 +111,14 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
         .evalMap { nettyRequest =>
           F.async[Resource[F, Response[F]]] { cb =>
             promises.enqueue(cb)
-            runInEventLoop(nettyRequest, channel, key)
+            writeInEventLoop(nettyRequest, channel, key)
             F.pure(Some(F.unit))
           }
         }
         .flatMap(identity)
     )
 
-  private def runInEventLoop(event: AnyRef, channel: Channel, key: Key) =
+  private def writeInEventLoop(event: AnyRef, channel: Channel, key: Key) =
     if (channel.eventLoop().inEventLoop) {
       safedispatch(event, channel, key)
     } else {
@@ -134,7 +134,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       // The voidPromise lets us receive failed-write signals from the
       // exceptionCaught method.
       channel.writeAndFlush(event, channel.voidPromise)
-      logger.trace(s"ch $channel: after request to $key")
+      logger.trace(s"ch $channel: after ${event} to $key")
     } else {
       // make sure we call all enqueued promises
       logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
