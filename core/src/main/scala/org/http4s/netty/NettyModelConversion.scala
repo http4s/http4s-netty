@@ -36,6 +36,7 @@ import org.http4s.Headers
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
+import org.http4s.netty.NettyModelConversion.chunkToBytebuf
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
@@ -53,11 +54,16 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   protected[this] val logger = org.log4s.getLogger
 
-  private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
+  val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
   def toNettyRequest(request: Request[F]): Resource[F, HttpRequest] = {
     logger.trace(s"Converting request $request")
-    val version = HttpVersion.valueOf(request.httpVersion.toString)
+    val version = request.httpVersion match {
+      case org.http4s.HttpVersion.`HTTP/1.1` => HttpVersion.HTTP_1_1
+      case org.http4s.HttpVersion.`HTTP/1.0` => HttpVersion.HTTP_1_0
+      case _ => HttpVersion.valueOf(request.httpVersion.renderString)
+    }
+    // todo: pattern match to make this faster
     val method = HttpMethod.valueOf(request.method.name)
     val uri = request.uri.toOriginForm.renderString
     // reparse to avoid sending split attack to server
@@ -391,16 +397,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
   protected def chunkToNetty(bytes: Chunk[Byte]): HttpContent =
     if (bytes.isEmpty)
       NettyModelConversion.CachedEmpty
-    else
-      bytes match {
-        case Chunk.ArraySlice(values, offset, length) =>
-          new DefaultHttpContent(Unpooled.wrappedBuffer(values, offset, length))
-        case c: Chunk.ByteBuffer =>
-          new DefaultHttpContent(Unpooled.wrappedBuffer(c.buf))
-        case _ =>
-          new DefaultHttpContent(Unpooled.wrappedBuffer(bytes.toArray))
-      }
-
+    else {
+      new DefaultHttpContent(chunkToBytebuf(bytes))
+    }
 }
 
 object NettyModelConversion {
@@ -412,4 +411,19 @@ object NettyModelConversion {
     if (release) ReferenceCountUtil.release(buf)
     array
   }
+
+  /** Convert a Chunk to a Netty ByteBuf. */
+  def chunkToBytebuf(bytes: Chunk[Byte]): ByteBuf =
+    if (bytes.isEmpty)
+      Unpooled.EMPTY_BUFFER
+    else
+      bytes match {
+        case Chunk.ArraySlice(values, offset, length) =>
+          Unpooled.wrappedBuffer(values, offset, length)
+        case c: Chunk.ByteBuffer =>
+          Unpooled.wrappedBuffer(c.buf)
+        case _ =>
+          Unpooled.wrappedBuffer(bytes.toArray)
+      }
+
 }

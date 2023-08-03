@@ -20,21 +20,28 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import cats.implicits._
+import cats.syntax.all._
 import com.typesafe.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelInitializer
+import io.netty.channel.ChannelPipeline
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.ChannelPoolHandler
 import io.netty.channel.pool.FixedChannelPool
 import io.netty.handler.codec.http.HttpClientCodec
+import io.netty.handler.codec.http2.Http2FrameCodecBuilder
+import io.netty.handler.codec.http2.Http2MultiplexHandler
+import io.netty.handler.codec.http2.Http2StreamChannelBootstrap
+import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
+import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
-import io.netty.util.AttributeKey
 import io.netty.util.concurrent.Future
+import org.http4s.HttpVersion
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.Uri
@@ -44,30 +51,80 @@ import org.http4s.client.RequestKey
 import java.net.ConnectException
 import scala.concurrent.duration.Duration
 
-private[client] class Http4sChannelPoolMap[F[_]: Async](
+private[client] case class Key(requestKey: RequestKey, version: HttpVersion)
+
+private[client] class Http4sChannelPoolMap[F[_]](
     bootstrap: Bootstrap,
-    config: Http4sChannelPoolMap.Config,
-    dispatcher: Dispatcher[F]
-) extends AbstractChannelPoolMap[RequestKey, FixedChannelPool] {
+    config: Http4sChannelPoolMap.Config
+)(implicit F: Async[F])
+    extends AbstractChannelPoolMap[Key, FixedChannelPool] {
   private[this] val logger = org.log4s.getLogger
 
-  def run(request: Request[F]): Resource[F, Response[F]] = {
-    val key = RequestKey.fromRequest(request)
-    val pool = get(key)
-
-    Resource
-      .make(Http4sChannelPoolMap.fromFuture(pool.acquire())) { channel =>
-        Http4sChannelPoolMap.fromFuture(pool.release(channel)).void
+  private def configure2(originalChannel: Channel) = {
+    val streamChannelBootstrap = new Http2StreamChannelBootstrap(originalChannel)
+    streamChannelBootstrap.handler(new ChannelInitializer[Channel] {
+      override def initChannel(ch: Channel): Unit = void {
+        val pipeline = ch.pipeline()
+        pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(false))
+        endOfPipeline(pipeline)
       }
-      .flatMap(_.pipeline().get(classOf[Http4sHandler[F]]).dispatch(request))
+    })
+    Resource.eval(F.delay(streamChannelBootstrap.open()).liftToFA)
   }
 
-  override def newPool(key: RequestKey): FixedChannelPool =
+  private def endOfPipeline(pipeline: ChannelPipeline): Unit = void {
+    logger.trace("building pipeline / end-of-pipeline")
+    pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
+
+    if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
+      pipeline
+        .addLast(
+          "timeout",
+          new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+    }
+  }
+
+  private def connectAndConfigure(key: Key): Resource[F, Channel] = {
+    val pool = get(key)
+
+    val connect = Resource.make(F.delay(pool.acquire()).liftToFA) { channel =>
+      F.delay(pool.release(channel)).liftToF
+    }
+
+    Util.runInVersion(
+      version = key.version,
+      on2 = connect.flatMap(configure2),
+      on1 = connect
+    )
+  }
+
+  def run(request: Request[F]): Resource[F, Response[F]] = {
+    val key = Key(RequestKey.fromRequest(request), request.httpVersion)
+
+    for {
+      channel <- connectAndConfigure(key)
+      dispatcher <- Dispatcher.sequential[F](await = true)
+      handler <- Resource.make {
+        F.pure {
+          val handler =
+            new Http4sHandler[F](dispatcher)
+          channel.pipeline().addLast("http4s", handler)
+          handler
+        }
+      } { h =>
+        val pipeline = channel.pipeline()
+        F.delay(if (pipeline.toMap.containsKey("http4s")) void(pipeline.remove(h)) else ())
+      }
+      response <- handler.dispatch(request, channel, key)
+    } yield response
+  }
+
+  override def newPool(key: Key): FixedChannelPool =
     new MyFixedChannelPool(
       bootstrap,
       new WrappedChannelPoolHandler(key, config),
       config.maxConnections,
-      key)
+      key.requestKey)
 
   class MyFixedChannelPool(
       bs: Bootstrap,
@@ -91,41 +148,40 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
   }
 
   class WrappedChannelPoolHandler(
-      key: RequestKey,
+      key: Key,
       config: Http4sChannelPoolMap.Config
   ) extends AbstractChannelPoolHandler {
-    override def channelAcquired(ch: Channel): Unit = {
-      logger.trace(s"Connected to $ch")
-      ch.attr(Http4sChannelPoolMap.attr).set(key)
-    }
+    override def channelAcquired(ch: Channel): Unit =
+      logger.trace(s"Connected to $ch for ${key}")
 
     override def channelCreated(ch: Channel): Unit = void {
-      logger.trace(s"Created $ch")
-      ch.attr(Http4sChannelPoolMap.attr).set(key)
+      logger.trace(s"Created $ch for ${key}")
       buildPipeline(ch)
     }
 
     override def channelReleased(ch: Channel): Unit =
-      logger.trace(s"Releasing $ch")
+      logger.trace(s"Releasing $ch ${key}")
 
     private def buildPipeline(channel: Channel) = {
+      logger.trace(s"building pipeline for ${key}")
+      val alpn = Util.runInVersion(
+        key.version,
+        // TODO: Should we include http/1.1 here or not
+        Some(List(ApplicationProtocolNames.HTTP_2)),
+        None
+      )
       val pipeline = channel.pipeline()
-      config.proxy.foreach {
-        case p: HttpProxy =>
-          p.toProxyHandler(key).foreach { handler =>
-            void(pipeline.addLast("proxy", handler))
-          }
-        case s: Socks =>
-          void(pipeline.addLast("proxy", s.toProxyHandler))
-      }
-      (key, SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
+      (key.requestKey, SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
         case (RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort)), Some(context)) =>
           void {
             logger.trace("Creating SSL engine")
 
             val port = mayBePort.getOrElse(443)
             val engine = context.createSSLEngine(host.value, port)
-            val params = TLSParameters(endpointIdentificationAlgorithm = Some("HTTPS"))
+            val params = TLSParameters(
+              endpointIdentificationAlgorithm = Some("HTTPS"),
+              applicationProtocols = alpn
+            )
             engine.setUseClientMode(true)
             engine.setSSLParameters(params.toSSLParameters)
             pipeline.addLast("ssl", new SslHandler(engine))
@@ -133,29 +189,45 @@ private[client] class Http4sChannelPoolMap[F[_]: Async](
         case _ => ()
       }
 
-      pipeline.addLast(
-        "httpClientCodec",
-        new HttpClientCodec(
-          config.maxInitialLength,
-          config.maxHeaderSize,
-          config.maxChunkSize,
-          false))
-      pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
-
-      if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
-        pipeline
-          .addLast(
-            "timeout",
-            new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+      config.proxy.foreach {
+        case p: HttpProxy =>
+          p.toProxyHandler(key.requestKey).foreach { handler =>
+            void(pipeline.addLast("proxy", handler))
+          }
+        case s: Socks =>
+          void(pipeline.addLast("proxy", s.toProxyHandler))
       }
-      pipeline.addLast("http4s", new Http4sHandler[F](dispatcher))
+
+      configurePipeline(channel, key)
     }
   }
+
+  private def configurePipeline(channel: Channel, key: Key) =
+    Util.runInVersion(
+      key.version,
+      on2 = void {
+        val pipeline = channel.pipeline()
+        pipeline.addLast("codec", Http2FrameCodecBuilder.forClient().build())
+        pipeline.addLast("multiplex", new Http2MultiplexHandler(UnsupportedHandler))
+      },
+      on1 = void {
+        val pipeline = channel
+          .pipeline()
+        pipeline
+          .addLast(
+            "httpClientCodec",
+            new HttpClientCodec(
+              config.maxInitialLength,
+              config.maxHeaderSize,
+              config.maxChunkSize,
+              false)
+          )
+        endOfPipeline(pipeline)
+      }
+    )
 }
 
 private[client] object Http4sChannelPoolMap {
-  val attr: AttributeKey[RequestKey] = AttributeKey.valueOf[RequestKey](classOf[RequestKey], "key")
-
   final case class Config(
       maxInitialLength: Int,
       maxHeaderSize: Int,
@@ -165,7 +237,7 @@ private[client] object Http4sChannelPoolMap {
       proxy: Option[Proxy],
       sslConfig: SSLContextOption)
 
-  def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
+  private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
     Async[F].async { callback =>
       val fut = future
       void(

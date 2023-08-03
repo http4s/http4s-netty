@@ -20,6 +20,7 @@ import cats.effect.Async
 import cats.syntax.all._
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.util.concurrent.{Future => NettyFuture}
 
 package object netty {
   implicit class NettyChannelFutureSyntax[F[_]](private val fcf: F[ChannelFuture]) extends AnyVal {
@@ -34,18 +35,34 @@ package object netty {
         })
   }
 
-  implicit class NettyFutureSyntax[F[_], A <: io.netty.util.concurrent.Future[_]](
+  implicit class NettyFutureSyntax[F[_], A <: NettyFuture[_]](
       private val ff: F[A]
   ) extends AnyVal {
     def liftToF(implicit F: Async[F]): F[Unit] =
       ff.flatMap(f =>
         F.async { (callback: Either[Throwable, Unit] => Unit) =>
-          void(f.addListener { (f: io.netty.util.concurrent.Future[_]) =>
+          void(f.addListener { (f: NettyFuture[_]) =>
             if (f.isSuccess) callback(Right(()))
             else callback(Left(f.cause()))
           })
           F.delay(Some(F.delay(f.cancel(false)).void))
         })
+  }
+
+  implicit class NettyFutureConversion[F[_], A](private val ff: F[NettyFuture[A]]) {
+    def liftToFA(implicit F: Async[F]): F[A] = ff.flatMap { f =>
+      F.async { cb =>
+        f.addListener { (future: NettyFuture[A]) =>
+          if (future.isSuccess) {
+            cb(Right(future.getNow))
+          } else {
+            cb(Left(future.cause()))
+          }
+        }
+
+        F.delay(Some(F.delay(f.cancel(false)).void))
+      }
+    }
   }
 
   def void[A](a: A): Unit = {

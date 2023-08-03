@@ -100,6 +100,7 @@ lazy val client = project
     name := "http4s-netty-client",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
+      "io.netty" % "netty-codec-http2" % netty,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.http4s" %% "http4s-client-testkit" % http4sVersion % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
@@ -114,35 +115,14 @@ lazy val client = project
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
       ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap"),
-      ProblemFilters.exclude[MissingClassProblem](
-        "org.http4s.netty.client.NettyClientBuilder$EventLoopHolder$"),
-      ProblemFilters.exclude[MissingClassProblem](
-        "org.http4s.netty.client.NettyClientBuilder$SSLContextOption*"),
-      ProblemFilters.exclude[MissingClassProblem](
-        "org.http4s.netty.client.NettyClientBuilder$EventLoopHolder"),
-      ProblemFilters.exclude[IncompatibleResultTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.sslConfig"),
-      ProblemFilters.exclude[IncompatibleResultTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.copy$default$7"),
-      ProblemFilters.exclude[IncompatibleResultTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.*"),
-      ProblemFilters.exclude[IncompatibleMethTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.copy"),
-      ProblemFilters.exclude[IncompatibleMethTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.apply"),
-      ProblemFilters.exclude[IncompatibleMethTypeProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap#Config.this"),
-      ProblemFilters.exclude[IncompatibleMethTypeProblem](
-        "org.http4s.netty.client.NettyClientBuilder.this"),
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyClientBuilder$*"),
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap#*"),
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap.*"),
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyClientBuilder.*"),
+      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyWSClientBuilder.*"),
       ProblemFilters.exclude[MissingFieldProblem](
         "org.http4s.netty.client.NettyClientBuilder.SSLContextOption"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.NettyWSClientBuilder.this"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap.this"),
       ProblemFilters.exclude[MissingClassProblem]("org.http4s.netty.client.Http4sHandler$"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap.resource"),
       ProblemFilters.exclude[DirectMissingMethodProblem](
         "org.http4s.netty.client.Http4sWebsocketHandler#Conn.this")
     )
