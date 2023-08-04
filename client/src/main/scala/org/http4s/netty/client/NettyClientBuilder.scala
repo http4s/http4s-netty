@@ -35,7 +35,8 @@ class NettyClientBuilder[F[_]](
     transport: NettyTransport,
     sslContext: SSLContextOption,
     nettyChannelOptions: NettyChannelOptions,
-    proxy: Option[Proxy]
+    proxy: Option[Proxy],
+    http2: Boolean
 )(implicit F: Async[F]) {
   type Self = NettyClientBuilder[F]
 
@@ -49,7 +50,8 @@ class NettyClientBuilder[F[_]](
       transport: NettyTransport = transport,
       sslContext: SSLContextOption = sslContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      proxy: Option[Proxy] = proxy
+      proxy: Option[Proxy] = proxy,
+      http2: Boolean = http2
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -61,7 +63,8 @@ class NettyClientBuilder[F[_]](
       transport,
       sslContext,
       nettyChannelOptions,
-      proxy
+      proxy,
+      http2
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -96,6 +99,8 @@ class NettyClientBuilder[F[_]](
   def withProxy(proxy: Proxy): Self = copy(proxy = Some(proxy))
   def withProxyFromSystemProperties: Self = copy(proxy = Proxy.fromSystemProperties)
   def withoutProxy: Self = copy(proxy = None)
+  def withHttp2: Self = copy(http2 = true)
+  def withoutHttp2: Self = copy(http2 = false)
 
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
@@ -116,7 +121,8 @@ class NettyClientBuilder[F[_]](
         maxConnectionsPerKey,
         idleTimeout,
         proxy,
-        sslContext
+        sslContext,
+        http2
       )
       Client[F](new Http4sChannelPoolMap[F](bs, config).run)
     }
@@ -134,6 +140,7 @@ object NettyClientBuilder {
       transport = NettyTransport.defaultFor(Os.get),
       sslContext = SSLContextOption.TryDefaultSSLContext,
       nettyChannelOptions = NettyChannelOptions.empty,
-      proxy = Proxy.fromSystemProperties
+      proxy = Proxy.fromSystemProperties,
+      http2 = false
     )
 }

@@ -53,9 +53,8 @@ class EmberHttp2Test extends IOSuite {
   val client: IOFixture[Client[IO]] = resourceFixture(
     NettyClientBuilder[IO].withNioTransport
       .withSSLContext(EmberHttp2Test.sslContextForClient)
-      .resource
-      .map(client =>
-        Client((req: Request[IO]) => client.run(req.withHttpVersion(HttpVersion.`HTTP/2`)))),
+      .withHttp2
+      .resource,
     "client"
   )
 
