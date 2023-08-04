@@ -98,7 +98,11 @@ private[client] class Http4sChannelPoolMap[F[_]](
     )
   }
 
-  def run(request: Request[F]): Resource[F, Response[F]] = {
+  def run(request0: Request[F]): Resource[F, Response[F]] = {
+    val request =
+      if (config.http2 && request0.uri.scheme.contains(Uri.Scheme.https))
+        request0.withHttpVersion(HttpVersion.`HTTP/2`)
+      else request0
     val key = Key(RequestKey.fromRequest(request), request.httpVersion)
 
     for {
@@ -235,7 +239,9 @@ private[client] object Http4sChannelPoolMap {
       maxConnections: Int,
       idleTimeout: Duration,
       proxy: Option[Proxy],
-      sslConfig: SSLContextOption)
+      sslConfig: SSLContextOption,
+      http2: Boolean
+  )
 
   private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
     Async[F].async { callback =>
