@@ -32,7 +32,6 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
-import org.http4s.Headers
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
@@ -261,11 +260,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
-  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit = {
+  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit =
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
-      nettyHeaders.add(header.name.toString, header.value)
-    ()
-  }
+      void(nettyHeaders.add(header.name.toString, header.value))
 
   /** Translate an Http4s response to a Netty response.
     *
@@ -306,8 +303,10 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           (transferEncoding, contentLength) match {
             case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
               r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
+              ()
             case (_, Some(len)) =>
               r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
+              ()
             case _ => // no-op
           }
         }
@@ -316,15 +315,19 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
     response.map { response =>
       // Add the cached date if not present
-      if (!response.headers().contains(HttpHeaderNames.DATE))
+      if (!response.headers().contains(HttpHeaderNames.DATE)) {
         response.headers().add(HttpHeaderNames.DATE, dateString)
+        ()
+      }
 
       httpRequest.headers.get[ConnHeader] match {
         case Some(conn) =>
           response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
         case None =>
-          if (minorVersionIs0) // Close by default for Http 1.0
+          if (minorVersionIs0) { // Close by default for Http 1.0
             response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+            ()
+          }
       }
       response
     }
@@ -367,21 +370,25 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
       case _ =>
         if (!minorIs0)
-          transferEncoding match {
-            case Some(tr) =>
-              tr.values.map { v =>
-                // Necessary due to the way netty does transfer encoding checks.
-                if (v != TransferCoding.chunked)
-                  response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
-              }
-              response
-                .headers()
-                .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
-            case None =>
-              // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
-              response
-                .headers()
-                .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+          void {
+            transferEncoding match {
+              case Some(tr) =>
+                tr.values.map { v =>
+                  // Necessary due to the way netty does transfer encoding checks.
+                  if (v != TransferCoding.chunked) {
+                    response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
+                    ()
+                  }
+                }
+                response
+                  .headers()
+                  .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+              case None =>
+                // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
+                response
+                  .headers()
+                  .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+            }
           }
       // Http 1.0 without a content length means yolo mode. No guarantees on what may happen
       // As the downstream codec takes control from here. There is one more option:
@@ -408,7 +415,7 @@ object NettyModelConversion {
 
   def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
     val array = ByteBufUtil.getBytes(buf)
-    if (release) ReferenceCountUtil.release(buf)
+    if (release) void(ReferenceCountUtil.release(buf))
     array
   }
 

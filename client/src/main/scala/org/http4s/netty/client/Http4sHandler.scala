@@ -26,7 +26,6 @@ import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
-import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException

@@ -77,10 +77,11 @@ private[client] class Http4sChannelPoolMap[F[_]](
     pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
 
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
-      pipeline
-        .addLast(
-          "timeout",
-          new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+      void(
+        pipeline
+          .addLast(
+            "timeout",
+            new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit)))
     }
   }
 

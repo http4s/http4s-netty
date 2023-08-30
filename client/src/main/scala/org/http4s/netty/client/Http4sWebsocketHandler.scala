@@ -31,7 +31,6 @@ import io.netty.handler.codec.http.websocketx._
 import io.netty.util.ReferenceCountUtil
 import org.http4s.client.websocket.WSConnection
 import org.http4s.client.websocket.WSFrame
-import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.client.Http4sWebsocketHandler.fromWSFrame
 import org.http4s.netty.client.Http4sWebsocketHandler.toWSFrame
 import org.reactivestreams.Subscriber
@@ -53,7 +52,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
   override def channelActive(ctx: ChannelHandlerContext): Unit = void {
     super.channelActive(ctx)
     if (!ctx.channel().config().isAutoRead) {
-      ctx.read()
+      void(ctx.read())
     }
   }
 
@@ -86,7 +85,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
         val publisher = new HandlerPublisher(ctx.executor(), classOf[WebSocketFrame]) {
           override def requestDemand(): Unit = void {
             if (!ctx.channel().config().isAutoRead) {
-              ctx.read()
+              void(ctx.read())
             }
           }
 
@@ -167,7 +166,7 @@ private[client] class Http4sWebsocketHandler[F[_]](
       case Some(_) =>
         if (ctx.channel().isActive) {
           logger.trace("closing")
-          ctx.close()
+          void(ctx.close())
         }
         logger.trace("connection closed, emitting elems until end")
         OptionT(queue.tryTake).semiflatMap(F.fromEither).value
