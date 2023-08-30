@@ -15,7 +15,7 @@ inThisBuild(
     tlSonatypeUseLegacyHost := false,
     crossScalaVersions := Seq(Scala213, Scala212, "3.3.0"),
     ThisBuild / scalaVersion := Scala213,
-    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
+    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
