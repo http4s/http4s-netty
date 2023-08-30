@@ -15,13 +15,13 @@ inThisBuild(
     tlSonatypeUseLegacyHost := false,
     crossScalaVersions := Seq(Scala213, Scala212, "3.3.0"),
     ThisBuild / scalaVersion := Scala213,
-    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
+    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
 val http4sVersion = "0.23.23"
 
-val jetty = "11.0.15"
+val jetty = "12.0.0"
 
 val netty = "4.1.97.Final"
 
@@ -63,8 +63,8 @@ lazy val server = project
     libraryDependencies ++= List(
       "io.netty" % "netty-codec-http2" % netty,
       "org.eclipse.jetty" % "jetty-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-http-client-transport" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
