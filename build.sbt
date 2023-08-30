@@ -63,8 +63,8 @@ lazy val server = project
     libraryDependencies ++= List(
       "io.netty" % "netty-codec-http2" % netty,
       "org.eclipse.jetty" % "jetty-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-http-client-transport" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
