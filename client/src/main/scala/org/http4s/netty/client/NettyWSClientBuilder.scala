@@ -194,19 +194,20 @@ class NettyWSClientBuilder[F[_]](
               pipeline.addLast("http", new HttpClientCodec())
               pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
               if (wsCompression) {
-                pipeline.addLast(
-                  "websocket-compression",
-                  WebSocketClientCompressionHandler.INSTANCE)
+                void(
+                  pipeline
+                    .addLast("websocket-compression", WebSocketClientCompressionHandler.INSTANCE))
               }
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
                 "websocket-aggregate",
                 new WebSocketFrameAggregator(config.maxFramePayloadLength()))
               if (idleTimeout.isFinite && idleTimeout.length > 0)
-                pipeline
-                  .addLast(
-                    "timeout",
-                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
+                void(
+                  pipeline
+                    .addLast(
+                      "timeout",
+                      new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit)))
               pipeline.addLast(
                 "websocket",
                 new Http4sWebsocketHandler[F](

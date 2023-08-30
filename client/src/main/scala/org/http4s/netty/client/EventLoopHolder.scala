@@ -32,7 +32,6 @@ import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.incubator.channel.uring.IOUring
 import io.netty.incubator.channel.uring.IOUringEventLoopGroup
 import io.netty.incubator.channel.uring.IOUringSocketChannel
-import org.http4s.netty.NettyTransport
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 

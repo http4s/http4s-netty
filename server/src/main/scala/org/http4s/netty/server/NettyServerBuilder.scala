@@ -50,8 +50,6 @@ import io.netty.incubator.channel.uring.IOUring
 import io.netty.incubator.channel.uring.IOUringEventLoopGroup
 import io.netty.incubator.channel.uring.IOUringServerSocketChannel
 import org.http4s.HttpApp
-import org.http4s.netty.NettyChannelOptions
-import org.http4s.netty.NettyTransport
 import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.defaults
