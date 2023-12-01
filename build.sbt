@@ -112,7 +112,7 @@ lazy val client = project
         .excludeAll("org.bouncycastle"),
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.12" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M4" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
