@@ -20,7 +20,6 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.kernel.Sync
 import cats.implicits._
-import com.typesafe.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
 import fs2.interop.reactivestreams._
 import io.netty.buffer.Unpooled
@@ -50,6 +49,7 @@ import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame._
 import org.http4s.websocket.WebSocketSeparatePipe
 import org.http4s.{HttpVersion => HV}
+import org.playframework.netty.http.DefaultWebSocketHttpResponse
 import org.reactivestreams.Processor
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription

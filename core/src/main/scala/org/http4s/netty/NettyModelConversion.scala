@@ -20,7 +20,6 @@ package netty
 import cats.effect._
 import cats.syntax.all._
 import com.comcast.ip4s.SocketAddress
-import com.typesafe.netty.http._
 import fs2.Chunk
 import fs2.Stream
 import fs2.interop.reactivestreams._
@@ -36,6 +35,7 @@ import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.{HttpVersion => HV}
+import org.playframework.netty.http._
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
 import scodec.bits.ByteVector

@@ -18,7 +18,6 @@ package org.http4s.netty.server
 
 import cats.effect.Async
 import cats.effect.std.Dispatcher
-import com.typesafe.netty.http.HttpStreamsServerHandler
 import io.netty.channel.Channel
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
@@ -34,6 +33,7 @@ import org.http4s.HttpApp
 import org.http4s.netty.void
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder
+import org.playframework.netty.http.HttpStreamsServerHandler
 
 private object NettyPipelineHelpers {
 

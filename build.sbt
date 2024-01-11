@@ -46,7 +46,7 @@ lazy val core = project
     libraryDependencies ++= List(
       "org.log4s" %% "log4s" % "1.10.0",
       "co.fs2" %% "fs2-reactive-streams" % "3.9.3",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.12")
+      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.2")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
