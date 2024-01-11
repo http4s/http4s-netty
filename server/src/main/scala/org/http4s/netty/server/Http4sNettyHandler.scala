@@ -129,7 +129,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
               if (pendingResponses.isEmpty)
                 // Since we've now gone down to zero, we need to issue a
                 // read, in case we ignored an earlier read complete
-                ctx.read()
+                void(ctx.read())
               void {
                 ctx
                   .writeAndFlush(response)

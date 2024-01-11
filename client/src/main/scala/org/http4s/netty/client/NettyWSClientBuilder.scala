@@ -83,7 +83,8 @@ class NettyWSClientBuilder[F[_]](
       wsCompression
     )
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
+  def withTransport(transport: NettyTransport): Self = copy(transport = transport)
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
@@ -193,19 +194,20 @@ class NettyWSClientBuilder[F[_]](
               pipeline.addLast("http", new HttpClientCodec())
               pipeline.addLast("http-aggregate", new HttpObjectAggregator(8192))
               if (wsCompression) {
-                pipeline.addLast(
-                  "websocket-compression",
-                  WebSocketClientCompressionHandler.INSTANCE)
+                void(
+                  pipeline
+                    .addLast("websocket-compression", WebSocketClientCompressionHandler.INSTANCE))
               }
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
                 "websocket-aggregate",
                 new WebSocketFrameAggregator(config.maxFramePayloadLength()))
               if (idleTimeout.isFinite && idleTimeout.length > 0)
-                pipeline
-                  .addLast(
-                    "timeout",
-                    new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit))
+                void(
+                  pipeline
+                    .addLast(
+                      "timeout",
+                      new IdleStateHandler(0, 0, idleTimeout.length, idleTimeout.unit)))
               pipeline.addLast(
                 "websocket",
                 new Http4sWebsocketHandler[F](
@@ -230,7 +232,7 @@ object NettyWSClientBuilder {
     new NettyWSClientBuilder[F](
       idleTimeout = 60.seconds,
       eventLoopThreads = 0,
-      transport = NettyTransport.Native,
+      transport = NettyTransport.defaultFor(Os.get),
       sslContext = SSLContextOption.TryDefaultSSLContext,
       subprotocol = None,
       maxFramePayloadLength = 65536,

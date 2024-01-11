@@ -155,7 +155,7 @@ abstract class ServerTest extends IOSuite {
     // on the classpath don't support prior-knowledge.
 
     import org.eclipse.jetty.http2.client.HTTP2Client
-    import org.eclipse.jetty.http2.client.http.HttpClientTransportOverHTTP2
+    import org.eclipse.jetty.http2.client.transport.HttpClientTransportOverHTTP2
     import org.eclipse.jetty.client.HttpClient
 
     val server: Resource[IO, Server] = NettyServerBuilder[IO]

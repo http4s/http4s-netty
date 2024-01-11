@@ -19,15 +19,13 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
+import cats.effect.implicits._
 import cats.effect.std.Dispatcher
-import cats.implicits._
+import cats.syntax.all._
 import io.netty.channel._
-import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
-import org.http4s.client.RequestKey
-import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
@@ -50,47 +48,96 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   //  2. We get serialization of execution: the EventLoop is a serial execution queue so
   //     we can rest easy knowing that no two events will be executed in parallel.
   private var eventLoopContext: ExecutionContext = _
-  private var ctx: ChannelHandlerContext = _
 
   private var pending: Future[Unit] = Future.unit
 
-  private[netty] def dispatch(request: Request[F]): Resource[F, Response[F]] = {
-    val key = RequestKey.fromRequest(request)
+  private def write2(request: Request[F], channel: Channel, key: Key): F[Unit] = {
+    import io.netty.handler.codec.http2._
 
-    modelConversion
-      .toNettyRequest(request)
-      .evalMap { nettyRequest =>
-        F.async[Resource[F, Response[F]]] { cb =>
-          if (ctx.executor.inEventLoop) {
-            safedispatch(nettyRequest, key, cb)
-          } else {
-            ctx.executor
-              .execute(() => safedispatch(nettyRequest, key, cb))
-          }
-          // This is only used to cleanup if the resource is interrupted.
-          F.pure(Some(F.delay(ctx.close()).void))
+    val convertedHeaders = modelConversion.toNettyHeaders(request.headers)
+    val http2Headers = new DefaultHttp2Headers()
+    http2Headers
+      .method(request.method.name)
+      .authority(key.requestKey.authority.renderString)
+      .scheme(key.requestKey.scheme.value.toString)
+      .path(request.uri.toOriginForm.renderString)
+    HttpConversionUtil.toHttp2Headers(convertedHeaders, http2Headers)
+
+    val headersFrame = new DefaultHttp2HeadersFrame(
+      http2Headers,
+      modelConversion.notAllowedWithBody.contains(request.method))
+
+    def endOfStream: F[Unit] = request.trailerHeaders.flatMap { headers =>
+      val trail =
+        if (headers.isEmpty) new DefaultHttp2DataFrame(true)
+        else {
+          new DefaultHttp2HeadersFrame(
+            HttpConversionUtil.toHttp2Headers(modelConversion.toNettyHeaders(headers), false),
+            true)
         }
-      }
-      .flatMap(identity)
+      F.delay(writeInEventLoop(trail, channel, key))
+    }
+
+    val body = if (!headersFrame.isEndStream) {
+      (request.body.chunks
+        .evalMap(chunk =>
+          F.delay(
+            writeInEventLoop(
+              new DefaultHttp2DataFrame(NettyModelConversion.chunkToBytebuf(chunk), false),
+              channel,
+              key))) ++ fs2.Stream.eval(endOfStream)).compile.drain
+    } else F.unit
+
+    F.delay(writeInEventLoop(headersFrame, channel, key)) >> body
   }
 
-  private def safedispatch(
-      request: HttpRequest,
-      key: RequestKey,
-      callback: Either[Throwable, Resource[F, Response[F]]] => Unit): Unit = void {
-    val ch = ctx.channel
+  private[client] def dispatch(
+      request: Request[F],
+      channel: Channel,
+      key: Key): Resource[F, Response[F]] =
+    Util.runInVersion(
+      key.version,
+      on2 = F
+        .async[Resource[F, Response[F]]] { cb =>
+          promises.enqueue(cb)
+          dispatcher.unsafeRunAndForget(write2(request, channel, key))
+          F.pure(Some(F.unit))
+        }
+        .toResource
+        .flatMap(identity),
+      on1 = modelConversion
+        .toNettyRequest(request)
+        .evalMap { nettyRequest =>
+          F.async[Resource[F, Response[F]]] { cb =>
+            promises.enqueue(cb)
+            writeInEventLoop(nettyRequest, channel, key)
+            F.pure(Some(F.unit))
+          }
+        }
+        .flatMap(identity)
+    )
+
+  private def writeInEventLoop(event: AnyRef, channel: Channel, key: Key) =
+    if (channel.eventLoop().inEventLoop) {
+      safedispatch(event, channel, key)
+    } else {
+      channel
+        .eventLoop()
+        .execute(() => safedispatch(event, channel, key))
+    }
+
+  private def safedispatch(event: AnyRef, channel: Channel, key: Key): Unit = void {
     // always enqueue
-    promises.enqueue(callback)
-    if (ch.isActive) {
-      logger.trace(s"ch $ch: sending request to $key")
+    if (channel.isActive) {
+      logger.trace(s"ch $channel: sending ${event} to $key")
       // The voidPromise lets us receive failed-write signals from the
       // exceptionCaught method.
-      ctx.writeAndFlush(request, ch.voidPromise)
-      logger.trace(s"ch $ch: after request to $key")
+      channel.writeAndFlush(event, channel.voidPromise)
+      logger.trace(s"ch $channel: after ${event} to $key")
     } else {
       // make sure we call all enqueued promises
-      logger.info(s"ch $ch: message dispatched by closed channel to destination $key.")
-      onException(ctx, new ClosedChannelException)
+      logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
+      onException(channel, new ClosedChannelException)
     }
   }
 
@@ -126,11 +173,10 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     if (eventLoopContext == null) void {
       // Initialize our ExecutionContext
       eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
-      this.ctx = ctx
     }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
-    onException(ctx, new ClosedChannelException())
+    onException(ctx.channel(), new ClosedChannelException())
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -139,16 +185,16 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
       // sending/receiving the response.
       case e: IOException =>
         logger.trace(e)("Benign IO exception caught in Netty")
-        onException(ctx, e)
+        onException(ctx.channel(), e)
       case e =>
         logger.error(e)("Exception caught in Netty")
-        onException(ctx, e)
+        onException(ctx.channel(), e)
     }
 
-  private def onException(ctx: ChannelHandlerContext, e: Throwable): Unit = void {
+  private def onException(channel: Channel, e: Throwable): Unit = void {
     promises.foreach(cb => cb(Left(e)))
     promises.clear()
-    ctx.channel().close()
+    channel.close()
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {

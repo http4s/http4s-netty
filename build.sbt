@@ -1,6 +1,6 @@
 import com.typesafe.tools.mima.core._
 
-val Scala213 = "2.13.11"
+val Scala213 = "2.13.12"
 
 inThisBuild(
   Seq(
@@ -12,21 +12,21 @@ inThisBuild(
     licenses := Seq(License.Apache2),
     tlBaseVersion := "1.0",
     tlSonatypeUseLegacyHost := false,
-    crossScalaVersions := Seq(Scala213, "3.3.0"),
+    crossScalaVersions := Seq(Scala213, "3.3.1"),
     ThisBuild / scalaVersion := Scala213,
-    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("11"))
+    githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
 val http4sVersion = "1.0.0-M40"
 
-val jetty = "11.0.15"
+val jetty = "12.0.5"
 
-val netty = "4.1.94.Final"
+val netty = "4.1.104.Final"
 
 val munit = "0.7.29"
 
-val io_uring = "0.0.21.Final"
+val io_uring = "0.0.24.Final"
 
 val nativeNettyModules =
   Seq(
@@ -45,13 +45,14 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "org.log4s" %% "log4s" % "1.10.0",
-      "co.fs2" %% "fs2-reactive-streams" % "3.7.0",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.9")
+      "co.fs2" %% "fs2-reactive-streams" % "3.9.3",
+      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.12")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
+      "io.netty" % "netty-handler" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.5.1"
+      "org.typelevel" %% "cats-effect" % "3.5.2"
     )
   )
 
@@ -63,8 +64,8 @@ lazy val server = project
     libraryDependencies ++= List(
       "io.netty" % "netty-codec-http2" % netty,
       "org.eclipse.jetty" % "jetty-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-client" % jetty % Test,
-      "org.eclipse.jetty.http2" % "http2-http-client-transport" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client" % jetty % Test,
+      "org.eclipse.jetty.http2" % "jetty-http2-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
@@ -85,15 +86,18 @@ lazy val client = project
     name := "http4s-netty-client",
     libraryDependencies ++= List(
       "org.http4s" %% "http4s-client" % http4sVersion,
+      "io.netty" % "netty-codec-http2" % netty,
       "io.netty" % "netty-handler-proxy" % netty,
       "org.http4s" %% "http4s-client-testkit" % http4sVersion % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
-      "com.github.monkeywie" % "proxyee" % "1.7.6" % Test,
+      ("com.github.monkeywie" % "proxyee" % "1.7.6" % Test)
+        .excludeAll("io.netty")
+        .excludeAll("org.bouncycastle"),
       "com.github.bbottema" % "java-socks-proxy-server" % "2.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "ch.qos.logback" % "logback-classic" % "1.2.12" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0-M3" % Test
     ),
     libraryDependencies ++= nativeNettyModules

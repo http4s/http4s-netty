@@ -52,8 +52,6 @@ import io.netty.incubator.channel.uring.IOUring
 import io.netty.incubator.channel.uring.IOUringEventLoopGroup
 import io.netty.incubator.channel.uring.IOUringServerSocketChannel
 import org.http4s.HttpApp
-import org.http4s.netty.NettyChannelOptions
-import org.http4s.netty.NettyTransport
 import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.defaults
@@ -63,6 +61,7 @@ import org.typelevel.log4cats.LoggerFactory
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
+import scala.annotation.nowarn
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
@@ -128,30 +127,46 @@ final class NettyServerBuilder[F[_]] private (
           new NioEventLoopGroup(1),
           new NioEventLoopGroup(eventLoopThreads)
         )
-      case NettyTransport.Native =>
-        if (IOUring.isAvailable) {
-          logger.info("Using IOUring")
+      case n: NettyTransport.Native =>
+        selectNative(n).getOrElse(throw new IllegalStateException("No native transport available"))
+    }
+
+  @nowarn("cat=deprecation")
+  private def selectNative(n: NettyTransport.Native): Option[EventLoopHolder[_ <: ServerChannel]] =
+    n match {
+
+      case NettyTransport.IOUring if IOUring.isAvailable =>
+        logger.info("Using IOUring")
+        Some(
           EventLoopHolder[IOUringServerSocketChannel](
             new IOUringEventLoopGroup(1),
-            new IOUringEventLoopGroup(eventLoopThreads))
-        } else if (Epoll.isAvailable) {
-          logger.info("Using Epoll")
-          val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
-          acceptorEventLoopGroup.setIoRatio(100)
-          val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
-          workerEventLoopGroup.setIoRatio(80)
-          EventLoopHolder[EpollServerSocketChannel](acceptorEventLoopGroup, workerEventLoopGroup)
-        } else if (KQueue.isAvailable) {
-          logger.info("Using KQueue")
+            new IOUringEventLoopGroup(eventLoopThreads)))
+      case NettyTransport.Epoll if Epoll.isAvailable =>
+        logger.info("Using Epoll")
+        val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
+        acceptorEventLoopGroup.setIoRatio(100)
+        val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
+        workerEventLoopGroup.setIoRatio(80)
+        Some(
+          EventLoopHolder[EpollServerSocketChannel](acceptorEventLoopGroup, workerEventLoopGroup))
+
+      case NettyTransport.KQueue if KQueue.isAvailable =>
+        logger.info("Using KQueue")
+        Some(
           EventLoopHolder[KQueueServerSocketChannel](
             new KQueueEventLoopGroup(1),
-            new KQueueEventLoopGroup(eventLoopThreads))
-        } else {
-          logger.info("Falling back to NIO EventLoopGroup")
-          EventLoopHolder[NioServerSocketChannel](
-            new NioEventLoopGroup(1),
-            new NioEventLoopGroup(eventLoopThreads))
-        }
+            new KQueueEventLoopGroup(eventLoopThreads)))
+      case NettyTransport.Auto | NettyTransport.Native =>
+        selectNative(NettyTransport.IOUring)
+          .orElse(selectNative(NettyTransport.Epoll))
+          .orElse(selectNative(NettyTransport.KQueue))
+          .orElse(Some {
+            logger.info("Falling back to NIO EventLoopGroup")
+            EventLoopHolder[NioServerSocketChannel](
+              new NioEventLoopGroup(1),
+              new NioEventLoopGroup(eventLoopThreads))
+          })
+      case _ => None
     }
 
   def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = _ => httpApp)
@@ -166,10 +181,9 @@ final class NettyServerBuilder[F[_]] private (
 
   def bindAny(host: String = defaults.IPv4Host): Self = bindHttp(0, host)
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
-
+  def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
-
+  def withTransport(transport: NettyTransport): Self = copy(transport = transport)
   def withoutBanner: Self = copy(banner = Nil)
 
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
@@ -352,7 +366,7 @@ object NettyServerBuilder {
       maxInitialLineLength = 4096,
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
-      transport = NettyTransport.Native,
+      transport = NettyTransport.defaultFor(Os.get),
       banner = org.http4s.server.defaults.Banner,
       nettyChannelOptions = NettyChannelOptions.empty,
       sslConfig = NettyServerBuilder.NoSsl,
