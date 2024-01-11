@@ -32,7 +32,6 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
-import org.http4s.Headers
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
@@ -55,11 +54,16 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   protected[this] val logger = org.log4s.getLogger
 
-  private val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
+  val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
   def toNettyRequest(request: Request[F]): Resource[F, HttpRequest] = {
     logger.trace(s"Converting request $request")
-    val version = HttpVersion.valueOf(request.httpVersion.toString)
+    val version = request.httpVersion match {
+      case org.http4s.HttpVersion.`HTTP/1.1` => HttpVersion.HTTP_1_1
+      case org.http4s.HttpVersion.`HTTP/1.0` => HttpVersion.HTTP_1_0
+      case _ => HttpVersion.valueOf(request.httpVersion.renderString)
+    }
+    // todo: pattern match to make this faster
     val method = HttpMethod.valueOf(request.method.name)
     val uri = request.uri.toOriginForm.renderString
     // reparse to avoid sending split attack to server
@@ -241,7 +245,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
               ()
             })
         (Entity.Streamed(stream, length), drainBody(_, stream, isDrained))
-      case _: HttpRequest => empty
+      case _ => empty
     }
 
   /** Return an action that will drain the channel stream in the case that it wasn't drained.
@@ -264,11 +268,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
-  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit = {
+  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit =
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
-      nettyHeaders.add(header.name.toString, header.value)
-    ()
-  }
+      void(nettyHeaders.add(header.name.toString, header.value))
 
   /** Translate an Http4s response to a Netty response.
     *
@@ -309,8 +311,10 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           (transferEncoding, contentLength) match {
             case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
               r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
+              ()
             case (_, Some(len)) =>
               r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
+              ()
             case _ => // no-op
           }
         }
@@ -319,15 +323,19 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
     response.map { response =>
       // Add the cached date if not present
-      if (!response.headers().contains(HttpHeaderNames.DATE))
+      if (!response.headers().contains(HttpHeaderNames.DATE)) {
         response.headers().add(HttpHeaderNames.DATE, dateString)
+        ()
+      }
 
       httpRequest.headers.get[ConnHeader] match {
         case Some(conn) =>
           response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
         case None =>
-          if (minorVersionIs0) // Close by default for Http 1.0
+          if (minorVersionIs0) { // Close by default for Http 1.0
             response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+            ()
+          }
       }
       response
     }
@@ -358,8 +366,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           new DefaultFullHttpResponse(
             httpVersion,
             HttpResponseStatus.valueOf(httpResponse.status.code),
-            chunkToNetty(Chunk.byteVector(chunk)),
-            false
+            NettyModelConversion.chunkToBytebuf(Chunk.byteVector(chunk)),
+            DefaultHttpHeadersFactory.headersFactory(),
+            DefaultHttpHeadersFactory.trailersFactory()
           ))
       case Entity.Empty =>
         Resource.pure[F, DefaultHttpResponse](
@@ -367,7 +376,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
             HttpVersion.HTTP_1_1,
             HttpResponseStatus.valueOf(httpResponse.status.code),
             Unpooled.EMPTY_BUFFER,
-            false
+            DefaultHttpHeadersFactory.headersFactory(),
+            DefaultHttpHeadersFactory.trailersFactory()
           ))
     }
 
@@ -390,21 +400,25 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
       case _ =>
         if (!minorIs0)
-          transferEncoding match {
-            case Some(tr) =>
-              tr.values.map { v =>
-                // Necessary due to the way netty does transfer encoding checks.
-                if (v != TransferCoding.chunked)
-                  response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
-              }
-              response
-                .headers()
-                .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
-            case None =>
-              // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
-              response
-                .headers()
-                .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+          void {
+            transferEncoding match {
+              case Some(tr) =>
+                tr.values.map { v =>
+                  // Necessary due to the way netty does transfer encoding checks.
+                  if (v != TransferCoding.chunked) {
+                    response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
+                    ()
+                  }
+                }
+                response
+                  .headers()
+                  .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+              case None =>
+                // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
+                response
+                  .headers()
+                  .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+            }
           }
       // Http 1.0 without a content length means yolo mode. No guarantees on what may happen
       // As the downstream codec takes control from here. There is one more option:
@@ -420,35 +434,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
   protected def chunkToNettyHttpContent(bytes: Chunk[Byte]): HttpContent =
     if (bytes.isEmpty)
       NettyModelConversion.CachedEmptyHttpContent
-    else
-      bytes match {
-        case Chunk.ArraySlice(values, offset, length) =>
-          new DefaultHttpContent(Unpooled.wrappedBuffer(values, offset, length))
-        case c: Chunk.ByteBuffer =>
-          // TODO: Should we use c.offset and c.size here?
-          new DefaultHttpContent(Unpooled.wrappedBuffer(c.buf))
-        case _ =>
-          new DefaultHttpContent(Unpooled.wrappedBuffer(bytes.toArray))
-      }
-
-  /** Convert a Chunk to a Netty ByteBuf. */
-  protected def chunkToNetty(bytes: Chunk[Byte]): ByteBuf =
-    if (bytes.isEmpty)
-      Unpooled.EMPTY_BUFFER
-    else
-      bytes match {
-        case c: Chunk.ByteBuffer =>
-          // TODO: Should we use c.offset and c.size here?
-          Unpooled.wrappedBuffer(c.buf)
-        case Chunk.ArraySlice(values, offset, length) =>
-          Unpooled.wrappedBuffer(values, offset, length)
-        case c: Chunk.Queue[Byte] =>
-          val byteBufs = c.chunks.map(chunkToNetty).toArray
-          Unpooled.wrappedBuffer(byteBufs: _*)
-        case _ =>
-          Unpooled.wrappedBuffer(bytes.toArray)
-      }
-
+    else {
+      new DefaultHttpContent(NettyModelConversion.chunkToBytebuf(bytes))
+    }
 }
 
 object NettyModelConversion {
@@ -457,7 +445,22 @@ object NettyModelConversion {
 
   def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
     val array = ByteBufUtil.getBytes(buf)
-    if (release) ReferenceCountUtil.release(buf)
+    if (release) void(ReferenceCountUtil.release(buf))
     array
   }
+
+  /** Convert a Chunk to a Netty ByteBuf. */
+  def chunkToBytebuf(bytes: Chunk[Byte]): ByteBuf =
+    if (bytes.isEmpty)
+      Unpooled.EMPTY_BUFFER
+    else
+      bytes match {
+        case Chunk.ArraySlice(values, offset, length) =>
+          Unpooled.wrappedBuffer(values, offset, length)
+        case c: Chunk.ByteBuffer =>
+          Unpooled.wrappedBuffer(c.buf)
+        case _ =>
+          Unpooled.wrappedBuffer(bytes.toArray)
+      }
+
 }

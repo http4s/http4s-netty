@@ -88,13 +88,14 @@ private object NettyPipelineHelpers {
       dispatcher: Dispatcher[F]): Unit = void {
 
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
-      pipeline.addLast(
-        "idle-handler",
-        new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit))
+      void(
+        pipeline.addLast(
+          "idle-handler",
+          new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit)))
     }
 
     if (config.wsCompression) {
-      pipeline.addLast("websocket-compression", new WebSocketServerCompressionHandler)
+      void(pipeline.addLast("websocket-compression", new WebSocketServerCompressionHandler))
     }
     pipeline.addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
     pipeline.addLast("serverStreamsHandler", new HttpStreamsServerHandler())

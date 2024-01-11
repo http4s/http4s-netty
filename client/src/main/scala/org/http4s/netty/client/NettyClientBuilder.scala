@@ -19,7 +19,6 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
-import cats.effect.std.Dispatcher
 import io.netty.bootstrap.Bootstrap
 import org.http4s.client.Client
 
@@ -36,7 +35,8 @@ class NettyClientBuilder[F[_]](
     transport: NettyTransport,
     sslContext: SSLContextOption,
     nettyChannelOptions: NettyChannelOptions,
-    proxy: Option[Proxy]
+    proxy: Option[Proxy],
+    http2: Boolean
 )(implicit F: Async[F]) {
   type Self = NettyClientBuilder[F]
 
@@ -50,7 +50,8 @@ class NettyClientBuilder[F[_]](
       transport: NettyTransport = transport,
       sslContext: SSLContextOption = sslContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      proxy: Option[Proxy] = proxy
+      proxy: Option[Proxy] = proxy,
+      http2: Boolean = http2
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -62,11 +63,13 @@ class NettyClientBuilder[F[_]](
       transport,
       sslContext,
       nettyChannelOptions,
-      proxy
+      proxy,
+      http2
     )
 
-  def withNativeTransport: Self = copy(transport = NettyTransport.Native)
+  def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
   def withNioTransport: Self = copy(transport = NettyTransport.Nio)
+  def withTransport(transport: NettyTransport): Self = copy(transport = transport)
   def withMaxInitialLength(size: Int): Self = copy(maxInitialLength = size)
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
@@ -96,6 +99,8 @@ class NettyClientBuilder[F[_]](
   def withProxy(proxy: Proxy): Self = copy(proxy = Some(proxy))
   def withProxyFromSystemProperties: Self = copy(proxy = Proxy.fromSystemProperties)
   def withoutProxy: Self = copy(proxy = None)
+  def withHttp2: Self = copy(http2 = true)
+  def withoutHttp2: Self = copy(http2 = false)
 
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
@@ -108,22 +113,19 @@ class NettyClientBuilder[F[_]](
     })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
 
   def resource: Resource[F, Client[F]] =
-    Dispatcher
-      .parallel[F](await = true)
-      .flatMap(disp =>
-        createBootstrap.map { bs =>
-          val config = Http4sChannelPoolMap.Config(
-            maxInitialLength,
-            maxHeaderSize,
-            maxChunkSize,
-            maxConnectionsPerKey,
-            idleTimeout,
-            proxy,
-            sslContext
-          )
-          Client[F](new Http4sChannelPoolMap[F](bs, config, disp).run)
-        })
-
+    createBootstrap.map { bs =>
+      val config = Http4sChannelPoolMap.Config(
+        maxInitialLength,
+        maxHeaderSize,
+        maxChunkSize,
+        maxConnectionsPerKey,
+        idleTimeout,
+        proxy,
+        sslContext,
+        http2
+      )
+      Client[F](new Http4sChannelPoolMap[F](bs, config).run)
+    }
 }
 
 object NettyClientBuilder {
@@ -135,9 +137,10 @@ object NettyClientBuilder {
       maxHeaderSize = 8192,
       maxChunkSize = 8192,
       maxConnectionsPerKey = 10,
-      transport = NettyTransport.Native,
+      transport = NettyTransport.defaultFor(Os.get),
       sslContext = SSLContextOption.TryDefaultSSLContext,
       nettyChannelOptions = NettyChannelOptions.empty,
-      proxy = Proxy.fromSystemProperties
+      proxy = Proxy.fromSystemProperties,
+      http2 = false
     )
 }
