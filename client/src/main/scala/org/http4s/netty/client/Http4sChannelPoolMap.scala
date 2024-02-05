@@ -104,7 +104,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
     val request =
       (if (config.http2 && request0.uri.scheme.contains(Uri.Scheme.https))
          request0.withHttpVersion(HttpVersion.`HTTP/2`)
-       else request0).putHeaders(config.defaultRequestHeaders)
+       else request0).withHeaders(config.defaultRequestHeaders).putHeaders(request0.headers)
     val key = Key(RequestKey.fromRequest(request), request.httpVersion)
 
     for {
