@@ -41,6 +41,7 @@ import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.concurrent.Future
+import org.http4s.Headers
 import org.http4s.HttpVersion
 import org.http4s.Request
 import org.http4s.Response
@@ -101,9 +102,9 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
   def run(request0: Request[F]): Resource[F, Response[F]] = {
     val request =
-      if (config.http2 && request0.uri.scheme.contains(Uri.Scheme.https))
-        request0.withHttpVersion(HttpVersion.`HTTP/2`)
-      else request0
+      (if (config.http2 && request0.uri.scheme.contains(Uri.Scheme.https))
+         request0.withHttpVersion(HttpVersion.`HTTP/2`)
+       else request0).withHeaders(config.defaultRequestHeaders).putHeaders(request0.headers)
     val key = Key(RequestKey.fromRequest(request), request.httpVersion)
 
     for {
@@ -241,7 +242,8 @@ private[client] object Http4sChannelPoolMap {
       idleTimeout: Duration,
       proxy: Option[Proxy],
       sslConfig: SSLContextOption,
-      http2: Boolean
+      http2: Boolean,
+      defaultRequestHeaders: Headers
   )
 
   private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
