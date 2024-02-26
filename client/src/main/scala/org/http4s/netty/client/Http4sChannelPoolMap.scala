@@ -118,7 +118,15 @@ private[client] class Http4sChannelPoolMap[F[_]](
         }
       } { h =>
         val pipeline = channel.pipeline()
-        F.delay(if (pipeline.toMap.containsKey("http4s")) void(pipeline.remove(h)) else ())
+        F.delay {
+          if (pipeline.toMap.containsKey("http4s"))
+            try
+              void(pipeline.remove(h))
+            catch {
+              case _: Throwable => ()
+            }
+          else ()
+        }
       }
       response <- handler.dispatch(request, channel, key)
     } yield response
