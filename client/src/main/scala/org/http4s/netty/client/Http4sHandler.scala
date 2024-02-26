@@ -32,6 +32,7 @@ import java.io.IOException
 import java.nio.channels.ClosedChannelException
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.TimeoutException
 import scala.util.Failure
 import scala.util.Success
 
@@ -200,8 +201,9 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
-        logger.trace(s"Closing connection due to idle timeout")
-        ctx.channel().close()
+        val message = s"Closing connection due to idle timeout"
+        logger.trace(message)
+        onException(ctx.channel(), new TimeoutException(message))
       case _ => super.userEventTriggered(ctx, evt)
     }
   }
