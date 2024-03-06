@@ -191,9 +191,10 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
         .handleErrorWith((_: Throwable) =>
           Resource
             .eval(wsContext.failureResponse)
-            .flatMap(res => toNonWSResponse(httpRequest, res, httpVersion, dateString, true)))
+            .flatMap(res =>
+              toNonWSResponse(httpRequest, res, httpVersion, dateString, minorVersionIs0 = true)))
     } else
-      toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, true)
+      toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorVersionIs0 = true)
 
   private[this] def appendAllToNetty(header: Header.Raw, nettyHeaders: HttpHeaders) = {
     nettyHeaders.add(header.name.toString, header.value)
