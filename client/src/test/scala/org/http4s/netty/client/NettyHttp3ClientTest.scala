@@ -73,10 +73,11 @@ class NettyHttp3ClientTest extends IOSuite {
 }
 
 private[client] object PureNettyHttp3Server {
-  def resource(port: Int) = Resource.make(start(port))(group =>
-    IO.blocking(group._1.shutdownGracefully(0L, 0L, TimeUnit.SECONDS)).void)
+  def resource(port: Int): Resource[IO, (NioEventLoopGroup, InetSocketAddress)] =
+    Resource.make(start(port))(group =>
+      IO.blocking(group._1.shutdownGracefully(0L, 0L, TimeUnit.SECONDS)).void)
 
-  def start(port: Int) = IO.blocking {
+  def start(port: Int): IO[(NioEventLoopGroup, InetSocketAddress)] = IO.blocking {
     val group = new NioEventLoopGroup(1)
     val key = {
       val ks = KeyStore.getInstance("PKCS12")
@@ -127,6 +128,7 @@ private[client] object PureNettyHttp3Server {
                           ctx
                             .writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(bytes)))
                           // .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT)
+                          ()
                         }
                       } else {
                         found = false
@@ -148,6 +150,7 @@ private[client] object PureNettyHttp3Server {
                         ctx
                           .writeAndFlush(headersFrame)
                           .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT)
+                        ()
                       }
                     }
                   })

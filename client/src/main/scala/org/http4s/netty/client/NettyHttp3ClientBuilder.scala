@@ -56,7 +56,6 @@ import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.TrustManagerFactory
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 
 class NettyHttp3ClientBuilder[F[_]](
     headerTimeout: Duration,
@@ -271,15 +270,16 @@ object NettyHttp3ClientBuilder {
     private var inboundTranslationInProgress: Boolean = false
 
     private def toHeaders(headers: Http3Headers): Headers = {
+      val buffer = List.newBuilder[Header.Raw]
       val iterator = headers.iterator
 
-      val asList = iterator.asScala.flatMap { e =>
+      iterator.forEachRemaining { e =>
         val key = e.getKey
         if (!Http3Headers.PseudoHeaderName.isPseudoHeader(key)) {
-          List(Header.Raw(CIString(key.toString), e.getValue.toString))
-        } else Nil
-      }.toList
-      Headers(asList)
+          buffer += Header.Raw(CIString(key.toString), e.getValue.toString)
+        }
+      }
+      Headers(buffer.result())
     }
 
     override def channelRead(ctx: ChannelHandlerContext, frame: Http3HeadersFrame): Unit = {
