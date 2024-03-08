@@ -37,11 +37,13 @@ import io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame
 import io.netty.incubator.codec.http3.Http3
 import io.netty.incubator.codec.http3.Http3ClientConnectionHandler
 import io.netty.incubator.codec.http3.Http3DataFrame
+import io.netty.incubator.codec.http3.Http3Exception
 import io.netty.incubator.codec.http3.Http3Frame
 import io.netty.incubator.codec.http3.Http3Headers
 import io.netty.incubator.codec.http3.Http3HeadersFrame
 import io.netty.incubator.codec.http3.Http3RequestStreamInboundHandler
 import io.netty.incubator.codec.quic.QuicChannel
+import io.netty.incubator.codec.quic.QuicException
 import io.netty.incubator.codec.quic.QuicSslContextBuilder
 import io.netty.incubator.codec.quic.QuicStreamChannel
 import io.netty.util.ReferenceCountUtil
@@ -176,7 +178,7 @@ class NettyHttp3ClientBuilder[F[_]](
             .remoteAddress(new InetSocketAddress(host, port))
             .connect()
         ).liftToFA)
-      deferred <- Resource.eval(Deferred[F, Response[fs2.Pure]])
+      deferred <- Resource.eval(Deferred[F, Either[Throwable, Response[fs2.Pure]]])
       trailers <- Resource.eval(Ref.of[F, Headers](Headers.empty))
       queue <- Resource.eval(cats.effect.std.Queue.unbounded[F, Option[Chunk[Byte]]])
       dispatcher <- Dispatcher.parallel(true)
@@ -188,7 +190,7 @@ class NettyHttp3ClientBuilder[F[_]](
           ))
           .liftToFA)
       _ <- Resource.eval(writeRequestF(stream, request, key))
-      response <- Resource.eval(deferred.get.timeout(headerTimeout))
+      response <- Resource.eval(deferred.get.timeout(headerTimeout).flatMap(F.fromEither))
     } yield response
       .covary[F]
       .withBodyStream(fs2.Stream.fromQueueNoneTerminatedChunk(queue))
@@ -260,7 +262,7 @@ object NettyHttp3ClientBuilder {
 
   private[NettyHttp3ClientBuilder] class Http3Handler[F[_]: Async](
       dispatcher: Dispatcher[F],
-      headersDeferred: Deferred[F, Response[fs2.Pure]],
+      headersDeferred: Deferred[F, Either[Throwable, Response[fs2.Pure]]],
       queue: Queue[F, Option[Chunk[Byte]]],
       trailers: Ref[F, Headers])
       extends Http3RequestStreamInboundHandler {
@@ -298,16 +300,29 @@ object NettyHttp3ClientBuilder {
           inboundTranslationInProgress = true
           headersDeferred
             .complete(
-              Response[fs2.Pure](
-                Status.fromInt(status.code()).toOption.get,
-                HttpVersion.`HTTP/3`,
-                myHeaders))
+              Right(
+                Response[fs2.Pure](
+                  Status.fromInt(status.code()).toOption.get,
+                  HttpVersion.`HTTP/3`,
+                  myHeaders)))
             .void
         }
 
       dispatcher.unsafeRunAndForget(ioAction)
       ReferenceCountUtil.safeRelease(frame)
     }
+
+    override def handleQuicException(ctx: ChannelHandlerContext, exception: QuicException): Unit =
+      void {
+        dispatcher.unsafeRunAndForget(headersDeferred.complete(Left(new IllegalStateException())))
+        ctx.close()
+      }
+
+    override def handleHttp3Exception(ctx: ChannelHandlerContext, exception: Http3Exception): Unit =
+      void {
+        dispatcher.unsafeRunAndForget(headersDeferred.complete(Left(new IllegalStateException())))
+        ctx.close()
+      }
 
     override def channelRead(ctx: ChannelHandlerContext, frame: Http3DataFrame): Unit = {
       inboundTranslationInProgress = true
@@ -320,8 +335,10 @@ object NettyHttp3ClientBuilder {
     override def channelInputClosed(ctx: ChannelHandlerContext): Unit = void {
       if (inboundTranslationInProgress) {
         dispatcher.unsafeRunAndForget(queue.offer(None))
+      } else {
+        dispatcher.unsafeRunAndForget(headersDeferred.complete(Left(new IllegalStateException())))
+        ctx.close()
       }
-      ctx.close()
     }
 
     override def channelInactive(ctx: ChannelHandlerContext): Unit = {
