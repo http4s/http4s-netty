@@ -25,9 +25,10 @@ import org.http4s.client.Client
 
 class NettyHttp3ClientTest extends IOSuite {
 
-  val client: IOFixture[Client[IO]] = resourceFixture(NettyHttp3ClientBuilder[IO].resource, "client")
+  val client: IOFixture[Client[IO]] =
+    resourceFixture(NettyHttp3ClientBuilder[IO].resource, "client")
 
-  test("google") {
+  test("google".ignore) {
     client()
       .expect[String](
         Request[IO](uri = uri"https://www.google.com/", httpVersion = HttpVersion.`HTTP/3`))
