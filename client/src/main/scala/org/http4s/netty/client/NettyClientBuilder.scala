@@ -20,12 +20,13 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import io.netty.bootstrap.Bootstrap
+import io.netty.channel.ChannelOption
 import org.http4s.Headers
 import org.http4s.client.Client
 import org.http4s.headers.`User-Agent`
 
 import javax.net.ssl.SSLContext
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class NettyClientBuilder[F[_]](
     idleTimeout: Duration,
@@ -122,6 +123,7 @@ class NettyClientBuilder[F[_]](
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
       EventLoopHolder.fromTransport(transport, eventLoopThreads).configure(bootstrap)
+      bootstrap.option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
       nettyChannelOptions.foldLeft(bootstrap) { case (boot, (opt, value)) =>
         boot.option(opt, value)
       }
