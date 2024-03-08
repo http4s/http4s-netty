@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package org.http4s.netty.client
+package org.http4s.netty
+package client
 
 import cats.effect.IO
 import cats.effect.kernel.Resource
@@ -59,7 +60,7 @@ class NettyHttp3ClientTest extends IOSuite {
   val server: IOFixture[Uri] =
     resourceFixture(
       PureNettyHttp3Server
-        .resource(0)
+        .resource(19999)
         .map(tuple => Uri.unsafeFromString(s"https://localhost:${tuple._2.getPort}")),
       "server")
 
@@ -67,13 +68,13 @@ class NettyHttp3ClientTest extends IOSuite {
     val uri = server()
     client()
       .expect[String](Request[IO](uri = uri, httpVersion = HttpVersion.`HTTP/3`))
-      .flatMap(s => IO.println(s) >> IO.delay(assertEquals(s, "Hello World")))
+      .flatMap(s => IO.delay(assertEquals(s, "Hello World")))
   }
 }
 
 private[client] object PureNettyHttp3Server {
   def resource(port: Int) = Resource.make(start(port))(group =>
-    IO.blocking(group._1.shutdownGracefully(0L, 0L, TimeUnit.SECONDS)))
+    IO.blocking(group._1.shutdownGracefully(0L, 0L, TimeUnit.SECONDS)).void)
 
   def start(port: Int) = IO.blocking {
     val group = new NioEventLoopGroup(1)
@@ -100,18 +101,18 @@ private[client] object PureNettyHttp3Server {
       .initialMaxStreamsBidirectional(100)
       .tokenHandler(InsecureQuicTokenHandler.INSTANCE)
       .handler(new ChannelInitializer[QuicChannel] {
-        override def initChannel(quic: QuicChannel): Unit =
+        override def initChannel(quic: QuicChannel): Unit = void {
           quic
             .pipeline()
             .addLast(new Http3ServerConnectionHandler(new ChannelInitializer[QuicStreamChannel] {
               val bytes = "Hello World".getBytes(StandardCharsets.UTF_8)
 
-              override def initChannel(ch: QuicStreamChannel): Unit =
+              override def initChannel(ch: QuicStreamChannel): Unit = void {
                 ch.pipeline()
                   .addLast(new Http3RequestStreamInboundHandler {
                     var found = false
                     override def channelRead(ctx: ChannelHandlerContext, frame: Http3HeadersFrame)
-                        : Unit = {
+                        : Unit = void {
                       val method = frame.headers().method()
                       val path = frame.headers().path()
 
@@ -125,7 +126,7 @@ private[client] object PureNettyHttp3Server {
                           ctx.write(headersFrame);
                           ctx
                             .writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(bytes)))
-                            .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT)
+                          // .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT)
                         }
                       } else {
                         found = false
@@ -135,10 +136,11 @@ private[client] object PureNettyHttp3Server {
                     }
 
                     override def channelRead(ctx: ChannelHandlerContext, frame: Http3DataFrame)
-                        : Unit =
+                        : Unit = void {
                       ReferenceCountUtil.release(frame)
+                    }
 
-                    override def channelInputClosed(ctx: ChannelHandlerContext): Unit =
+                    override def channelInputClosed(ctx: ChannelHandlerContext): Unit = void {
                       if (!found) {
                         val headersFrame = new DefaultHttp3HeadersFrame()
                         headersFrame.headers().status("404")
@@ -147,9 +149,12 @@ private[client] object PureNettyHttp3Server {
                           .writeAndFlush(headersFrame)
                           .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT)
                       }
+                    }
                   })
+              }
 
             }))
+        }
       })
       .build()
 
