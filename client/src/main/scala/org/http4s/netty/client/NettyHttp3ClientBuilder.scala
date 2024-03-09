@@ -24,7 +24,6 @@ import cats.effect.Resource
 import cats.effect.implicits.*
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
-import cats.effect.std.Queue
 import cats.syntax.all.*
 import fs2.Chunk
 import io.netty.bootstrap.Bootstrap
