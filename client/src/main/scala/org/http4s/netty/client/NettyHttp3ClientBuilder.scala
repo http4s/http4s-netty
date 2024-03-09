@@ -47,6 +47,7 @@ import io.netty.incubator.codec.quic.QuicException
 import io.netty.incubator.codec.quic.QuicSslContextBuilder
 import io.netty.incubator.codec.quic.QuicStreamChannel
 import io.netty.util.ReferenceCountUtil
+import org.http4s.Uri.Scheme
 import org.http4s.client.Client
 import org.http4s.client.RequestKey
 import org.http4s.headers.`User-Agent`
@@ -162,37 +163,42 @@ class NettyHttp3ClientBuilder[F[_]](
 
   def run(channel: Channel)(request: Request[F]): Resource[F, Response[F]] = {
     val key = RequestKey.fromRequest(request)
-    // if not https fail with error
-    // if not http/3 fail with error
     // connection pooling?
-    val host = key.authority.host.value
-    val port = key.authority.port.getOrElse(443)
-
     for {
+      _ <- Resource.eval(
+        F.raiseWhen(key.scheme != Scheme.https)(new IllegalArgumentException("Only https allowed")))
+      _ <- Resource.eval(
+        F.raiseWhen(request.httpVersion != HttpVersion.`HTTP/3`)(
+          new IllegalArgumentException("Only http/3 allowed")))
       quickChannel <- channelResource(
         F.delay(
           QuicChannel
             .newBootstrap(channel)
             .handler(new Http3ClientConnectionHandler())
-            .remoteAddress(new InetSocketAddress(host, port))
+            .remoteAddress(
+              new InetSocketAddress(key.authority.host.value, key.authority.port.getOrElse(443)))
             .connect()
         ).liftToFA)
-      deferred <- Resource.eval(Deferred[F, Either[Throwable, Response[fs2.Pure]]])
+      baseResponse <- Resource.eval(Deferred[F, Either[Throwable, Response[fs2.Pure]]])
       trailers <- Resource.eval(Ref.of[F, Headers](Headers.empty))
-      queue <- Resource.eval(fs2.concurrent.Channel.unbounded[F, Chunk[Byte]])
+      fs2Channel <- Resource.eval(fs2.concurrent.Channel.unbounded[F, Chunk[Byte]])
       dispatcher <- Dispatcher.parallel(true)
       stream <- channelResource(
         F.delay(
           Http3.newRequestStream(
             quickChannel,
-            new NettyHttp3ClientBuilder.Http3Handler[F](dispatcher, deferred, queue, trailers)
+            new NettyHttp3ClientBuilder.Http3Handler[F](
+              dispatcher,
+              baseResponse,
+              fs2Channel,
+              trailers)
           ))
           .liftToFA)
       _ <- Resource.eval(writeRequestF(stream, request, key))
-      response <- Resource.eval(deferred.get.timeout(headerTimeout).flatMap(F.fromEither))
+      response <- Resource.eval(baseResponse.get.flatMap(F.fromEither).timeout(headerTimeout))
     } yield response
       .covary[F]
-      .withBodyStream(queue.stream.flatMap(fs2.Stream.chunk))
+      .withBodyStream(fs2Channel.stream.flatMap(fs2.Stream.chunk))
   }
 
   private def channelResource[C <: Channel](acquire: F[C]): Resource[F, C] =
