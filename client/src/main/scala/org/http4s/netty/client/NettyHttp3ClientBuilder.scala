@@ -179,7 +179,7 @@ class NettyHttp3ClientBuilder[F[_]](
         ).liftToFA)
       deferred <- Resource.eval(Deferred[F, Either[Throwable, Response[fs2.Pure]]])
       trailers <- Resource.eval(Ref.of[F, Headers](Headers.empty))
-      queue <- Resource.eval(cats.effect.std.Queue.unbounded[F, Option[Chunk[Byte]]])
+      queue <- Resource.eval(fs2.concurrent.Channel.unbounded[F, Chunk[Byte]])
       dispatcher <- Dispatcher.parallel(true)
       stream <- channelResource(
         F.delay(
@@ -192,7 +192,7 @@ class NettyHttp3ClientBuilder[F[_]](
       response <- Resource.eval(deferred.get.timeout(headerTimeout).flatMap(F.fromEither))
     } yield response
       .covary[F]
-      .withBodyStream(fs2.Stream.fromQueueNoneTerminatedChunk(queue))
+      .withBodyStream(queue.stream.flatMap(fs2.Stream.chunk))
   }
 
   private def channelResource[C <: Channel](acquire: F[C]): Resource[F, C] =
@@ -262,7 +262,7 @@ object NettyHttp3ClientBuilder {
   private[NettyHttp3ClientBuilder] class Http3Handler[F[_]: Async](
       dispatcher: Dispatcher[F],
       headersDeferred: Deferred[F, Either[Throwable, Response[fs2.Pure]]],
-      queue: Queue[F, Option[Chunk[Byte]]],
+      fs2Channel: fs2.concurrent.Channel[F, Chunk[Byte]],
       trailers: Ref[F, Headers])
       extends Http3RequestStreamInboundHandler {
     override def isSharable: Boolean = false
@@ -290,9 +290,7 @@ object NettyHttp3ClientBuilder {
       val ioAction =
         if (headerStatus == null && methodFromHeaders == null) {
           inboundTranslationInProgress = false
-          queue.offer(None) >> trailers.set(
-            toHeaders(headers.status(null))
-          )
+          fs2Channel.close >> trailers.set(toHeaders(headers))
         } else {
           val status = HttpConversionUtil.parseStatus(headerStatus)
 
@@ -327,14 +325,15 @@ object NettyHttp3ClientBuilder {
     override def channelRead(ctx: ChannelHandlerContext, frame: Http3DataFrame): Unit = {
       inboundTranslationInProgress = true
       dispatcher
-        .unsafeRunAndForget(queue.offer(
-          Chunk.array(NettyModelConversion.bytebufToArray(frame.content(), release = false)).some))
+        .unsafeRunAndForget(
+          fs2Channel.send(
+            Chunk.array(NettyModelConversion.bytebufToArray(frame.content(), release = false))))
       ReferenceCountUtil.safeRelease(frame)
     }
 
     override def channelInputClosed(ctx: ChannelHandlerContext): Unit = void {
       if (inboundTranslationInProgress) {
-        dispatcher.unsafeRunAndForget(queue.offer(None))
+        dispatcher.unsafeRunAndForget(fs2Channel.close)
       } else {
         dispatcher.unsafeRunAndForget(headersDeferred.complete(Left(new IllegalStateException())))
         ctx.close()
@@ -343,7 +342,7 @@ object NettyHttp3ClientBuilder {
 
     override def channelInactive(ctx: ChannelHandlerContext): Unit = {
       if (inboundTranslationInProgress) {
-        dispatcher.unsafeRunAndForget(queue.offer(None))
+        dispatcher.unsafeRunAndForget(fs2Channel.close)
       }
       super.channelInactive(ctx)
     }
