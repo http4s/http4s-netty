@@ -20,7 +20,9 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import io.netty.bootstrap.Bootstrap
+import org.http4s.Headers
 import org.http4s.client.Client
+import org.http4s.headers.`User-Agent`
 
 import javax.net.ssl.SSLContext
 import scala.concurrent.duration._
@@ -36,7 +38,8 @@ class NettyClientBuilder[F[_]](
     sslContext: SSLContextOption,
     nettyChannelOptions: NettyChannelOptions,
     proxy: Option[Proxy],
-    http2: Boolean
+    http2: Boolean,
+    defaultRequestHeaders: Headers
 )(implicit F: Async[F]) {
   type Self = NettyClientBuilder[F]
 
@@ -51,7 +54,8 @@ class NettyClientBuilder[F[_]](
       sslContext: SSLContextOption = sslContext,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       proxy: Option[Proxy] = proxy,
-      http2: Boolean = http2
+      http2: Boolean = http2,
+      defaultRequestHeaders: Headers = defaultRequestHeaders
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -64,7 +68,8 @@ class NettyClientBuilder[F[_]](
       sslContext,
       nettyChannelOptions,
       proxy,
-      http2
+      http2,
+      defaultRequestHeaders
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -102,6 +107,12 @@ class NettyClientBuilder[F[_]](
   def withHttp2: Self = copy(http2 = true)
   def withoutHttp2: Self = copy(http2 = false)
 
+  def withUserAgent(useragent: `User-Agent`): NettyClientBuilder[F] =
+    copy(defaultRequestHeaders = defaultRequestHeaders.put(useragent))
+
+  def withDefaultRequestHeaders(headers: Headers): NettyClientBuilder[F] =
+    copy(defaultRequestHeaders = headers)
+
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
@@ -122,7 +133,8 @@ class NettyClientBuilder[F[_]](
         idleTimeout,
         proxy,
         sslContext,
-        http2
+        http2,
+        defaultRequestHeaders
       )
       Client[F](new Http4sChannelPoolMap[F](bs, config).run)
     }
@@ -141,6 +153,7 @@ object NettyClientBuilder {
       sslContext = SSLContextOption.TryDefaultSSLContext,
       nettyChannelOptions = NettyChannelOptions.empty,
       proxy = Proxy.fromSystemProperties,
-      http2 = false
+      http2 = false,
+      defaultRequestHeaders = Headers()
     )
 }
