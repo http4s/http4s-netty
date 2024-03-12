@@ -27,7 +27,10 @@ import org.http4s.client.testkit.scaffold.ServerScaffold
 
 class SocksProxyTest extends IOSuite {
   val server: IOFixture[Uri] = resourceFixture(
-    ServerScaffold[IO](1, false, HttpRoutes.pure(Response[IO]().withEntity("Hello from origin")))
+    ServerScaffold[IO](
+      1,
+      secure = false,
+      HttpRoutes.pure(Response[IO]().withEntity("Hello from origin")))
       .map(_.servers.head.uri),
     "server")
 

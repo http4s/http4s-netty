@@ -82,7 +82,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
                 .evalMap[F, HttpContent](buf => F.delay(chunkToNettyHttpContent(buf)))).map {
               publisher =>
                 val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
-                transferEncoding(request.headers, false, streamedReq)
+                transferEncoding(request.headers, minorIs0 = false, streamedReq)
                 streamedReq
             }
           }
