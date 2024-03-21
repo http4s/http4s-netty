@@ -24,6 +24,7 @@ import cats.effect.std.Dispatcher
 import cats.syntax.all._
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.timeout.IdleState
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
 import org.http4s.netty.client.Http4sHandler.logger
@@ -52,6 +53,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   private var eventLoopContext: ExecutionContext = _
 
   private var pending: Future[Unit] = Future.unit
+  private var inFlight: Option[Promise] = None
 
   private def write2(request: Request[F], channel: Channel, key: Key): F[Unit] = {
     import io.netty.handler.codec.http2._
@@ -159,17 +161,19 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
         if (promises.nonEmpty) {
           val promise = promises.dequeue()
+          inFlight = Some(promise)
           logger.trace("dequeuing promise")
           pending = pending.flatMap { _ =>
             result.transform {
               case Failure(exception) =>
                 logger.trace("handling promise failure")
                 promise(Left(exception))
+                inFlight = None
                 Failure(exception)
               case Success(res) =>
                 logger.trace("handling promise success")
-
                 promise(Right(res))
+                inFlight = None
                 Success(())
             }
           }
@@ -204,20 +208,31 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   private def onException(channel: Channel, e: Throwable): Unit = void {
     implicit val ec: ExecutionContext = eventLoopContext
 
-    val pendingPromises =
-      promises.dequeueAll(_ => true).map(promise => Future(promise(Left(e))))
-    logger.trace(s"onException: dequeueAll(${pendingPromises.size})")
-    pending = pending.flatMap(_ => Future.sequence(pendingPromises).map(_ => ()))
+    val allPromises =
+      (inFlight.toList ++ promises.dequeueAll(_ => true)).map(promise => Future(promise(Left(e))))
+    logger.trace(s"onException: dequeueAll(${allPromises.size})")
+    pending = pending.flatMap(_ => Future.sequence(allPromises).map(_ => ()))
+    inFlight = None
 
     channel.close()
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
-      case _: IdleStateEvent if ctx.channel().isOpen =>
-        val message = s"Closing connection due to idle timeout"
-        logger.trace(message)
-        onException(ctx.channel(), new TimeoutException(message))
+      case e: IdleStateEvent if ctx.channel().isOpen =>
+        val state = e.state()
+        state match {
+          case IdleState.READER_IDLE =>
+            val message = "Timing out request due to missing read"
+            inFlight.foreach(_(Left(new TimeoutException(message))))
+            inFlight = None
+            ()
+          case IdleState.WRITER_IDLE => ()
+          case IdleState.ALL_IDLE =>
+            val message = "Closing connection due to idle timeout"
+            logger.trace(message)
+            onException(ctx.channel(), new TimeoutException(message))
+        }
       case _ => super.userEventTriggered(ctx, evt)
     }
   }
