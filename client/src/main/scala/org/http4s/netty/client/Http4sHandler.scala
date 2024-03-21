@@ -226,6 +226,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
             val message = "Timing out request due to missing read"
             inFlight.foreach(_(Left(new TimeoutException(message))))
             inFlight = None
+            ctx.read() // schedule a new read
             ()
           case IdleState.WRITER_IDLE => ()
           case IdleState.ALL_IDLE =>
