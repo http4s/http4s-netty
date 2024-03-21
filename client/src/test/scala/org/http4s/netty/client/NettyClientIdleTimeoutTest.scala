@@ -33,6 +33,8 @@ import scala.concurrent.TimeoutException
 import scala.concurrent.duration.*
 
 class NettyClientIdleTimeoutTest extends IOSuite {
+  private val logger = org.log4s.getLogger
+
   val nettyIdleClient: IOFixture[Client[IO]] =
     resourceFixture(
       NettyClientBuilder[IO]
@@ -48,9 +50,9 @@ class NettyClientIdleTimeoutTest extends IOSuite {
       "netty client")
 
   def respond(path: String, sleep: FiniteDuration, value: String): IO[Response[IO]] =
-    IO.println(s"server: received /${path} request, sleeping...") >>
+    IO(logger.trace(s"server: received /${path} request, sleeping...")) >>
       IO.sleep(sleep) >>
-      IO.println(s"server: responding with '$value'") >> Ok(value)
+      IO(logger.trace(s"server: responding with '$value'")) >> Ok(value)
 
   val server: IOFixture[Server] = resourceFixture(
     EmberServerBuilder
