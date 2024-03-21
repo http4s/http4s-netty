@@ -38,10 +38,11 @@ import scala.util.Success
 
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
+  type Promise = Either[Throwable, Resource[F, Response[F]]] => Unit
 
   private val modelConversion = new NettyModelConversion[F]
   private val promises =
-    collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
+    collection.mutable.Queue[Promise]()
   // By using the Netty event loop assigned to this channel we get two benefits:
   //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
   //     only pass events up and down from within the event loop to which it is assigned.
@@ -145,6 +146,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
+    implicit val ec: ExecutionContext = eventLoopContext
+
     msg match {
       case h: HttpResponse =>
         val responseResourceF = modelConversion
@@ -154,17 +157,23 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           }
         val result = dispatcher.unsafeToFuture(responseResourceF)
 
-        pending = pending.flatMap { _ =>
+        if (promises.nonEmpty) {
           val promise = promises.dequeue()
-          result.transform {
-            case Failure(exception) =>
-              promise(Left(exception))
-              Failure(exception)
-            case Success(res) =>
-              promise(Right(res))
-              Success(())
-          }(eventLoopContext)
-        }(eventLoopContext)
+          logger.trace("dequeuing promise")
+          pending = pending.flatMap { _ =>
+            result.transform {
+              case Failure(exception) =>
+                logger.trace("handling promise failure")
+                promise(Left(exception))
+                Failure(exception)
+              case Success(res) =>
+                logger.trace("handling promise success")
+
+                promise(Right(res))
+                Success(())
+            }
+          }
+        }
       case _ =>
         super.channelRead(ctx, msg)
     }
@@ -193,8 +202,13 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
 
   private def onException(channel: Channel, e: Throwable): Unit = void {
-    promises.foreach(cb => cb(Left(e)))
-    promises.clear()
+    implicit val ec: ExecutionContext = eventLoopContext
+
+    val pendingPromises =
+      promises.dequeueAll(_ => true).map(promise => Future(promise(Left(e))))
+    logger.trace(s"onException: dequeueAll(${pendingPromises.size})")
+    pending = pending.flatMap(_ => Future.sequence(pendingPromises).map(_ => ()))
+
     channel.close()
   }
 

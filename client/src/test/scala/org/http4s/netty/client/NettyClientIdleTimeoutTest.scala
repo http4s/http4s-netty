@@ -17,6 +17,7 @@
 package org.http4s.netty.client
 
 import cats.effect.IO
+import cats.syntax.all._
 import com.comcast.ip4s._
 import munit.catseffect.IOFixture
 import org.http4s.HttpRoutes
@@ -28,7 +29,8 @@ import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.implicits._
 import org.http4s.server.Server
 
-import scala.concurrent.duration._
+import scala.concurrent.TimeoutException
+import scala.concurrent.duration.*
 
 class NettyClientIdleTimeoutTest extends IOSuite {
   override val munitIOTimeout: Duration = 1.minute
@@ -36,9 +38,15 @@ class NettyClientIdleTimeoutTest extends IOSuite {
   val nettyClient: IOFixture[Client[IO]] =
     resourceFixture(
       NettyClientBuilder[IO]
-        .withIdleTimeout(2.seconds)
+        .withIdleTimeout(3.seconds)
+        .withMaxConnectionsPerKey(2)
         .resource,
       "netty client")
+
+  def respond(path: String, sleep: FiniteDuration, value: String): IO[Response[IO]] =
+    IO.println(s"server: received /${path} request, sleeping...") >>
+      IO.sleep(sleep) >>
+      IO.println(s"server: responding with '$value'") >> Ok(value)
 
   val server: IOFixture[Server] = resourceFixture(
     EmberServerBuilder
@@ -46,8 +54,13 @@ class NettyClientIdleTimeoutTest extends IOSuite {
       .withPort(port"0")
       .withHttpApp(
         HttpRoutes
-          .of[IO] { case GET -> Root / "idle-timeout" =>
-            IO.sleep(30.seconds).as(Response())
+          .of[IO] {
+            case GET -> Root / "idle-timeout" =>
+              respond("idle-timeout", 4.seconds, "Wat")
+            case GET -> Root / "1" =>
+              respond("1", 5.seconds, "1")
+            case GET -> Root / "2" =>
+              respond("2", 1.seconds, "2")
           }
           .orNotFound
       )
@@ -55,19 +68,29 @@ class NettyClientIdleTimeoutTest extends IOSuite {
     "server"
   )
 
-  List(
-    (nettyClient, "netty client")
-  ).foreach { case (client, name) =>
-    test(s"$name fails after idle timeout") {
-      val s = server()
+  test("fails after idle timeout") {
+    val s = server()
 
-      val req = Request[IO](uri = s.baseUri / "idle-timeout")
-      val response = client().run(req).allocated.attempt
-      IO.race(response, IO.sleep(5.seconds)).map {
-        case Left(Left(error)) => println(s"response failed, error:"); error.printStackTrace()
-        case Left(Right(_)) => println("response available")
-        case Right(_) => fail("idle timeout wasn't triggered")
-      }
+    val req = Request[IO](uri = s.baseUri / "idle-timeout")
+    val response = nettyClient().status(req).attempt
+    IO.race(response, IO.sleep(5.seconds)).map {
+      case Left(Left(error: TimeoutException)) =>
+        assertEquals(error.getMessage, "Closing connection due to idle timeout")
+      case Left(Left(error)) => fail(s"Failed with $error")
+      case Left(Right(_)) => fail("response available")
+      case Right(_) => fail("idle timeout wasn't triggered")
     }
+  }
+
+  test("Request A timed out, request B receives response B") {
+    val s = server()
+    val c = nettyClient()
+
+    val req1 = Request[IO](uri = s.baseUri / "1")
+    val req2 = Request[IO](uri = s.baseUri / "2")
+    for {
+      _ <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
+      r2 <- c.expect[String](req2).attempt.map(_.leftMap(_.getMessage))
+    } yield assertEquals(r2, Left("Closing connection due to idle timeout"))
   }
 }
