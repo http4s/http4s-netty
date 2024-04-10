@@ -33,20 +33,26 @@ import scala.concurrent.TimeoutException
 import scala.concurrent.duration.*
 
 class NettyClientIdleTimeoutTest extends IOSuite {
-  override val munitIOTimeout: Duration = 1.minute
+  private val logger = org.log4s.getLogger
 
-  val nettyClient: IOFixture[Client[IO]] =
+  val nettyIdleClient: IOFixture[Client[IO]] =
     resourceFixture(
       NettyClientBuilder[IO]
         .withIdleTimeout(3.seconds)
-        .withMaxConnectionsPerKey(2)
+        .resource,
+      "netty client")
+
+  val nettyReadTimeoutClient: IOFixture[Client[IO]] =
+    resourceFixture(
+      NettyClientBuilder[IO]
+        .withReadTimeout(3.seconds)
         .resource,
       "netty client")
 
   def respond(path: String, sleep: FiniteDuration, value: String): IO[Response[IO]] =
-    IO.println(s"server: received /${path} request, sleeping...") >>
+    IO(logger.trace(s"server: received /${path} request, sleeping...")) >>
       IO.sleep(sleep) >>
-      IO.println(s"server: responding with '$value'") >> Ok(value)
+      IO(logger.trace(s"server: responding with '$value'")) >> Ok(value)
 
   val server: IOFixture[Server] = resourceFixture(
     EmberServerBuilder
@@ -72,7 +78,7 @@ class NettyClientIdleTimeoutTest extends IOSuite {
     val s = server()
 
     val req = Request[IO](uri = s.baseUri / "idle-timeout")
-    val response = nettyClient().status(req).attempt
+    val response = nettyIdleClient().status(req).attempt
     IO.race(response, IO.sleep(5.seconds)).map {
       case Left(Left(error: TimeoutException)) =>
         assertEquals(error.getMessage, "Closing connection due to idle timeout")
@@ -82,15 +88,33 @@ class NettyClientIdleTimeoutTest extends IOSuite {
     }
   }
 
-  test("Request A timed out, request B receives response B") {
+  test("Request A timed out, idle timeout kills connection") {
     val s = server()
-    val c = nettyClient()
+    val c = nettyIdleClient()
 
     val req1 = Request[IO](uri = s.baseUri / "1")
     val req2 = Request[IO](uri = s.baseUri / "2")
     for {
-      _ <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
+      error <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
       r2 <- c.expect[String](req2).attempt.map(_.leftMap(_.getMessage))
-    } yield assertEquals(r2, Left("Closing connection due to idle timeout"))
+    } yield {
+      assertEquals(error, Left("Closing connection due to idle timeout"))
+      assertEquals(r2, Right("2"))
+    }
+  }
+
+  test("Request A timed out, request B receives response B") {
+    val s = server()
+    val c = nettyReadTimeoutClient()
+
+    val req1 = Request[IO](uri = s.baseUri / "1")
+    val req2 = Request[IO](uri = s.baseUri / "2")
+    for {
+      error <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
+      r2 <- c.expect[String](req2).attempt.map(_.leftMap(_.getMessage))
+    } yield {
+      assertEquals(error, Left("Timing out request due to missing read"))
+      assertEquals(r2, Right("2"))
+    }
   }
 }
