@@ -25,8 +25,10 @@ import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
+import io.netty.channel.ChannelPromise
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.ChannelPoolHandler
@@ -75,7 +77,13 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
   private def endOfPipeline(pipeline: ChannelPipeline): Unit = void {
     logger.trace("building pipeline / end-of-pipeline")
-    pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
+    pipeline.addLast(
+      "streaming-handler",
+      new HttpStreamsClientHandler {
+        override def close(ctx: ChannelHandlerContext, future: ChannelPromise): Unit = void {
+          ctx.close(future)
+        }
+      })
 
     val idletimeout = if (config.idleTimeout.isFinite) config.idleTimeout.toMillis else 0L
     val readTimeout = if (config.readTimeout.isFinite) config.readTimeout.toMillis else 0L

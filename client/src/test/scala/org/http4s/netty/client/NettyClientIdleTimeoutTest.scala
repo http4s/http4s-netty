@@ -95,9 +95,12 @@ class NettyClientIdleTimeoutTest extends IOSuite {
     val req1 = Request[IO](uri = s.baseUri / "1")
     val req2 = Request[IO](uri = s.baseUri / "2")
     for {
-      _ <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
+      error <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
       r2 <- c.expect[String](req2).attempt.map(_.leftMap(_.getMessage))
-    } yield assertEquals(r2, Left("Closing connection due to idle timeout"))
+    } yield {
+      assertEquals(error, Left("Closing connection due to idle timeout"))
+      assertEquals(r2, Right("2"))
+    }
   }
 
   test("Request A timed out, request B receives response B") {
@@ -107,8 +110,11 @@ class NettyClientIdleTimeoutTest extends IOSuite {
     val req1 = Request[IO](uri = s.baseUri / "1")
     val req2 = Request[IO](uri = s.baseUri / "2")
     for {
-      _ <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
+      error <- c.expect[String](req1).attempt.map(_.leftMap(_.getMessage))
       r2 <- c.expect[String](req2).attempt.map(_.leftMap(_.getMessage))
-    } yield assertEquals(r2, Right("2"))
+    } yield {
+      assertEquals(error, Left("Timing out request due to missing read"))
+      assertEquals(r2, Right("2"))
+    }
   }
 }

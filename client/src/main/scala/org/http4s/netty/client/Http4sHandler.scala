@@ -224,12 +224,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
         state match {
           case IdleState.READER_IDLE =>
             val message = "Timing out request due to missing read"
-            inFlight.foreach(_(Left(new TimeoutException(message))))
-            inFlight = None
-            if (!ctx.channel().config().isAutoRead) void {
-              ctx.read() // schedule a new read
-            }
-            ()
+            onException(ctx.channel(), new TimeoutException(message))
           case IdleState.WRITER_IDLE => ()
           case IdleState.ALL_IDLE =>
             val message = "Closing connection due to idle timeout"
