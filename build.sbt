@@ -74,7 +74,7 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munit % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.9.1" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M4" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M5" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
@@ -114,7 +114,7 @@ lazy val client = project
       "com.github.bbottema" % "java-socks-proxy-server" % "3.0.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M4" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M5" % Test
     ),
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
