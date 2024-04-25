@@ -36,6 +36,7 @@ val nativeNettyModules =
     "io.netty" % "netty-transport-classes-kqueue" % netty,
     "io.netty.incubator" % "netty-incubator-transport-classes-io_uring" % io_uring,
     ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-x86_64") % Runtime,
+    ("io.netty" % "netty-transport-native-epoll" % netty).classifier("linux-aarch_64") % Runtime,
     ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-x86_64") % Runtime,
     ("io.netty" % "netty-transport-native-kqueue" % netty).classifier("osx-aarch_64") % Runtime,
     ("io.netty.incubator" % "netty-incubator-transport-native-io_uring" % io_uring)
