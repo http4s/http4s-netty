@@ -30,7 +30,7 @@ import org.http4s.implicits._
 import org.http4s.server.Server
 
 import scala.concurrent.TimeoutException
-import scala.concurrent.duration.*
+import scala.concurrent.duration._
 
 class NettyClientIdleTimeoutTest extends IOSuite {
   private val logger = org.log4s.getLogger
