@@ -5,6 +5,7 @@ val Scala213 = "2.13.13"
 
 inThisBuild(
   Seq(
+    startYear := Some(2020),
     Test / fork := true,
     developers := List(
       // your GitHub handle and name
