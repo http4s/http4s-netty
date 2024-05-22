@@ -19,7 +19,7 @@ package org.http4s.netty.client
 import cats.effect.IO
 import cats.effect.Resource
 import munit.catseffect.IOFixture
-import org.bbottema.javasocksproxyserver.SocksServer
+import org.bbottema.javasocksproxyserver.SyncSocksServer
 import org.http4s.HttpRoutes
 import org.http4s.Response
 import org.http4s.Uri
@@ -37,11 +37,10 @@ class SocksProxyTest extends IOSuite {
   val socks: IOFixture[(Socks4, Socks5)] = resourceFixture(
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
-      _ <- Resource {
-        val s = new SocksServer()
-        IO.blocking(s.start(address.port.value))
-          .map(_ => s -> IO.blocking(s.stop()))
-      }
+      _ <- Resource.make[IO, SyncSocksServer] {
+        val s = new SyncSocksServer()
+        IO.blocking(s.start(address.port.value)).as(s)
+      }(s => IO.blocking(s.stop()).void)
     } yield Socks4(address.host, address.port, None) -> Socks5(
       address.host,
       address.port,
