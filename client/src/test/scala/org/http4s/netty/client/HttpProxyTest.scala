@@ -30,7 +30,6 @@ import org.http4s.Uri
 import org.http4s.client.testkit.scaffold.ServerScaffold
 
 import java.net.ServerSocket
-import scala.compat.java8.FutureConverters._
 
 class HttpProxyTest extends IOSuite {
 
@@ -45,12 +44,12 @@ class HttpProxyTest extends IOSuite {
   val proxy: IOFixture[HttpProxy] = resourceFixture(
     for {
       address <- Resource.eval(HttpProxyTest.randomSocketAddress[IO])
-      _ <- Resource {
+      _ <- Resource.make[IO, HttpProxyServer] {
         val s = new HttpProxyServer()
-        IO.fromFuture(
-          IO(toScala(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value))))
-          .as(s -> IO.blocking(s.close()))
-      }
+        IO.fromCompletionStage(
+          IO(s.startAsync(address.host.toInetAddress.getHostAddress, address.port.value)))
+          .as(s)
+      }(s => IO.blocking(s.close()))
     } yield HttpProxy(
       Uri.Scheme.http,
       address.host,
