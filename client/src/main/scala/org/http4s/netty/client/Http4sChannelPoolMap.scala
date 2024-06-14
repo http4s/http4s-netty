@@ -20,7 +20,7 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import com.typesafe.netty.http.HttpStreamsClientHandler
+import org.playframework.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel

@@ -18,7 +18,7 @@ package org.http4s.netty.server
 
 import cats.effect.Async
 import cats.effect.std.Dispatcher
-import com.typesafe.netty.http.HttpStreamsServerHandler
+import org.playframework.netty.http.HttpStreamsServerHandler
 import io.netty.channel.Channel
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline

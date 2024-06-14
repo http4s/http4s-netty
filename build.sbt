@@ -12,9 +12,10 @@ inThisBuild(
       tlGitHubDev("hamnis", "Erlend Hamnaberg")
     ),
     licenses := Seq(License.Apache2),
-    tlBaseVersion := "0.5",
+    tlBaseVersion := "0.7",
     crossScalaVersions := Seq(Scala213, Scala212, "3.3.6"),
     ThisBuild / scalaVersion := Scala213,
+    tlJdkRelease := Some(11),
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
@@ -48,8 +49,9 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-reactive-streams" % "3.12.0",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.14")
+      "co.fs2" %% "fs2-core" % "3.12.0",
+      "org.reactivestreams" % "reactive-streams-flow-adapters" % "1.0.2",
+      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.4")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
@@ -80,22 +82,7 @@ lazy val server = project
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
-    mimaBinaryIssueFilters ++= Seq(
-      ProblemFilters.exclude[IncompatibleResultTypeProblem](
-        "org.http4s.netty.server.ServerNettyModelConversion.toNettyResponseWithWebsocket"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.ServerNettyModelConversion.this"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.NegotiationHandler#Config.copy"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.NegotiationHandler#Config.this"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.NegotiationHandler#Config.apply"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.server.NettyServerBuilder.this"),
-      ProblemFilters.exclude[MissingTypesProblem](
-        "org.http4s.netty.server.NegotiationHandler$Config$")
-    )
+    mimaBinaryIssueFilters ++= Nil
   )
 
 lazy val client = project
@@ -122,21 +109,7 @@ lazy val client = project
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
-    mimaBinaryIssueFilters ++= Seq(
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap"),
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyClientBuilder$*"),
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap#*"),
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap.*"),
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyClientBuilder.*"),
-      ProblemFilters.exclude[Problem]("org.http4s.netty.client.NettyWSClientBuilder.*"),
-      ProblemFilters.exclude[MissingTypesProblem](
-        "org.http4s.netty.client.Http4sChannelPoolMap$Config$"),
-      ProblemFilters.exclude[MissingFieldProblem](
-        "org.http4s.netty.client.NettyClientBuilder.SSLContextOption"),
-      ProblemFilters.exclude[MissingClassProblem]("org.http4s.netty.client.Http4sHandler$"),
-      ProblemFilters.exclude[DirectMissingMethodProblem](
-        "org.http4s.netty.client.Http4sWebsocketHandler#Conn.this")
-    )
+    mimaBinaryIssueFilters ++= Nil
   )
 
 lazy val root = tlCrossRootProject.aggregate(core, client, server)

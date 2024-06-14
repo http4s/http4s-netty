@@ -19,10 +19,10 @@ package org.http4s.netty.server
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.kernel.Sync
-import cats.implicits._
-import com.typesafe.netty.http.DefaultWebSocketHttpResponse
+import cats.implicits.*
+import org.playframework.netty.http.DefaultWebSocketHttpResponse
 import fs2.Pipe
-import fs2.interop.reactivestreams._
+import fs2.interop.flow.StreamSubscriberWrapper
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.handler.codec.http.DefaultHttpResponse
@@ -40,7 +40,7 @@ import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
 import org.http4s.Header
 import org.http4s.Request
 import org.http4s.Response
-import org.http4s.internal.tls._
+import org.http4s.internal.tls.*
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.NettyModelConversion.bytebufToArray
 import org.http4s.server.SecureSession
@@ -48,10 +48,12 @@ import org.http4s.server.ServerRequestKeys
 import org.http4s.websocket.WebSocketCombinedPipe
 import org.http4s.websocket.WebSocketContext
 import org.http4s.websocket.WebSocketFrame
-import org.http4s.websocket.WebSocketFrame._
+import org.http4s.websocket.WebSocketFrame.*
 import org.http4s.websocket.WebSocketSeparatePipe
-import org.http4s.{HttpVersion => HV}
+import org.http4s.HttpVersion as HV
+import org.reactivestreams.FlowAdapters
 import org.reactivestreams.Processor
+import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import org.typelevel.vault.Key
@@ -158,31 +160,19 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
         }
 
       Resource
-        .eval(StreamSubscriber[F, WebSocketFrame](1))
+        .eval(StreamSubscriberWrapper.subscriber[F, WebSocketFrame](1))
         .flatMap { subscriber =>
-          StreamUnicastPublisher(
             subscriber
               .stream(Sync[F].unit)
               .through(receiveSend)
-              .onFinalizeWeak(wsContext.webSocket.onClose))
+              .onFinalize(wsContext.webSocket.onClose)
+              .toPublisherResource
             .map { publisher =>
-              val processor = new Processor[WSFrame, WSFrame] {
-                def onError(t: Throwable): Unit = subscriber.onError(t)
-
-                def onComplete(): Unit = subscriber.onComplete()
-
-                def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
-
-                def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
-
-                def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-                  publisher.subscribe(s)
-              }
               val resp: DefaultHttpResponse =
                 new DefaultWebSocketHttpResponse(
                   httpVersion,
                   HttpResponseStatus.OK,
-                  processor,
+                  processor(FlowAdapters.toSubscriber(subscriber), FlowAdapters.toPublisher(publisher)),
                   factory)
               wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
               resp
@@ -200,6 +190,20 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     nettyHeaders.add(header.name.toString, header.value)
     ()
   }
+
+  private def processor(subscriber: Subscriber[WebSocketFrame], publisher: Publisher[WSFrame]) = new Processor[WSFrame, WSFrame] {
+    def onError(t: Throwable): Unit = subscriber.onError(t)
+
+    def onComplete(): Unit = subscriber.onComplete()
+
+    def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
+
+    def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
+
+    def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
+      publisher.subscribe(s)
+  }
+
 
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {

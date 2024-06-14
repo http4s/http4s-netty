@@ -24,7 +24,7 @@ import cats.effect.kernel.Deferred
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.syntax.all._
-import com.typesafe.netty.HandlerPublisher
+import org.playframework.netty.HandlerPublisher
 import io.netty.buffer.Unpooled
 import io.netty.channel._
 import io.netty.handler.codec.http.websocketx._

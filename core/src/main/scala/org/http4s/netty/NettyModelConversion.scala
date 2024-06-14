@@ -17,26 +17,26 @@
 package org.http4s
 package netty
 
-import cats.effect._
-import cats.implicits._
+import cats.effect.*
+import cats.implicits.*
 import com.comcast.ip4s.SocketAddress
-import com.typesafe.netty.http._
+import org.playframework.netty.http.*
 import fs2.Chunk
 import fs2.Stream
-import fs2.interop.reactivestreams._
-import fs2.{io => _}
+import fs2.io as _
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.handler.codec.http._
+import io.netty.handler.codec.http.*
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
-import org.http4s.headers.{Connection => ConnHeader}
+import org.http4s.headers.Connection as ConnHeader
 import org.http4s.netty.NettyModelConversion.chunkToBytebuf
-import org.http4s.{HttpVersion => HV}
+import org.http4s.HttpVersion as HV
+import org.reactivestreams.FlowAdapters
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
 
@@ -76,10 +76,9 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
             request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
             Resource.pure[F, HttpRequest](defaultReq)
           } else {
-            StreamUnicastPublisher(
               request.body.chunks
-                .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
-              val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, publisher)
+                .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))).toPublisherResource.map { publisher =>
+              val streamedReq = new DefaultStreamedHttpRequest(version, method, uri, FlowAdapters.toPublisher(publisher))
               transferEncoding(request.headers, minorIs0 = false, streamedReq)
               streamedReq
             }
@@ -231,8 +230,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       case streamed: StreamedHttpMessage =>
         val isDrained = new AtomicBoolean(false)
         val stream =
-          streamed
-            .toStreamBuffered(1)
+          Stream.fromPublisher[F](FlowAdapters.toFlowPublisher(streamed), 1)
             .flatMap(c =>
               Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
             .onFinalize(F.delay(void(isDrained.compareAndSet(false, true))))
@@ -341,14 +339,13 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       httpVersion: HttpVersion,
       minorIs0: Boolean
   ): Resource[F, DefaultHttpResponse] =
-    StreamUnicastPublisher(
       httpResponse.body.chunks
-        .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf)))).map { publisher =>
+        .evalMap[F, HttpContent](buf => F.delay(chunkToNetty(buf))).toPublisherResource.map { publisher =>
       val response =
         new DefaultStreamedHttpResponse(
           httpVersion,
           HttpResponseStatus.valueOf(httpResponse.status.code),
-          publisher
+          FlowAdapters.toPublisher(publisher)
         )
       transferEncoding(httpResponse.headers, minorIs0, response)
       response
