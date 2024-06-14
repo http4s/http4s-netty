@@ -18,18 +18,24 @@ package org.http4s.netty
 package client
 
 import io.netty.bootstrap.Bootstrap
+import io.netty.channel.Channel
 import io.netty.channel.ChannelOption
 import io.netty.channel.MultithreadEventLoopGroup
 import io.netty.channel.epoll.Epoll
+import io.netty.channel.epoll.EpollDatagramChannel
 import io.netty.channel.epoll.EpollEventLoopGroup
 import io.netty.channel.epoll.EpollSocketChannel
 import io.netty.channel.kqueue.KQueue
+import io.netty.channel.kqueue.KQueueDatagramChannel
 import io.netty.channel.kqueue.KQueueEventLoopGroup
 import io.netty.channel.kqueue.KQueueSocketChannel
 import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.socket.DatagramChannel
 import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.incubator.channel.uring.IOUring
+import io.netty.incubator.channel.uring.IOUringDatagramChannel
 import io.netty.incubator.channel.uring.IOUringEventLoopGroup
 import io.netty.incubator.channel.uring.IOUringSocketChannel
 import org.slf4j.Logger
@@ -38,7 +44,7 @@ import org.slf4j.LoggerFactory
 import scala.annotation.nowarn
 import scala.reflect.ClassTag
 
-private[client] final case class EventLoopHolder[A <: SocketChannel](
+private[client] final case class EventLoopHolder[A <: Channel](
     eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
   def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
 
@@ -46,7 +52,6 @@ private[client] final case class EventLoopHolder[A <: SocketChannel](
     bootstrap
       .group(eventLoop)
       .channel(runtimeClass)
-      .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
       .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
 }
 
@@ -61,6 +66,17 @@ private[client] object EventLoopHolder {
         EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
       case n: NettyTransport.Native =>
         selectTransport(n, eventLoopThreads).getOrElse(
+          throw new IllegalStateException("No native transport available"))
+    }
+
+  def fromUdpTransport(
+      transport: NettyTransport,
+      eventLoopThreads: Int): EventLoopHolder[_ <: DatagramChannel] =
+    transport match {
+      case NettyTransport.Nio =>
+        EventLoopHolder[NioDatagramChannel](new NioEventLoopGroup(eventLoopThreads))
+      case n: NettyTransport.Native =>
+        selectUdpTransport(n, eventLoopThreads).getOrElse(
           throw new IllegalStateException("No native transport available"))
     }
 
@@ -85,6 +101,31 @@ private[client] object EventLoopHolder {
           .orElse {
             logger.info("Falling back to NIO EventLoopGroup")
             Some(EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads)))
+          }
+      case _ => None
+    }
+
+  @nowarn("cat=deprecation")
+  def selectUdpTransport(
+      native: NettyTransport.Native,
+      eventLoopThreads: Int): Option[EventLoopHolder[_ <: DatagramChannel]] =
+    native match {
+      case NettyTransport.IOUring if IOUring.isAvailable =>
+        logger.info("Using IOUring")
+        Some(EventLoopHolder[IOUringDatagramChannel](new IOUringEventLoopGroup(eventLoopThreads)))
+      case NettyTransport.Epoll if Epoll.isAvailable =>
+        logger.info("Using Epoll")
+        Some(EventLoopHolder[EpollDatagramChannel](new EpollEventLoopGroup(eventLoopThreads)))
+      case NettyTransport.KQueue if KQueue.isAvailable =>
+        logger.info("Using KQueue")
+        Some(EventLoopHolder[KQueueDatagramChannel](new KQueueEventLoopGroup(eventLoopThreads)))
+      case NettyTransport.Auto | NettyTransport.Native =>
+        selectUdpTransport(NettyTransport.IOUring, eventLoopThreads)
+          .orElse(selectUdpTransport(NettyTransport.Epoll, eventLoopThreads))
+          .orElse(selectUdpTransport(NettyTransport.KQueue, eventLoopThreads))
+          .orElse {
+            logger.info("Falling back to NIO EventLoopGroup")
+            Some(EventLoopHolder[NioDatagramChannel](new NioEventLoopGroup(eventLoopThreads)))
           }
       case _ => None
     }
