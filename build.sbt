@@ -26,7 +26,8 @@ val jetty = "12.0.12"
 
 val netty = "4.1.112.Final"
 
-val munit = "0.7.29"
+val munit = "1.0.1"
+val munitScalaCheck = "1.0.0"
 
 val io_uring = "0.0.25.Final"
 
@@ -73,11 +74,12 @@ lazy val server = project
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "org.scalameta" %% "munit-scalacheck" % munit % Test,
+      "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.9.1" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M5" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
+    libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
       ProblemFilters.exclude[IncompatibleResultTypeProblem](
@@ -116,8 +118,9 @@ lazy val client = project
       "com.github.bbottema" % "java-socks-proxy-server" % "4.1.0" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M5" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
+    libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters ++= Seq(
       ProblemFilters.exclude[Problem]("org.http4s.netty.client.Http4sChannelPoolMap"),
