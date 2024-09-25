@@ -1,6 +1,6 @@
 import com.typesafe.tools.mima.core._
 
-val Scala213 = "2.13.13"
+val Scala213 = "2.13.15"
 
 inThisBuild(
   Seq(
