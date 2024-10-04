@@ -22,7 +22,6 @@ import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
-import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.channel._
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
