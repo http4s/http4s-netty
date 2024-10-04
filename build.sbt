@@ -12,7 +12,6 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "1.0",
-    sonatypeCredentialHost := xerial.sbt.Sonatype.sonatypeLegacy,
     crossScalaVersions := Seq(Scala213, "3.3.4"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
