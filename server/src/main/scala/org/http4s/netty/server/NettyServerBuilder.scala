@@ -197,6 +197,8 @@ final class NettyServerBuilder[F[_]] private (
 
   def withNettyChannelOptions(opts: NettyChannelOptions): Self =
     copy(nettyChannelOptions = opts)
+  def withWebSocketMaxFrameLength(wsMaxFrameLength: Int): Self =
+    copy(wsMaxFrameLength = wsMaxFrameLength)
   def withWebSocketCompression: Self = copy(wsCompression = true)
   def withoutWebSocketCompression: Self = copy(wsCompression = false)
 

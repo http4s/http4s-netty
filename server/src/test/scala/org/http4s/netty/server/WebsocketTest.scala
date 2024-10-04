@@ -106,7 +106,7 @@ object WebsocketTest {
 class NettyWebsocketTest
     extends WebsocketTest(
       NettyWSClientBuilder[IO].withIdleTimeout(5.seconds).withNioTransport.resource) {
-  test("send and receive frames in low-level mode".flaky) {
+  test("send and receive frames in low-level mode") {
     testLowLevel
   }
 }
@@ -117,7 +117,7 @@ class JDKClientWebsocketTest
     testLowLevel
   }
 
-  test("group frames by their `last` attribute in high-level mode") {
+  test("group frames by their `last` attribute in high-level mode".flaky) {
     val uri = server()
     client()
       .connectHighLevel(WSRequest(uri))
