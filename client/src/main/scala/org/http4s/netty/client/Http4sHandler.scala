@@ -24,6 +24,7 @@ import cats.effect.std.Dispatcher
 import cats.syntax.all._
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.timeout.IdleState
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
 import org.http4s.netty.client.Http4sHandler.logger
@@ -38,10 +39,11 @@ import scala.util.Success
 
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
+  type Promise = Either[Throwable, Resource[F, Response[F]]] => Unit
 
   private val modelConversion = new NettyModelConversion[F]
   private val promises =
-    collection.mutable.Queue[Either[Throwable, Resource[F, Response[F]]] => Unit]()
+    collection.mutable.Queue[Promise]()
   // By using the Netty event loop assigned to this channel we get two benefits:
   //  1. We can avoid the necessary hopping around of threads since Netty pipelines will
   //     only pass events up and down from within the event loop to which it is assigned.
@@ -51,6 +53,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   private var eventLoopContext: ExecutionContext = _
 
   private var pending: Future[Unit] = Future.unit
+  private var inFlight: Option[Promise] = None
 
   private def write2(request: Request[F], channel: Channel, key: Key): F[Unit] = {
     import io.netty.handler.codec.http2._
@@ -145,6 +148,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
+    implicit val ec: ExecutionContext = eventLoopContext
+
     msg match {
       case h: HttpResponse =>
         val responseResourceF = modelConversion
@@ -154,17 +159,25 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
           }
         val result = dispatcher.unsafeToFuture(responseResourceF)
 
-        pending = pending.flatMap { _ =>
+        if (promises.nonEmpty) {
           val promise = promises.dequeue()
-          result.transform {
-            case Failure(exception) =>
-              promise(Left(exception))
-              Failure(exception)
-            case Success(res) =>
-              promise(Right(res))
-              Success(())
-          }(eventLoopContext)
-        }(eventLoopContext)
+          inFlight = Some(promise)
+          logger.trace("dequeuing promise")
+          pending = pending.flatMap { _ =>
+            result.transform {
+              case Failure(exception) =>
+                logger.trace("handling promise failure")
+                promise(Left(exception))
+                inFlight = None
+                Failure(exception)
+              case Success(res) =>
+                logger.trace("handling promise success")
+                promise(Right(res))
+                inFlight = None
+                Success(())
+            }
+          }
+        }
       case _ =>
         super.channelRead(ctx, msg)
     }
@@ -193,17 +206,31 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
 
   private def onException(channel: Channel, e: Throwable): Unit = void {
-    promises.foreach(cb => cb(Left(e)))
-    promises.clear()
+    implicit val ec: ExecutionContext = eventLoopContext
+
+    val allPromises =
+      (inFlight.toList ++ promises.dequeueAll(_ => true)).map(promise => Future(promise(Left(e))))
+    logger.trace(s"onException: dequeueAll(${allPromises.size})")
+    pending = pending.flatMap(_ => Future.sequence(allPromises).map(_ => ()))
+    inFlight = None
+
     channel.close()
   }
 
   override def userEventTriggered(ctx: ChannelHandlerContext, evt: scala.Any): Unit = void {
     evt match {
-      case _: IdleStateEvent if ctx.channel().isOpen =>
-        val message = s"Closing connection due to idle timeout"
-        logger.trace(message)
-        onException(ctx.channel(), new TimeoutException(message))
+      case e: IdleStateEvent if ctx.channel().isOpen =>
+        val state = e.state()
+        state match {
+          case IdleState.READER_IDLE =>
+            val message = "Timing out request due to missing read"
+            onException(ctx.channel(), new TimeoutException(message))
+          case IdleState.WRITER_IDLE => ()
+          case IdleState.ALL_IDLE =>
+            val message = "Closing connection due to idle timeout"
+            logger.trace(message)
+            onException(ctx.channel(), new TimeoutException(message))
+        }
       case _ => super.userEventTriggered(ctx, evt)
     }
   }

@@ -20,13 +20,14 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import cats.syntax.all._
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
+import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
+import io.netty.channel.ChannelPromise
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
 import io.netty.channel.pool.ChannelPoolHandler
@@ -50,6 +51,7 @@ import org.http4s.client.RequestKey
 import org.playframework.netty.http.HttpStreamsClientHandler
 
 import java.net.ConnectException
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.Duration
 
 private[client] case class Key(requestKey: RequestKey, version: HttpVersion)
@@ -75,15 +77,20 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
   private def endOfPipeline(pipeline: ChannelPipeline): Unit = void {
     logger.trace("building pipeline / end-of-pipeline")
-    pipeline.addLast("streaming-handler", new HttpStreamsClientHandler)
+    pipeline.addLast(
+      "streaming-handler",
+      new HttpStreamsClientHandler {
+        override def close(ctx: ChannelHandlerContext, future: ChannelPromise): Unit = void {
+          ctx.close(future)
+        }
+      })
 
-    if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
-      void(
-        pipeline
-          .addLast(
-            "timeout",
-            new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit)))
-    }
+    val idletimeout = if (config.idleTimeout.isFinite) config.idleTimeout.toMillis else 0L
+    val readTimeout = if (config.readTimeout.isFinite) config.readTimeout.toMillis else 0L
+
+    pipeline.addLast(
+      "timeout",
+      new IdleStateHandler(readTimeout, 0, idletimeout, TimeUnit.MILLISECONDS))
   }
 
   private def connectAndConfigure(key: Key): Resource[F, Channel] = {
@@ -251,16 +258,9 @@ private[client] object Http4sChannelPoolMap {
       proxy: Option[Proxy],
       sslConfig: SSLContextOption,
       http2: Boolean,
-      defaultRequestHeaders: Headers
+      defaultRequestHeaders: Headers,
+      readTimeout: Duration
   )
 
-  private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] =
-    Async[F].async { callback =>
-      val fut = future
-      void(
-        fut
-          .addListener((f: Future[A]) =>
-            if (f.isSuccess) callback(Right(f.getNow)) else callback(Left(f.cause()))))
-      Async[F].delay(Some(Async[F].delay(fut.cancel(false)).void))
-    }
+  private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] = ???
 }

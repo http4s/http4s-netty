@@ -29,6 +29,7 @@ import scala.concurrent.duration._
 
 class NettyClientBuilder[F[_]](
     idleTimeout: Duration,
+    readTimeout: Duration,
     eventLoopThreads: Int,
     maxInitialLength: Int,
     maxHeaderSize: Int,
@@ -45,6 +46,7 @@ class NettyClientBuilder[F[_]](
 
   private def copy(
       idleTimeout: Duration = idleTimeout,
+      readTimeout: Duration = readTimeout,
       eventLoopThreads: Int = eventLoopThreads,
       maxInitialLength: Int = maxInitialLength,
       maxHeaderSize: Int = maxHeaderSize,
@@ -59,6 +61,7 @@ class NettyClientBuilder[F[_]](
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
+      readTimeout,
       eventLoopThreads,
       maxInitialLength,
       maxHeaderSize,
@@ -79,7 +82,9 @@ class NettyClientBuilder[F[_]](
   def withMaxHeaderSize(size: Int): Self = copy(maxHeaderSize = size)
   def withMaxChunkSize(size: Int): Self = copy(maxChunkSize = size)
   def withMaxConnectionsPerKey(size: Int): Self = copy(maxConnectionsPerKey = size)
-  def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
+
+  def withIdleTimeout(duration: Duration): Self = copy(idleTimeout = duration)
+  def withReadTimeout(duration: Duration): Self = copy(readTimeout = duration)
 
   def withSSLContext(sslContext: SSLContext): Self =
     copy(sslContext = SSLContextOption.Provided(sslContext))
@@ -134,7 +139,8 @@ class NettyClientBuilder[F[_]](
         proxy,
         sslContext,
         http2,
-        defaultRequestHeaders
+        defaultRequestHeaders,
+        readTimeout
       )
       Client[F](new Http4sChannelPoolMap[F](bs, config).run)
     }
@@ -144,6 +150,7 @@ object NettyClientBuilder {
   def apply[F[_]](implicit F: Async[F]): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout = 60.seconds,
+      readTimeout = 60.seconds,
       eventLoopThreads = 0,
       maxInitialLength = 4096,
       maxHeaderSize = 8192,

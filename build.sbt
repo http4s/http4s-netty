@@ -1,9 +1,10 @@
 import com.typesafe.tools.mima.core._
 
-val Scala213 = "2.13.13"
+val Scala213 = "2.13.15"
 
 inThisBuild(
   Seq(
+    startYear := Some(2020),
     Test / fork := true,
     developers := List(
       // your GitHub handle and name
@@ -11,20 +12,21 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "1.0",
-    tlSonatypeUseLegacyHost := false,
-    crossScalaVersions := Seq(Scala213, "3.3.3"),
+    sonatypeCredentialHost := xerial.sbt.Sonatype.sonatypeLegacy,
+    crossScalaVersions := Seq(Scala213, "3.3.4"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
-val http4sVersion = "1.0.0-M41"
+val http4sVersion = "1.0.0-M42"
 
-val jetty = "12.0.7"
+val jetty = "12.0.14"
 
-val netty = "4.1.107.Final"
+val netty = "4.1.114.Final"
 
-val munit = "0.7.29"
+val munit = "1.0.2"
+val munitScalaCheck = "1.0.0"
 
 val io_uring = "0.0.25.Final"
 
@@ -47,7 +49,7 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "org.log4s" %% "log4s" % "1.10.0",
-      "co.fs2" %% "fs2-reactive-streams" % "3.9.4",
+      "co.fs2" %% "fs2-reactive-streams" % "3.11.0",
       ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.2")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
@@ -72,11 +74,12 @@ lazy val server = project
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
       "org.scalameta" %% "munit" % munit % Test,
-      "org.scalameta" %% "munit-scalacheck" % munit % Test,
+      "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M9" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M4" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
+    libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
     mimaBinaryIssueFilters := Nil
   )
@@ -97,11 +100,12 @@ lazy val client = project
       ("com.github.monkeywie" % "proxyee" % "1.7.6" % Test)
         .excludeAll("io.netty")
         .excludeAll("org.bouncycastle"),
-      "com.github.bbottema" % "java-socks-proxy-server" % "3.0.0" % Test,
+      "com.github.bbottema" % "java-socks-proxy-server" % "4.1.1" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.0.0-M4" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
+    libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules
   )
 
