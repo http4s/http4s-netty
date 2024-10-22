@@ -35,7 +35,6 @@ import io.netty.util.ReferenceCountUtil
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
-import org.http4s.netty.NettyModelConversion.chunkToBytebuf
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
@@ -50,10 +49,7 @@ import javax.net.ssl.SSLEngine
   * https://github.com/playframework/playframework/blob/master/framework/src/play-netty-server
   */
 private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
-
-  protected[this] val logger = org.log4s.getLogger
-
-  val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
+  import NettyModelConversion._
 
   def toNettyRequest(request: Request[F]): Resource[F, HttpRequest] = {
     logger.trace(s"Converting request $request")
@@ -107,14 +103,6 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     )
 
     F.fromEither(res).tupleRight(drain)
-  }
-
-  def toHeaders(headers: HttpHeaders): Headers = {
-    val buffer = List.newBuilder[Header.Raw]
-    headers.forEach { e =>
-      buffer += Header.Raw(CIString(e.getKey), e.getValue)
-    }
-    Headers(buffer.result())
   }
 
   def toNettyHeaders(headers: Headers): HttpHeaders = {
@@ -239,24 +227,6 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         (stream, drainBody(_, stream, isDrained))
       case _ => (Stream.empty.covary[F], _ => F.unit)
     }
-
-  /** Return an action that will drain the channel stream in the case that it wasn't drained.
-    */
-  private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
-    F.delay {
-      if (isDrained.compareAndSet(false, true)) {
-        if (c.isOpen) {
-          logger.info("Response body not drained to completion. Draining and closing connection")
-          // Drain the stream regardless. Some bytebufs often
-          // Remain in the buffers. Draining them solves this issue
-          F.delay(c.close()).liftToF >> f.compile.drain
-        } else
-          // Drain anyway, don't close the channel
-          f.compile.drain
-      } else {
-        F.unit
-      }
-    }.flatMap(identity)
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
@@ -410,17 +380,47 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 }
 
 object NettyModelConversion {
+  private val logger = org.log4s.getLogger
   private[NettyModelConversion] val CachedEmpty: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
 
-  def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
+  val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
+
+  /** Return an action that will drain the channel stream in the case that it wasn't drained.
+    */
+  private[netty] def drainBody[F[_]](c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean)(
+      implicit F: Async[F]): F[Unit] =
+    F.delay {
+      if (isDrained.compareAndSet(false, true)) {
+        if (c.isOpen) {
+          logger.info("Response body not drained to completion. Draining and closing connection")
+          // Drain the stream regardless. Some bytebufs often
+          // Remain in the buffers. Draining them solves this issue
+          F.delay(c.close()).liftToF >> f.compile.drain
+        } else
+          // Drain anyway, don't close the channel
+          f.compile.drain
+      } else {
+        F.unit
+      }
+    }.flatMap(identity)
+
+  private[netty] def toHeaders(headers: HttpHeaders): Headers = {
+    val buffer = List.newBuilder[Header.Raw]
+    headers.forEach { e =>
+      buffer += Header.Raw(CIString(e.getKey), e.getValue)
+    }
+    Headers(buffer.result())
+  }
+
+  private[netty] def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
     val array = ByteBufUtil.getBytes(buf)
     if (release) void(ReferenceCountUtil.release(buf))
     array
   }
 
   /** Convert a Chunk to a Netty ByteBuf. */
-  def chunkToBytebuf(bytes: Chunk[Byte]): ByteBuf =
+  private[netty] def chunkToBytebuf(bytes: Chunk[Byte]): ByteBuf =
     if (bytes.isEmpty)
       Unpooled.EMPTY_BUFFER
     else

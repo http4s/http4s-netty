@@ -19,14 +19,15 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
-import cats.effect.implicits._
+import cats.effect.implicits.*
 import cats.effect.std.Dispatcher
-import cats.syntax.all._
-import io.netty.channel._
+import cats.syntax.all.*
+import io.netty.channel.*
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.timeout.IdleState
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s._
+import org.http4s.*
+import org.http4s.client.RequestKey
 import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
@@ -69,7 +70,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
     val headersFrame = new DefaultHttp2HeadersFrame(
       http2Headers,
-      modelConversion.notAllowedWithBody.contains(request.method))
+      NettyModelConversion.notAllowedWithBody.contains(request.method))
 
     def endOfStream: F[Unit] = request.trailerHeaders.flatMap { headers =>
       val trail =
@@ -79,20 +80,21 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
             HttpConversionUtil.toHttp2Headers(modelConversion.toNettyHeaders(headers), false),
             true)
         }
-      F.delay(writeInEventLoop(trail, channel, key))
+      F.delay(Http4sHandler.writeInEventLoop(trail, channel, key.requestKey)(onException))
     }
 
     val body = if (!headersFrame.isEndStream) {
       (request.body.chunks
         .evalMap(chunk =>
           F.delay(
-            writeInEventLoop(
+            Http4sHandler.writeInEventLoop(
               new DefaultHttp2DataFrame(NettyModelConversion.chunkToBytebuf(chunk), false),
               channel,
-              key))) ++ fs2.Stream.eval(endOfStream)).compile.drain
+              key.requestKey)(onException))) ++ fs2.Stream.eval(endOfStream)).compile.drain
     } else F.unit
 
-    F.delay(writeInEventLoop(headersFrame, channel, key)) >> body
+    F.delay(
+      Http4sHandler.writeInEventLoop(headersFrame, channel, key.requestKey)(onException)) >> body
   }
 
   private[client] def dispatch(
@@ -114,37 +116,12 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
         .evalMap { nettyRequest =>
           F.async[Resource[F, Response[F]]] { cb =>
             promises.enqueue(cb)
-            writeInEventLoop(nettyRequest, channel, key)
+            Http4sHandler.writeInEventLoop(nettyRequest, channel, key.requestKey)(onException)
             F.pure(Some(F.unit))
           }
         }
         .flatMap(identity)
     )
-
-  private def writeInEventLoop(event: AnyRef, channel: Channel, key: Key) =
-    if (channel.eventLoop().inEventLoop) {
-      safedispatch(event, channel, key)
-    } else {
-      channel
-        .eventLoop()
-        .execute(() => safedispatch(event, channel, key))
-    }
-
-  private def safedispatch(event: AnyRef, channel: Channel, key: Key): Unit = void {
-    // always enqueue
-    if (channel.isActive) {
-      logger.trace(s"ch $channel: sending ${event} to $key")
-      // The voidPromise lets us receive failed-write signals from the
-      // exceptionCaught method.
-      channel.writeAndFlush(event, channel.voidPromise)
-      logger.trace(s"ch $channel: after ${event} to $key")
-    } else {
-      // make sure we call all enqueued promises
-      logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
-      onException(channel, new ClosedChannelException)
-    }
-  }
-
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
@@ -238,4 +215,30 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
 private object Http4sHandler {
   private val logger = org.log4s.getLogger
+
+  private[client] def writeInEventLoop(event: AnyRef, channel: Channel, key: RequestKey)(
+      onException: (Channel, Throwable) => Unit) =
+    if (channel.eventLoop().inEventLoop) {
+      safedispatch(event, channel, key)(onException)
+    } else {
+      channel
+        .eventLoop()
+        .execute(() => safedispatch(event, channel, key)(onException))
+    }
+
+  private def safedispatch(event: AnyRef, channel: Channel, key: RequestKey)(
+      onException: (Channel, Throwable) => Unit): Unit = void {
+    // always enqueue
+    if (channel.isActive) {
+      logger.trace(s"ch $channel: sending ${event} to $key")
+      // The voidPromise lets us receive failed-write signals from the
+      // exceptionCaught method.
+      channel.writeAndFlush(event, channel.voidPromise)
+      logger.trace(s"ch $channel: after ${event} to $key")
+    } else {
+      // make sure we call all enqueued promises
+      logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
+      onException(channel, new ClosedChannelException)
+    }
+  }
 }
