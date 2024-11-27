@@ -56,7 +56,7 @@ lazy val core = project
       "io.netty" % "netty-codec-http" % netty,
       "io.netty" % "netty-handler" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.5.6"
+      "org.typelevel" %% "cats-effect" % "3.5.7"
     )
   )
 
