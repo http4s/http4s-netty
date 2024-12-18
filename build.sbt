@@ -75,7 +75,7 @@ lazy val server = project
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M9" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M10" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
