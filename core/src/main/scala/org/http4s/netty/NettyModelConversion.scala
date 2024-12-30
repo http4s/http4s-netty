@@ -92,7 +92,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     }
   }
 
-  def fromNettyResponse(response: HttpResponse): F[(Response[F], (Channel) => F[Unit])] = {
+  def fromNettyResponse(response: HttpResponse, channel: Channel): F[Resource[F, Response[F]]] = {
     logger.trace(s"converting response: $response")
     val (body, drain) = convertHttpBody(response)
     val res = for {
@@ -105,7 +105,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       body
     )
 
-    F.fromEither(res).tupleRight(drain)
+    F.fromEither(res).tupleRight(drain).map(t => Resource.make(F.pure(t._1))(_ => t._2(channel)))
   }
 
   def toHeaders(headers: HttpHeaders): Headers = {

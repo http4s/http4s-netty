@@ -159,11 +159,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
     msg match {
       case h: HttpResponse =>
-        val responseResourceF = modelConversion
-          .fromNettyResponse(h)
-          .map { case (res, cleanup) =>
-            Resource.make(F.pure(res))(_ => cleanup(ctx.channel()))
-          }
+        val responseResourceF = modelConversion.fromNettyResponse(h, ctx.channel())
         val result = dispatcher.unsafeToFuture(responseResourceF)
 
         if (promises.nonEmpty) {
