@@ -13,7 +13,6 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.5",
-    tlSonatypeUseLegacyHost := false,
     crossScalaVersions := Seq(Scala213, Scala212, "3.3.4"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
@@ -72,7 +71,7 @@ lazy val server = project
       "org.eclipse.jetty.http2" % "jetty-http2-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-      "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
@@ -115,7 +114,8 @@ lazy val client = project
       ("com.github.monkeywie" % "proxyee" % "1.7.6" % Test)
         .excludeAll("io.netty")
         .excludeAll("org.bouncycastle"),
-      "com.github.bbottema" % "java-socks-proxy-server" % "4.1.2" % Test,
+      ("com.github.bbottema" % "java-socks-proxy-server" % "4.1.2" % Test)
+        .exclude("org.slf4j", "slf4j-api"),
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
