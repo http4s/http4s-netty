@@ -18,16 +18,16 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "1.0.0-M43"
+val http4sVersion = "1.0.0-M44"
 
-val jetty = "12.0.14"
+val jetty = "12.0.16"
 
-val netty = "4.1.114.Final"
+val netty = "4.1.116.Final"
 
-val munit = "1.0.2"
+val munit = "1.0.3"
 val munitScalaCheck = "1.0.0"
 
-val io_uring = "0.0.25.Final"
+val io_uring = "0.0.26.Final"
 
 val nativeNettyModules =
   Seq(
@@ -55,7 +55,7 @@ lazy val core = project
       "io.netty" % "netty-codec-http" % netty,
       "io.netty" % "netty-handler" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.5.4"
+      "org.typelevel" %% "cats-effect" % "3.5.7"
     )
   )
 
@@ -71,11 +71,11 @@ lazy val server = project
       "org.eclipse.jetty.http2" % "jetty-http2-client-transport" % jetty % Test,
       "org.http4s" %% "http4s-server" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
-      "ch.qos.logback" % "logback-classic" % "1.4.5" % Test,
+      "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.scalameta" %% "munit" % munit % Test,
       "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
-      "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M9" % Test,
+      "org.http4s" %% "http4s-jdk-http-client" % "1.0.0-M10" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
@@ -99,7 +99,8 @@ lazy val client = project
       ("com.github.monkeywie" % "proxyee" % "1.7.6" % Test)
         .excludeAll("io.netty")
         .excludeAll("org.bouncycastle"),
-      "com.github.bbottema" % "java-socks-proxy-server" % "4.1.1" % Test,
+      ("com.github.bbottema" % "java-socks-proxy-server" % "4.1.2" % Test)
+        .exclude("org.slf4j", "slf4j-api"),
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.0.0" % Test

@@ -24,13 +24,20 @@ import cats.effect.std.Dispatcher
 import cats.syntax.all._
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.codec.http2.DefaultHttp2PingFrame
+import io.netty.handler.codec.http2.Http2Error
+import io.netty.handler.codec.http2.Http2GoAwayFrame
+import io.netty.handler.codec.http2.Http2PingFrame
+import io.netty.handler.codec.http2.Http2SettingsFrame
 import io.netty.handler.timeout.IdleState
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s._
+import org.http4s.netty.client.Http4sHandler.Http2GoAwayError
 import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
+import java.util.concurrent.CancellationException
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.TimeoutException
@@ -178,6 +185,26 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
             }
           }
         }
+      case x: Http2PingFrame =>
+        if (!x.ack()) {
+          ctx.writeAndFlush(new DefaultHttp2PingFrame(x.content(), true))
+        } else {
+          logger.debug("got pong")
+        }
+      case x: Http2SettingsFrame =>
+        // What should we do with this?
+        logger.debug(s"got settings, ${x.settings()}")
+      case x: Http2GoAwayFrame =>
+        val http2Error = Http2Error.valueOf(x.errorCode())
+        http2Error match {
+          case Http2Error.CANCEL =>
+            onException(
+              ctx.channel(),
+              new CancellationException(s"Stream ${x.lastStreamId()} cancelled from server"))
+          case _ =>
+            val exception = Http2GoAwayError(http2Error, x.lastStreamId())
+            onException(ctx.channel(), exception)
+        }
       case _ =>
         super.channelRead(ctx, msg)
     }
@@ -238,4 +265,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
 private object Http4sHandler {
   private val logger = org.log4s.getLogger
+
+  final case class Http2GoAwayError(error: Http2Error, lastStreamId: Int)
+      extends Exception(s"http/2 recieved GoAway with ${error.name} and streamId=${lastStreamId}")
 }

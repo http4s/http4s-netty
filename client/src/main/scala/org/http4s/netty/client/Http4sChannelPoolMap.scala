@@ -115,8 +115,8 @@ private[client] class Http4sChannelPoolMap[F[_]](
     val key = Key(RequestKey.fromRequest(request), request.httpVersion)
 
     for {
-      channel <- connectAndConfigure(key)
       dispatcher <- Dispatcher.sequential[F](await = true)
+      channel <- connectAndConfigure(key)
       handler <- Resource.make {
         F.pure {
           val handler =
