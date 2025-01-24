@@ -26,7 +26,7 @@ val jetty = "12.0.16"
 val netty = "4.1.117.Final"
 
 val munit = "1.0.4"
-val munitScalaCheck = "1.0.0"
+val munitScalaCheck = "1.1.0"
 
 val io_uring = "0.0.26.Final"
 
