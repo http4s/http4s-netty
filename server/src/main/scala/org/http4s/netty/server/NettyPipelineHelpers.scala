@@ -29,7 +29,7 @@ import io.netty.handler.codec.http2.Http2FrameCodecBuilder
 import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.timeout.IdleStateHandler
-import org.http4s.HttpApp
+import org.http4s.netty.HttpResource
 import org.http4s.netty.void
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -40,7 +40,7 @@ private object NettyPipelineHelpers {
   def buildHttp2Pipeline[F[_]: Async](
       pipeline: ChannelPipeline,
       config: NegotiationHandler.Config,
-      httpApp: WebSocketBuilder2[F] => HttpApp[F],
+      httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       dispatcher: Dispatcher[F]): Unit = void {
     // H2, being a multiplexed protocol, needs to always be reading events in case
@@ -62,7 +62,7 @@ private object NettyPipelineHelpers {
   def buildHttp1Pipeline[F[_]: Async](
       pipeline: ChannelPipeline,
       config: NegotiationHandler.Config,
-      httpApp: WebSocketBuilder2[F] => HttpApp[F],
+      httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       dispatcher: Dispatcher[F]): Unit = void {
     // For HTTP/1.x pipelines the only backpressure we can exert is via the TCP
@@ -83,7 +83,7 @@ private object NettyPipelineHelpers {
   private[this] def addHttp4sHandlers[F[_]: Async](
       pipeline: ChannelPipeline,
       config: NegotiationHandler.Config,
-      httpApp: WebSocketBuilder2[F] => HttpApp[F],
+      httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       dispatcher: Dispatcher[F]): Unit = void {
 

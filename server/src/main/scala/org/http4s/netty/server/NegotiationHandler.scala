@@ -22,7 +22,6 @@ import cats.effect.std.Dispatcher
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler
-import org.http4s.HttpApp
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 
@@ -30,7 +29,7 @@ import scala.concurrent.duration.Duration
 
 private[server] class NegotiationHandler[F[_]: Async](
     config: NegotiationHandler.Config,
-    httpApp: WebSocketBuilder2[F] => HttpApp[F],
+    httpApp: WebSocketBuilder2[F] => HttpResource[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     dispatcher: Dispatcher[F]
 ) extends ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
