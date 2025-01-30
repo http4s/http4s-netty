@@ -13,7 +13,7 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.5",
-    crossScalaVersions := Seq(Scala213, Scala212, "3.3.4"),
+    crossScalaVersions := Seq(Scala213, Scala212, "3.3.5"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
@@ -26,7 +26,7 @@ val jetty = "12.0.16"
 val netty = "4.1.117.Final"
 
 val munit = "1.1.0"
-val munitScalaCheck = "1.0.0"
+val munitScalaCheck = "1.1.0"
 
 val io_uring = "0.0.26.Final"
 
