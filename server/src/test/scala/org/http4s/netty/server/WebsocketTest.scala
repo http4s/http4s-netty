@@ -32,7 +32,6 @@ import org.http4s.netty.client.NettyWSClientBuilder
 import org.http4s.server.websocket.WebSocketBuilder2
 import scodec.bits.ByteVector
 
-import java.net.http.HttpClient
 import scala.concurrent.duration.DurationInt
 
 abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
@@ -111,8 +110,7 @@ class NettyWebsocketTest
   }
 }
 
-class JDKClientWebsocketTest
-    extends WebsocketTest(Resource.pure(JdkWSClient[IO](HttpClient.newHttpClient()))) {
+class JDKClientWebsocketTest extends WebsocketTest(JdkWSClient.simple[IO]) {
   test("send and receive frames in low-level mode") {
     testLowLevel
   }
