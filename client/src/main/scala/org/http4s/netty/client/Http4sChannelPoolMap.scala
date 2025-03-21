@@ -192,6 +192,15 @@ private[client] class Http4sChannelPoolMap[F[_]](
         None
       )
       val pipeline = channel.pipeline()
+      config.proxy.foreach {
+        case p: HttpProxy =>
+          p.toProxyHandler(key.requestKey).foreach { handler =>
+            void(pipeline.addLast("proxy", handler))
+          }
+        case s: Socks =>
+          void(pipeline.addLast("proxy", s.toProxyHandler))
+      }
+
       (key.requestKey, SSLContextOption.toMaybeSSLContext(config.sslConfig)) match {
         case (RequestKey(Scheme.https, Uri.Authority(_, host, mayBePort)), Some(context)) =>
           void {
@@ -208,15 +217,6 @@ private[client] class Http4sChannelPoolMap[F[_]](
             pipeline.addLast("ssl", new SslHandler(engine))
           }
         case _ => ()
-      }
-
-      config.proxy.foreach {
-        case p: HttpProxy =>
-          p.toProxyHandler(key.requestKey).foreach { handler =>
-            void(pipeline.addLast("proxy", handler))
-          }
-        case s: Socks =>
-          void(pipeline.addLast("proxy", s.toProxyHandler))
       }
 
       configurePipeline(channel, key)
