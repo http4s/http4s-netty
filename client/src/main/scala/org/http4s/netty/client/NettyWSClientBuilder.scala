@@ -196,7 +196,9 @@ class NettyWSClientBuilder[F[_]](
               if (wsCompression) {
                 void(
                   pipeline
-                    .addLast("websocket-compression", WebSocketClientCompressionHandler.INSTANCE))
+                    .addLast(
+                      "websocket-compression",
+                      new WebSocketClientCompressionHandler(maxFramePayloadLength)))
               }
               pipeline.addLast("protocol-handler", websocketinit)
               pipeline.addLast(
