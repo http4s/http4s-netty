@@ -95,7 +95,10 @@ private object NettyPipelineHelpers {
     }
 
     if (config.wsCompression) {
-      void(pipeline.addLast("websocket-compression", new WebSocketServerCompressionHandler))
+      void(
+        pipeline.addLast(
+          "websocket-compression",
+          new WebSocketServerCompressionHandler(config.wsMaxFrameLength)))
     }
     pipeline.addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
     pipeline.addLast("serverStreamsHandler", new HttpStreamsServerHandler())
