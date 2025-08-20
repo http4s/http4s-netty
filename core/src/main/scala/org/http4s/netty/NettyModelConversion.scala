@@ -17,17 +17,16 @@
 package org.http4s
 package netty
 
-import cats.effect.*
-import cats.implicits.*
+import cats.effect._
+import cats.implicits._
 import com.comcast.ip4s.SocketAddress
-import org.playframework.netty.http.*
 import fs2.Chunk
 import fs2.Stream
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.handler.codec.http.*
+import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
 import org.http4s.headers.`Content-Length`
@@ -35,6 +34,7 @@ import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.netty.NettyModelConversion.chunkToBytebuf
 import org.http4s.{HttpVersion => HV}
+import org.playframework.netty.http._
 import org.reactivestreams.FlowAdapters
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault

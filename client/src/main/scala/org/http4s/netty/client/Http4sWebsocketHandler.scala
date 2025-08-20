@@ -24,7 +24,6 @@ import cats.effect.kernel.Deferred
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.syntax.all._
-import org.playframework.netty.HandlerPublisher
 import io.netty.buffer.Unpooled
 import io.netty.channel._
 import io.netty.handler.codec.http.websocketx._
@@ -33,6 +32,7 @@ import org.http4s.client.websocket.WSConnection
 import org.http4s.client.websocket.WSFrame
 import org.http4s.netty.client.Http4sWebsocketHandler.fromWSFrame
 import org.http4s.netty.client.Http4sWebsocketHandler.toWSFrame
+import org.playframework.netty.HandlerPublisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
 import scodec.bits.ByteVector

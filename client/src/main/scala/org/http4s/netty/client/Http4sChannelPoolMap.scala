@@ -20,7 +20,6 @@ package client
 import cats.effect.Async
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
-import org.playframework.netty.http.HttpStreamsClientHandler
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
@@ -49,6 +48,7 @@ import org.http4s.Response
 import org.http4s.Uri
 import org.http4s.Uri.Scheme
 import org.http4s.client.RequestKey
+import org.playframework.netty.http.HttpStreamsClientHandler
 
 import java.net.ConnectException
 import java.util.concurrent.TimeUnit

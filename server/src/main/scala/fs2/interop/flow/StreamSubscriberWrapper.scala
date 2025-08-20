@@ -16,8 +16,8 @@
 
 package fs2.interop.flow
 
-import cats.syntax.all.*
 import cats.effect.Async
+import cats.syntax.all._
 
 import java.util.concurrent.Flow
 import java.util.concurrent.Flow.Subscriber
