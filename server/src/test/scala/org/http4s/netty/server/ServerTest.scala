@@ -168,8 +168,6 @@ abstract class ServerTest extends IOSuite {
     server.use { server =>
       IO.delay {
         val http2 = new HttpClientTransportOverHTTP2(new HTTP2Client())
-        http2.setUseALPN(false)
-
         val client = new HttpClient(http2)
         client.start()
         try {
