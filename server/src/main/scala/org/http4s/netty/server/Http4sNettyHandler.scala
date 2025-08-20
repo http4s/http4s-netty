@@ -26,7 +26,6 @@ import io.netty.channel._
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
-import org.http4s.HttpApp
 import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -256,13 +255,13 @@ object Http4sNettyHandler {
   private[netty] case object InvalidMessageException extends Exception with NoStackTrace
 
   private class WebsocketHandler[F[_]](
-      appFn: WebSocketBuilder2[F] => HttpApp[F],
+      appFn: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]
   )(implicit
       F: Async[F],
-      D: Defer[F]
+      D: Defer[Resource[F, *]]
   ) extends Http4sNettyHandler[F](dispatcher) {
 
     private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
@@ -273,13 +272,14 @@ object Http4sNettyHandler {
         dateString: String
     ): Resource[F, DefaultHttpResponse] =
       Resource.eval(WebSocketBuilder2[F]).flatMap { b =>
-        val app = appFn(b).run
+        val app = appFn(b)
         logger.trace("Http request received by netty: " + request)
         converter
           .fromNettyRequest(channel, request)
           .flatMap { req =>
-            Resource
-              .eval(D.defer(app(req)).recoverWith(serviceErrorHandler(req)))
+            val pf = serviceErrorHandler(req)
+            D.defer(app(req))
+              .recoverWith { case t if pf.isDefinedAt(t) => Resource.eval(pf(t)) }
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
                   b.webSocketKey,
@@ -292,7 +292,7 @@ object Http4sNettyHandler {
   }
 
   def websocket[F[_]: Async](
-      app: WebSocketBuilder2[F] => HttpApp[F],
+      app: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]

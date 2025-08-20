@@ -50,6 +50,8 @@ import io.netty.handler.ssl.JdkSslContext
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslHandler
 import org.http4s.HttpApp
+import org.http4s.Request
+import org.http4s.Response
 import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.defaults
@@ -65,7 +67,7 @@ import scala.concurrent.duration.FiniteDuration
 import scala.reflect.ClassTag
 
 final class NettyServerBuilder[F[_]] private (
-    httpApp: WebSocketBuilder2[F] => HttpApp[F],
+    httpApp: WebSocketBuilder2[F] => HttpResource[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     socketAddress: InetSocketAddress,
     idleTimeout: Duration,
@@ -84,7 +86,7 @@ final class NettyServerBuilder[F[_]] private (
   type Self = NettyServerBuilder[F]
 
   private def copy(
-      httpApp: WebSocketBuilder2[F] => HttpApp[F] = httpApp,
+      httpApp: WebSocketBuilder2[F] => HttpResource[F] = httpApp,
       serviceErrorHandler: ServiceErrorHandler[F] = serviceErrorHandler,
       socketAddress: InetSocketAddress = socketAddress,
       idleTimeout: Duration = idleTimeout,
@@ -165,8 +167,12 @@ final class NettyServerBuilder[F[_]] private (
       case _ => None
     }
 
-  def withHttpApp(httpApp: HttpApp[F]): Self = copy(httpApp = _ => httpApp)
+  def withHttpApp(httpApp: HttpApp[F]): Self =
+    copy(httpApp = _ => (req: Request[F]) => Resource.eval(httpApp.run(req)))
   def withHttpWebSocketApp(httpApp: WebSocketBuilder2[F] => HttpApp[F]): Self =
+    copy(httpApp = httpApp.andThen(app => (req: Request[F]) => Resource.eval(app.run(req))))
+
+  def withHttpWebSocketResource(httpApp: WebSocketBuilder2[F] => HttpResource[F]): Self =
     copy(httpApp = httpApp)
   def bindSocketAddress(address: InetSocketAddress): Self = copy(socketAddress = address)
 
@@ -346,7 +352,7 @@ object NettyServerBuilder {
 
   def apply[F[_]](implicit F: Async[F]): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
-      httpApp = _ => HttpApp.notFound[F],
+      httpApp = _ => _ => Resource.pure(Response.notFound[F]),
       serviceErrorHandler = org.http4s.server.DefaultServiceErrorHandler[F],
       socketAddress = org.http4s.server.defaults.IPv4SocketAddress,
       idleTimeout = org.http4s.server.defaults.IdleTimeout,

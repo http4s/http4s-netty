@@ -17,6 +17,7 @@
 package org.http4s
 
 import cats.effect.Async
+import cats.effect.Resource
 import cats.syntax.all._
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
@@ -69,4 +70,6 @@ package object netty {
     val _ = a
     ()
   }
+
+  type HttpResource[F[_]] = Request[F] => Resource[F, Response[F]]
 }
