@@ -50,7 +50,7 @@ import org.http4s.websocket.WebSocketContext
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame.*
 import org.http4s.websocket.WebSocketSeparatePipe
-import org.http4s.HttpVersion as HV
+import org.http4s.{HttpVersion => HV}
 import org.reactivestreams.FlowAdapters
 import org.reactivestreams.Processor
 import org.reactivestreams.Publisher
@@ -162,17 +162,19 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
       Resource
         .eval(StreamSubscriberWrapper.subscriber[F, WebSocketFrame](1))
         .flatMap { subscriber =>
-            subscriber
-              .stream(Sync[F].unit)
-              .through(receiveSend)
-              .onFinalize(wsContext.webSocket.onClose)
-              .toPublisherResource
+          subscriber
+            .stream(Sync[F].unit)
+            .through(receiveSend)
+            .onFinalize(wsContext.webSocket.onClose)
+            .toPublisherResource
             .map { publisher =>
               val resp: DefaultHttpResponse =
                 new DefaultWebSocketHttpResponse(
                   httpVersion,
                   HttpResponseStatus.OK,
-                  processor(FlowAdapters.toSubscriber(subscriber), FlowAdapters.toPublisher(publisher)),
+                  processor(
+                    FlowAdapters.toSubscriber(subscriber),
+                    FlowAdapters.toPublisher(publisher)),
                   factory)
               wsContext.headers.foreach(appendAllToNetty(_, resp.headers()))
               resp
@@ -191,19 +193,19 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     ()
   }
 
-  private def processor(subscriber: Subscriber[WebSocketFrame], publisher: Publisher[WSFrame]) = new Processor[WSFrame, WSFrame] {
-    def onError(t: Throwable): Unit = subscriber.onError(t)
+  private def processor(subscriber: Subscriber[WebSocketFrame], publisher: Publisher[WSFrame]) =
+    new Processor[WSFrame, WSFrame] {
+      def onError(t: Throwable): Unit = subscriber.onError(t)
 
-    def onComplete(): Unit = subscriber.onComplete()
+      def onComplete(): Unit = subscriber.onComplete()
 
-    def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
+      def onNext(t: WSFrame): Unit = subscriber.onNext(nettyWsToHttp4s(t))
 
-    def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
+      def onSubscribe(s: Subscription): Unit = subscriber.onSubscribe(s)
 
-    def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
-      publisher.subscribe(s)
-  }
-
+      def subscribe(s: Subscriber[_ >: WSFrame]): Unit =
+        publisher.subscribe(s)
+    }
 
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {
