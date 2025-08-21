@@ -18,28 +18,33 @@ package org.http4s.netty
 package client
 
 import io.netty.bootstrap.Bootstrap
+import io.netty.channel.Channel
 import io.netty.channel.ChannelOption
 import io.netty.channel.MultiThreadIoEventLoopGroup
 import io.netty.channel.MultithreadEventLoopGroup
 import io.netty.channel.epoll.Epoll
+import io.netty.channel.epoll.EpollDatagramChannel
 import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollSocketChannel
 import io.netty.channel.kqueue.KQueue
+import io.netty.channel.kqueue.KQueueDatagramChannel
 import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueSocketChannel
 import io.netty.channel.nio.NioIoHandler
+import io.netty.channel.socket.DatagramChannel
 import io.netty.channel.socket.SocketChannel
+import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.channel.uring.IoUring
+import io.netty.channel.uring.IoUringDatagramChannel
 import io.netty.channel.uring.IoUringIoHandler
 import io.netty.channel.uring.IoUringSocketChannel
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.annotation.nowarn
 import scala.reflect.ClassTag
 
-private[client] final case class EventLoopHolder[A <: SocketChannel](
+private[client] final case class EventLoopHolder[A <: Channel](
     eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
   def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
 
@@ -47,7 +52,6 @@ private[client] final case class EventLoopHolder[A <: SocketChannel](
     bootstrap
       .group(eventLoop)
       .channel(runtimeClass)
-      .option(ChannelOption.TCP_NODELAY, java.lang.Boolean.TRUE)
       .option(ChannelOption.SO_KEEPALIVE, java.lang.Boolean.TRUE)
 }
 
@@ -66,7 +70,18 @@ private[client] object EventLoopHolder {
           throw new IllegalStateException("No native transport available"))
     }
 
-  @nowarn("cat=deprecation")
+  def fromUdpTransport(
+      transport: NettyTransport,
+      eventLoopThreads: Int): EventLoopHolder[_ <: DatagramChannel] =
+    transport match {
+      case NettyTransport.Nio =>
+        EventLoopHolder[NioDatagramChannel](
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory()))
+      case n: NettyTransport.Native =>
+        selectUdpTransport(n, eventLoopThreads).getOrElse(
+          throw new IllegalStateException("No native transport available"))
+    }
+
   def selectTransport(
       native: NettyTransport.Native,
       eventLoopThreads: Int): Option[EventLoopHolder[_ <: SocketChannel]] =
@@ -86,7 +101,7 @@ private[client] object EventLoopHolder {
         Some(
           EventLoopHolder[KQueueSocketChannel](
             new MultiThreadIoEventLoopGroup(eventLoopThreads, KQueueIoHandler.newFactory())))
-      case NettyTransport.Auto | NettyTransport.Native =>
+      case NettyTransport.Auto =>
         selectTransport(NettyTransport.IOUring, eventLoopThreads)
           .orElse(selectTransport(NettyTransport.Epoll, eventLoopThreads))
           .orElse(selectTransport(NettyTransport.KQueue, eventLoopThreads))
@@ -94,6 +109,38 @@ private[client] object EventLoopHolder {
             logger.info("Falling back to NIO EventLoopGroup")
             Some(
               EventLoopHolder[NioSocketChannel](
+                new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory())))
+          }
+      case _ => None
+    }
+
+  def selectUdpTransport(
+      native: NettyTransport.Native,
+      eventLoopThreads: Int): Option[EventLoopHolder[_ <: DatagramChannel]] =
+    native match {
+      case NettyTransport.IOUring if IoUring.isAvailable =>
+        logger.info("Using IOUring")
+        Some(
+          EventLoopHolder[IoUringDatagramChannel](
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, IoUringIoHandler.newFactory())))
+      case NettyTransport.Epoll if Epoll.isAvailable =>
+        logger.info("Using Epoll")
+        Some(
+          EventLoopHolder[EpollDatagramChannel](
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, EpollIoHandler.newFactory())))
+      case NettyTransport.KQueue if KQueue.isAvailable =>
+        logger.info("Using KQueue")
+        Some(
+          EventLoopHolder[KQueueDatagramChannel](
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, KQueueIoHandler.newFactory())))
+      case NettyTransport.Auto =>
+        selectUdpTransport(NettyTransport.IOUring, eventLoopThreads)
+          .orElse(selectUdpTransport(NettyTransport.Epoll, eventLoopThreads))
+          .orElse(selectUdpTransport(NettyTransport.KQueue, eventLoopThreads))
+          .orElse {
+            logger.info("Falling back to NIO EventLoopGroup")
+            Some(
+              EventLoopHolder[NioDatagramChannel](
                 new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory())))
           }
       case _ => None

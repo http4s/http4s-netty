@@ -25,8 +25,6 @@ object NettyTransport {
   case object Nio extends NettyTransport
   sealed trait Native extends NettyTransport
 
-  @deprecated("Use Auto instead of Native", since = "0.5.9")
-  case object Native extends Native
   case object Auto extends Native
   case object IOUring extends Native
   case object Epoll extends Native

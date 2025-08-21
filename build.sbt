@@ -94,6 +94,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-codec-http2" % netty,
       "io.netty" % "netty-handler-proxy" % netty,
+      "io.netty" % "netty-codec-http3" % netty,
       "org.http4s" %% "http4s-client-testkit" % http4sVersion % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,

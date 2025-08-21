@@ -60,7 +60,6 @@ import org.http4s.server.websocket.WebSocketBuilder2
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
-import scala.annotation.nowarn
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
@@ -130,7 +129,6 @@ final class NettyServerBuilder[F[_]] private (
         selectNative(n).getOrElse(throw new IllegalStateException("No native transport available"))
     }
 
-  @nowarn("cat=deprecation")
   private def selectNative(n: NettyTransport.Native): Option[EventLoopHolder[_ <: ServerChannel]] =
     n match {
 
@@ -154,7 +152,7 @@ final class NettyServerBuilder[F[_]] private (
           EventLoopHolder[KQueueServerSocketChannel](
             new MultiThreadIoEventLoopGroup(1, KQueueIoHandler.newFactory()),
             new MultiThreadIoEventLoopGroup(eventLoopThreads, KQueueIoHandler.newFactory())))
-      case NettyTransport.Auto | NettyTransport.Native =>
+      case NettyTransport.Auto =>
         selectNative(NettyTransport.IOUring)
           .orElse(selectNative(NettyTransport.Epoll))
           .orElse(selectNative(NettyTransport.KQueue))
