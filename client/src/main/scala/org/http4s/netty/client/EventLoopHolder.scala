@@ -27,8 +27,8 @@ import io.netty.channel.epoll.EpollDatagramChannel
 import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollSocketChannel
 import io.netty.channel.kqueue.KQueue
-import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueDatagramChannel
+import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueSocketChannel
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.DatagramChannel

@@ -21,10 +21,11 @@ import cats.effect.IO
 import cats.effect.kernel.Resource
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
-import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, MultiThreadIoEventLoopGroup}
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInitializer
+import io.netty.channel.MultiThreadIoEventLoopGroup
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.nio.NioDatagramChannel
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.handler.codec.http3.DefaultHttp3DataFrame
 import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame
 import io.netty.handler.codec.http3.Http3
@@ -36,6 +37,7 @@ import io.netty.handler.codec.quic.InsecureQuicTokenHandler
 import io.netty.handler.codec.quic.QuicChannel
 import io.netty.handler.codec.quic.QuicSslContextBuilder
 import io.netty.handler.codec.quic.QuicStreamChannel
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import io.netty.util.ReferenceCountUtil
 import munit.catseffect.IOFixture
 import org.http4s.HttpVersion

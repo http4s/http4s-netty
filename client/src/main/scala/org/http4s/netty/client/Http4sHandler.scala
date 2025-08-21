@@ -19,10 +19,10 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
-import cats.effect.implicits.*
+import cats.effect.implicits._
 import cats.effect.std.Dispatcher
-import cats.syntax.all.*
-import io.netty.channel.*
+import cats.syntax.all._
+import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame
 import io.netty.handler.codec.http2.Http2Error

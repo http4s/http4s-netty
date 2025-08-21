@@ -21,10 +21,10 @@ package client
 import cats.effect.Async
 import cats.effect.Deferred
 import cats.effect.Resource
-import cats.effect.implicits.*
+import cats.effect.implicits._
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
-import cats.syntax.all.*
+import cats.syntax.all._
 import fs2.Chunk
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
@@ -55,7 +55,7 @@ import org.typelevel.ci.CIString
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.TrustManagerFactory
-import scala.concurrent.duration.*
+import scala.concurrent.duration._
 
 class NettyHttp3ClientBuilder[F[_]](
     headerTimeout: Duration,
