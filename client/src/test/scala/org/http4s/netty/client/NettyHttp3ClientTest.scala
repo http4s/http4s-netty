@@ -21,22 +21,21 @@ import cats.effect.IO
 import cats.effect.kernel.Resource
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInitializer
-import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.{ChannelHandlerContext, ChannelInitializer, MultiThreadIoEventLoopGroup}
+import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.nio.NioDatagramChannel
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
-import io.netty.incubator.codec.http3.DefaultHttp3DataFrame
-import io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame
-import io.netty.incubator.codec.http3.Http3
-import io.netty.incubator.codec.http3.Http3DataFrame
-import io.netty.incubator.codec.http3.Http3HeadersFrame
-import io.netty.incubator.codec.http3.Http3RequestStreamInboundHandler
-import io.netty.incubator.codec.http3.Http3ServerConnectionHandler
-import io.netty.incubator.codec.quic.InsecureQuicTokenHandler
-import io.netty.incubator.codec.quic.QuicChannel
-import io.netty.incubator.codec.quic.QuicSslContextBuilder
-import io.netty.incubator.codec.quic.QuicStreamChannel
+import io.netty.handler.codec.http3.DefaultHttp3DataFrame
+import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame
+import io.netty.handler.codec.http3.Http3
+import io.netty.handler.codec.http3.Http3DataFrame
+import io.netty.handler.codec.http3.Http3HeadersFrame
+import io.netty.handler.codec.http3.Http3RequestStreamInboundHandler
+import io.netty.handler.codec.http3.Http3ServerConnectionHandler
+import io.netty.handler.codec.quic.InsecureQuicTokenHandler
+import io.netty.handler.codec.quic.QuicChannel
+import io.netty.handler.codec.quic.QuicSslContextBuilder
+import io.netty.handler.codec.quic.QuicStreamChannel
 import io.netty.util.ReferenceCountUtil
 import munit.catseffect.IOFixture
 import org.http4s.HttpVersion
@@ -73,12 +72,12 @@ class NettyHttp3ClientTest extends IOSuite {
 }
 
 private[client] object PureNettyHttp3Server {
-  def resource(port: Int): Resource[IO, (NioEventLoopGroup, InetSocketAddress)] =
+  def resource(port: Int): Resource[IO, (MultiThreadIoEventLoopGroup, InetSocketAddress)] =
     Resource.make(start(port))(group =>
       IO.blocking(group._1.shutdownGracefully(0L, 0L, TimeUnit.SECONDS)).void)
 
-  def start(port: Int): IO[(NioEventLoopGroup, InetSocketAddress)] = IO.blocking {
-    val group = new NioEventLoopGroup(1)
+  def start(port: Int): IO[(MultiThreadIoEventLoopGroup, InetSocketAddress)] = IO.blocking {
+    val group = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory())
     val key = {
       val ks = KeyStore.getInstance("PKCS12")
       val psw = "password".toCharArray

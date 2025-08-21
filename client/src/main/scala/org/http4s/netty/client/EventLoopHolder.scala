@@ -42,7 +42,6 @@ import io.netty.channel.uring.IoUringSocketChannel
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.annotation.nowarn
 import scala.reflect.ClassTag
 
 private[client] final case class EventLoopHolder[A <: Channel](
@@ -83,7 +82,6 @@ private[client] object EventLoopHolder {
           throw new IllegalStateException("No native transport available"))
     }
 
-  @nowarn("cat=deprecation")
   def selectTransport(
       native: NettyTransport.Native,
       eventLoopThreads: Int): Option[EventLoopHolder[_ <: SocketChannel]] =
@@ -116,7 +114,6 @@ private[client] object EventLoopHolder {
       case _ => None
     }
 
-  @nowarn("cat=deprecation")
   def selectUdpTransport(
       native: NettyTransport.Native,
       eventLoopThreads: Int): Option[EventLoopHolder[_ <: DatagramChannel]] =
