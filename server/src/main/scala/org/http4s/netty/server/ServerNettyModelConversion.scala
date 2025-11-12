@@ -51,6 +51,7 @@ import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame._
 import org.http4s.websocket.WebSocketSeparatePipe
 import org.http4s.{HttpVersion => HV}
+import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.reactivestreams.Processor
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
@@ -204,6 +205,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {
       case Text(str, last) => new TextWebSocketFrame(last, 0, str)
+      case ZeroCopyBinaryText(data, last) => new TextWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data))
       case Binary(data, last) =>
         new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
       case Ping(data) => new PingWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))

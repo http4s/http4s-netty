@@ -29,7 +29,9 @@ import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.jdkhttpclient.JdkWSClient
 import org.http4s.netty.client.NettyWSClientBuilder
+import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.http4s.server.websocket.WebSocketBuilder2
+import org.http4s.websocket.WebSocketFrame
 import scodec.bits.ByteVector
 
 import java.net.http.HttpClient
@@ -62,6 +64,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
       .use { conn =>
         for {
           _ <- conn.send(WSFrame.Text("bar"))
+          _ <- conn.send(WSFrame.Text("zero-copy"))
           _ <- conn.sendMany(List(WSFrame.Binary(ByteVector(3, 99, 12)), WSFrame.Text("foo")))
           _ <- conn.send(WSFrame.Close(1000, "goodbye"))
           recv <- conn.receiveStream.compile.toList
@@ -70,6 +73,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
       .assertEquals(
         List(
           WSFrame.Text("bar"),
+          WSFrame.Text("zero-copy"),
           WSFrame.Binary(ByteVector(3, 99, 12)),
           WSFrame.Text("foo"),
           WSFrame.Close(1000, "goodbye")
@@ -82,15 +86,16 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
       .use { conn =>
         for {
           _ <- conn.send(WSFrame.Binary(ByteVector(15, 2, 3)))
-          _ <- conn.sendMany(List(WSFrame.Text("foo"), WSFrame.Text("bar")))
-          recv <- conn.receiveStream.take(3).compile.toList
+          _ <- conn.sendMany(List(WSFrame.Text("foo"), WSFrame.Text("bar"), WSFrame.Text("zero-copy")))
+          recv <- conn.receiveStream.take(4).compile.toList
         } yield recv
       }
       .assertEquals(
         List(
           WSFrame.Binary(ByteVector(15, 2, 3)),
           WSFrame.Text("foo"),
-          WSFrame.Text("bar")
+          WSFrame.Text("bar"),
+          WSFrame.Text("zero-copy")
         )
       )
   }
@@ -99,7 +104,12 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
 object WebsocketTest {
   def echoRoutes(ws: WebSocketBuilder2[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] { case _ -> Root / "echo" =>
-      ws.build(identity)
+      ws.build {
+        _.map {
+          case t: WebSocketFrame.Text if t.str == "zero-copy" => ZeroCopyBinaryText("zero-copy".getBytes, last = true)
+          case frame => frame
+        }
+      }
     }
 }
 
