@@ -92,8 +92,8 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
               WSFrame.Text("foo"),
               WSFrame.Text("bar"),
               WSFrame.Text("zero-copy"),
-              WSFrame.Text("zero-copy")))
-          recv <- conn.receiveStream.take(4).compile.toList
+              WSFrame.Text("zero-copy-unsafe")))
+          recv <- conn.receiveStream.take(5).compile.toList
         } yield recv
       }
       .assertEquals(
