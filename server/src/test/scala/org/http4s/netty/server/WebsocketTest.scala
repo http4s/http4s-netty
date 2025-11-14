@@ -38,6 +38,7 @@ import java.net.http.HttpClient
 import scala.concurrent.duration.DurationInt
 
 abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuite {
+
   import WebsocketTest._
 
   val server: IOFixture[Uri] = resourceFixture(
@@ -86,7 +87,12 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
       .use { conn =>
         for {
           _ <- conn.send(WSFrame.Binary(ByteVector(15, 2, 3)))
-          _ <- conn.sendMany(List(WSFrame.Text("foo"), WSFrame.Text("bar"), WSFrame.Text("zero-copy")))
+          _ <- conn.sendMany(
+            List(
+              WSFrame.Text("foo"),
+              WSFrame.Text("bar"),
+              WSFrame.Text("zero-copy"),
+              WSFrame.Text("zero-copy")))
           recv <- conn.receiveStream.take(4).compile.toList
         } yield recv
       }
@@ -95,7 +101,8 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
           WSFrame.Binary(ByteVector(15, 2, 3)),
           WSFrame.Text("foo"),
           WSFrame.Text("bar"),
-          WSFrame.Text("zero-copy")
+          WSFrame.Text("zero-copy"),
+          WSFrame.Text("zero-copy-unsafe")
         )
       )
   }
@@ -106,7 +113,10 @@ object WebsocketTest {
     HttpRoutes.of[IO] { case _ -> Root / "echo" =>
       ws.build {
         _.map {
-          case t: WebSocketFrame.Text if t.str == "zero-copy" => ZeroCopyBinaryText("zero-copy".getBytes, last = true)
+          case t: WebSocketFrame.Text if t.str == "zero-copy-unsafe" =>
+            ZeroCopyBinaryText.unsafe("zero-copy-unsafe".getBytes, last = true)
+          case t: WebSocketFrame.Text if t.str == "zero-copy" =>
+            ZeroCopyBinaryText(ByteVector("zero-copy".getBytes), last = true)
           case frame => frame
         }
       }

@@ -205,7 +205,8 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {
       case Text(str, last) => new TextWebSocketFrame(last, 0, str)
-      case ZeroCopyBinaryText(data, last) => new TextWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data))
+      case ZeroCopyBinaryText(data, last) =>
+        new TextWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArrayUnsafe))
       case Binary(data, last) =>
         new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
       case Ping(data) => new PingWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
