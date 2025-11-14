@@ -43,6 +43,7 @@ import org.http4s.Response
 import org.http4s.internal.tls._
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.NettyModelConversion.bytebufToArray
+import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.http4s.server.SecureSession
 import org.http4s.server.ServerRequestKeys
 import org.http4s.websocket.WebSocketCombinedPipe
@@ -204,6 +205,9 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
   private[this] def wsbitsToNetty(w: WebSocketFrame): WSFrame =
     w match {
       case Text(str, last) => new TextWebSocketFrame(last, 0, str)
+      case ZeroCopyBinaryText(data, last) =>
+        // data.toArrayUnsafe to avoid copying the underlying array
+        new TextWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArrayUnsafe))
       case Binary(data, last) =>
         new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
       case Ping(data) => new PingWebSocketFrame(Unpooled.wrappedBuffer(data.toArray))
