@@ -206,6 +206,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     w match {
       case Text(str, last) => new TextWebSocketFrame(last, 0, str)
       case ZeroCopyBinaryText(data, last) =>
+        // data.toArrayUnsafe to avoid copying the underlying array
         new TextWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArrayUnsafe))
       case Binary(data, last) =>
         new BinaryWebSocketFrame(last, 0, Unpooled.wrappedBuffer(data.toArray))
