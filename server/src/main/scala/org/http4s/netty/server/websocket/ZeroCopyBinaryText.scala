@@ -31,5 +31,6 @@ final case class ZeroCopyBinaryText(data: ByteVector, last: Boolean) extends Web
 }
 
 object ZeroCopyBinaryText {
-  def unsafe(data: Array[Byte], last: Boolean) = ZeroCopyBinaryText(ByteVector.view(data), last)
+  def unsafe(data: Array[Byte], last: Boolean): ZeroCopyBinaryText =
+    ZeroCopyBinaryText(ByteVector.view(data), last)
 }

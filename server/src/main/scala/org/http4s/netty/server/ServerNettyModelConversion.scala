@@ -43,6 +43,7 @@ import org.http4s.Response
 import org.http4s.internal.tls._
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.NettyModelConversion.bytebufToArray
+import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.http4s.server.SecureSession
 import org.http4s.server.ServerRequestKeys
 import org.http4s.websocket.WebSocketCombinedPipe
@@ -51,7 +52,6 @@ import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame._
 import org.http4s.websocket.WebSocketSeparatePipe
 import org.http4s.{HttpVersion => HV}
-import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.reactivestreams.Processor
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
