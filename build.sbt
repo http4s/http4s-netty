@@ -13,19 +13,19 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.5",
-    crossScalaVersions := Seq(Scala213, Scala212, "3.3.6"),
+    crossScalaVersions := Seq(Scala213, Scala212, "3.3.7"),
     ThisBuild / scalaVersion := Scala213,
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
-val http4sVersion = "0.23.32"
+val http4sVersion = "0.23.33"
 
 val jetty = "12.1.4"
 
-val netty = "4.1.127.Final"
+val netty = "4.1.128.Final"
 
-val munit = "1.2.0"
+val munit = "1.2.1"
 val munitScalaCheck = "1.2.0"
 
 val io_uring = "0.0.26.Final"
@@ -49,7 +49,7 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "co.fs2" %% "fs2-reactive-streams" % "3.12.2",
-      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.15")
+      ("com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.16")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
