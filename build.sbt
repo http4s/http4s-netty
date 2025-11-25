@@ -107,7 +107,7 @@ lazy val client = project
       "org.http4s" %% "http4s-client" % http4sVersion,
       "io.netty" % "netty-codec-http2" % netty,
       "io.netty" % "netty-handler-proxy" % netty,
-      "org.http4s" %% "http4s-client-testkit" % "0.23.30" % Test,
+      "org.http4s" %% "http4s-client-testkit" % "0.23.33" % Test,
       "org.http4s" %% "http4s-ember-server" % http4sVersion % Test,
       "org.http4s" %% "http4s-dsl" % http4sVersion % Test,
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2" % Test,
