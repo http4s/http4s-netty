@@ -19,19 +19,19 @@ package client
 
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.ChannelOption
-import io.netty.channel.MultithreadEventLoopGroup
+import io.netty.channel.MultiThreadIoEventLoopGroup
 import io.netty.channel.epoll.Epoll
-import io.netty.channel.epoll.EpollEventLoopGroup
+import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollSocketChannel
 import io.netty.channel.kqueue.KQueue
-import io.netty.channel.kqueue.KQueueEventLoopGroup
+import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueSocketChannel
-import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.incubator.channel.uring.IOUring
-import io.netty.incubator.channel.uring.IOUringEventLoopGroup
-import io.netty.incubator.channel.uring.IOUringSocketChannel
+import io.netty.channel.uring.IoUring
+import io.netty.channel.uring.IoUringIoHandler
+import io.netty.channel.uring.IoUringSocketChannel
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -39,7 +39,7 @@ import scala.annotation.nowarn
 import scala.reflect.ClassTag
 
 private[client] final case class EventLoopHolder[A <: SocketChannel](
-    eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
+    eventLoop: MultiThreadIoEventLoopGroup)(implicit classTag: ClassTag[A]) {
   def runtimeClass: Class[A] = classTag.runtimeClass.asInstanceOf[Class[A]]
 
   def configure(bootstrap: Bootstrap): Bootstrap =
@@ -58,7 +58,8 @@ private[client] object EventLoopHolder {
       eventLoopThreads: Int): EventLoopHolder[_ <: SocketChannel] =
     transport match {
       case NettyTransport.Nio =>
-        EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads))
+        EventLoopHolder[NioSocketChannel](
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory()))
       case n: NettyTransport.Native =>
         selectTransport(n, eventLoopThreads).getOrElse(
           throw new IllegalStateException("No native transport available"))
@@ -69,22 +70,26 @@ private[client] object EventLoopHolder {
       native: NettyTransport.Native,
       eventLoopThreads: Int): Option[EventLoopHolder[_ <: SocketChannel]] =
     native match {
-      case NettyTransport.IOUring if IOUring.isAvailable =>
+      case NettyTransport.IOUring if IoUring.isAvailable =>
         logger.info("Using IOUring")
-        Some(EventLoopHolder[IOUringSocketChannel](new IOUringEventLoopGroup(eventLoopThreads)))
+        Some(EventLoopHolder[IoUringSocketChannel](
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, IoUringIoHandler.newFactory())))
       case NettyTransport.Epoll if Epoll.isAvailable =>
         logger.info("Using Epoll")
-        Some(EventLoopHolder[EpollSocketChannel](new EpollEventLoopGroup(eventLoopThreads)))
+        Some(EventLoopHolder[EpollSocketChannel](
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, EpollIoHandler.newFactory())))
       case NettyTransport.KQueue if KQueue.isAvailable =>
         logger.info("Using KQueue")
-        Some(EventLoopHolder[KQueueSocketChannel](new KQueueEventLoopGroup(eventLoopThreads)))
+        Some(EventLoopHolder[KQueueSocketChannel](
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, KQueueIoHandler.newFactory())))
       case NettyTransport.Auto | NettyTransport.Native =>
         selectTransport(NettyTransport.IOUring, eventLoopThreads)
           .orElse(selectTransport(NettyTransport.Epoll, eventLoopThreads))
           .orElse(selectTransport(NettyTransport.KQueue, eventLoopThreads))
           .orElse {
             logger.info("Falling back to NIO EventLoopGroup")
-            Some(EventLoopHolder[NioSocketChannel](new NioEventLoopGroup(eventLoopThreads)))
+            Some(EventLoopHolder[NioSocketChannel](
+              new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory())))
           }
       case _ => None
     }

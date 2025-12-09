@@ -28,14 +28,17 @@ import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBufAllocator
 import io.netty.channel._
 import io.netty.channel.epoll.Epoll
-import io.netty.channel.epoll.EpollEventLoopGroup
+import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollServerSocketChannel
 import io.netty.channel.kqueue.KQueue
-import io.netty.channel.kqueue.KQueueEventLoopGroup
+import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueServerSocketChannel
-import io.netty.channel.nio.NioEventLoopGroup
+import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.SocketChannel
 import io.netty.channel.socket.nio.NioServerSocketChannel
+import io.netty.channel.uring.IoUring
+import io.netty.channel.uring.IoUringIoHandler
+import io.netty.channel.uring.IoUringServerSocketChannel
 import io.netty.handler.ssl.ApplicationProtocolConfig
 import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
 import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
@@ -46,9 +49,6 @@ import io.netty.handler.ssl.IdentityCipherSuiteFilter
 import io.netty.handler.ssl.JdkSslContext
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslHandler
-import io.netty.incubator.channel.uring.IOUring
-import io.netty.incubator.channel.uring.IOUringEventLoopGroup
-import io.netty.incubator.channel.uring.IOUringServerSocketChannel
 import org.http4s.HttpApp
 import org.http4s.server.Server
 import org.http4s.server.ServiceErrorHandler
@@ -121,8 +121,8 @@ final class NettyServerBuilder[F[_]] private (
       case NettyTransport.Nio =>
         logger.info("Using NIO EventLoopGroup")
         EventLoopHolder[NioServerSocketChannel](
-          new NioEventLoopGroup(1),
-          new NioEventLoopGroup(eventLoopThreads)
+          new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory()),
+          new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory())
         )
       case n: NettyTransport.Native =>
         selectNative(n).getOrElse(throw new IllegalStateException("No native transport available"))
@@ -132,27 +132,25 @@ final class NettyServerBuilder[F[_]] private (
   private def selectNative(n: NettyTransport.Native): Option[EventLoopHolder[_ <: ServerChannel]] =
     n match {
 
-      case NettyTransport.IOUring if IOUring.isAvailable =>
+      case NettyTransport.IOUring if IoUring.isAvailable =>
         logger.info("Using IOUring")
         Some(
-          EventLoopHolder[IOUringServerSocketChannel](
-            new IOUringEventLoopGroup(1),
-            new IOUringEventLoopGroup(eventLoopThreads)))
+          EventLoopHolder[IoUringServerSocketChannel](
+            new MultiThreadIoEventLoopGroup(1, IoUringIoHandler.newFactory()),
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, IoUringIoHandler.newFactory())))
       case NettyTransport.Epoll if Epoll.isAvailable =>
         logger.info("Using Epoll")
-        val acceptorEventLoopGroup = new EpollEventLoopGroup(1)
-        acceptorEventLoopGroup.setIoRatio(100)
-        val workerEventLoopGroup = new EpollEventLoopGroup(eventLoopThreads)
-        workerEventLoopGroup.setIoRatio(80)
         Some(
-          EventLoopHolder[EpollServerSocketChannel](acceptorEventLoopGroup, workerEventLoopGroup))
+          EventLoopHolder[EpollServerSocketChannel](
+            new MultiThreadIoEventLoopGroup(1, EpollIoHandler.newFactory()),
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, EpollIoHandler.newFactory())))
 
       case NettyTransport.KQueue if KQueue.isAvailable =>
         logger.info("Using KQueue")
         Some(
           EventLoopHolder[KQueueServerSocketChannel](
-            new KQueueEventLoopGroup(1),
-            new KQueueEventLoopGroup(eventLoopThreads)))
+            new MultiThreadIoEventLoopGroup(1, KQueueIoHandler.newFactory()),
+            new MultiThreadIoEventLoopGroup(eventLoopThreads, KQueueIoHandler.newFactory())))
       case NettyTransport.Auto | NettyTransport.Native =>
         selectNative(NettyTransport.IOUring)
           .orElse(selectNative(NettyTransport.Epoll))
@@ -160,8 +158,8 @@ final class NettyServerBuilder[F[_]] private (
           .orElse(Some {
             logger.info("Falling back to NIO EventLoopGroup")
             EventLoopHolder[NioServerSocketChannel](
-              new NioEventLoopGroup(1),
-              new NioEventLoopGroup(eventLoopThreads))
+              new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory()),
+              new MultiThreadIoEventLoopGroup(eventLoopThreads, NioIoHandler.newFactory()))
           })
       case _ => None
     }
@@ -318,8 +316,8 @@ final class NettyServerBuilder[F[_]] private (
   def stream: fs2.Stream[F, Server] = fs2.Stream.resource(resource)
 
   private case class EventLoopHolder[A <: ServerChannel](
-      parent: MultithreadEventLoopGroup,
-      eventLoop: MultithreadEventLoopGroup)(implicit classTag: ClassTag[A]) {
+      parent: MultiThreadIoEventLoopGroup,
+      eventLoop: MultiThreadIoEventLoopGroup)(implicit classTag: ClassTag[A]) {
     def shutdown(): Unit = {
       eventLoop.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
       parent.shutdownGracefully(1000, 1500, TimeUnit.MILLISECONDS)
