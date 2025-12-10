@@ -49,7 +49,6 @@ lazy val core = project
   .settings(
     name := "http4s-netty-core",
     libraryDependencies ++= List(
-      "co.fs2" %% "fs2-core" % "3.12.0",
       "org.reactivestreams" % "reactive-streams-flow-adapters" % "1.0.2",
       ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.6")
         .exclude("io.netty", "netty-codec-http")
