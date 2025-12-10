@@ -1,7 +1,7 @@
 import com.typesafe.tools.mima.core._
 
 val Scala212 = "2.12.20"
-val Scala213 = "2.13.16"
+val Scala213 = "2.13.18"
 
 inThisBuild(
   Seq(
@@ -13,21 +13,21 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.7",
-    crossScalaVersions := Seq(Scala213, Scala212, "3.3.6"),
+    crossScalaVersions := Seq(Scala213, Scala212, "3.3.7"),
     ThisBuild / scalaVersion := Scala213,
     tlJdkRelease := Some(11),
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
   )
 )
 
-val http4sVersion = "0.23.30"
+val http4sVersion = "0.23.33"
 
-val jetty = "12.0.25"
+val jetty = "12.1.5"
 
-val netty = "4.2.4.Final"
+val netty = "4.2.7.Final"
 
-val munit = "1.1.1"
-val munitScalaCheck = "1.1.0"
+val munit = "1.2.1"
+val munitScalaCheck = "1.2.0"
 
 val nativeNettyModules =
   Seq(
@@ -51,7 +51,7 @@ lazy val core = project
     libraryDependencies ++= List(
       "co.fs2" %% "fs2-core" % "3.12.0",
       "org.reactivestreams" % "reactive-streams-flow-adapters" % "1.0.2",
-      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.4")
+      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.6")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
