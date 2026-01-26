@@ -101,7 +101,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
         minorIs0 = true
         HttpVersion.HTTP_1_0
       } else
-        HttpVersion.valueOf(httpRequest.httpVersion.toString)
+        HttpVersion.valueOf(httpRequest.httpVersion.renderString)
 
     httpResponse.attributes.lookup(key) match {
       case Some(wsContext) if !minorIs0 =>
