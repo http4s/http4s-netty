@@ -32,10 +32,12 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
+import org.http4s.Header
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.netty.NettyModelConversion.chunkToBytebuf
+import org.http4s.syntax.header._
 import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
@@ -302,7 +304,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           val contentLength = httpResponse.contentLength
           (transferEncoding, contentLength) match {
             case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
-              r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
+              r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.value)
               ()
             case (_, Some(len)) =>
               r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
@@ -322,7 +324,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
       httpRequest.headers.get[ConnHeader] match {
         case Some(conn) =>
-          response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
+          response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
         case None =>
           if (minorVersionIs0) { // Close by default for Http 1.0
             response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
