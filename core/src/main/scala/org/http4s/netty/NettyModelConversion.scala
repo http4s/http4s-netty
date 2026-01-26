@@ -32,12 +32,13 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
+import org.http4s.Header
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
 import org.http4s.netty.NettyModelConversion.chunkToBytebuf
 import org.http4s.syntax.header._
-import org.http4s.{Header, HttpVersion => HV}
+import org.http4s.{HttpVersion => HV}
 import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
 
