@@ -77,7 +77,7 @@ lazy val server = project
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.10.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test,
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.13.0" % Test
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
