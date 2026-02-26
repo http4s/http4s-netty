@@ -19,6 +19,7 @@ package server
 
 import cats.Defer
 import cats.effect.Async
+import cats.effect.Deferred
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
@@ -27,6 +28,7 @@ import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
 import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
+import org.http4s.netty.server.Http4sNettyHandler.WritabilityGate
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
@@ -36,6 +38,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
 import scala.collection.mutable.{Queue => MutableQueue}
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -93,13 +96,27 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
   protected val logger = getLogger
 
-  /** Handle the given request. Note: Handle implementations fork into user ExecutionContext Returns
-    * the cleanup action along with the drain action
+  protected val writabilityGate: WritabilityGate[F] = new WritabilityGate[F]()
+
+  /** Handle the given request. Implementations write the response directly to the channel via the
+    * ChannelHandlerContext.
     */
-  def handle(
-      channel: Channel,
-      request: HttpRequest,
-      dateString: String): Resource[F, DefaultHttpResponse]
+  def handle(ctx: ChannelHandlerContext, request: HttpRequest, dateString: String): F[Unit]
+
+  override def channelWritabilityChanged(ctx: ChannelHandlerContext): Unit = {
+    if (ctx.channel().isWritable) {
+      writabilityGate.signal(disp)
+    }
+    super.channelWritabilityChanged(ctx)
+  }
+
+  override def channelInactive(ctx: ChannelHandlerContext): Unit = {
+    // Wake any fiber suspended on the writability gate so it can proceed
+    // to writeAndFlushF, which will fail on the closed channel, triggering
+    // the normal error/finalizer path.
+    writabilityGate.signal(disp)
+    super.channelInactive(ctx)
+  }
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Object): Unit = {
     logger.trace(s"channelRead: ctx = $ctx, msg = $msg")
@@ -111,10 +128,8 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
     msg match {
       case req: HttpRequest =>
-        val reqAndCleanup = handle(ctx.channel(), req, cachedDateString).allocated
-        // Start execution of the handler.
-
-        val (f, cancelRequest) = disp.unsafeToFutureCancelable(reqAndCleanup)
+        val handleF = handle(ctx, req, cachedDateString)
+        val (f, cancelRequest) = disp.unsafeToFutureCancelable(handleF)
         pendingResponses.enqueue(cancelRequest)
 
         // This attaches all writes sequentially using
@@ -122,17 +137,12 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
         // CTX switch the writes.
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
           f.transform {
-            case Success((response, cleanup)) =>
+            case Success(()) =>
               pendingResponses.dequeue()
               if (pendingResponses.isEmpty)
                 // Since we've now gone down to zero, we need to issue a
                 // read, in case we ignored an earlier read complete
                 void(ctx.read())
-              void {
-                ctx
-                  .writeAndFlush(response)
-                  .addListener((_: ChannelFuture) => disp.unsafeRunAndForget(cleanup))
-              }
               Success(())
 
             case Failure(NonFatal(e)) =>
@@ -254,6 +264,55 @@ object Http4sNettyHandler {
 
   private[netty] case object InvalidMessageException extends Exception with NoStackTrace
 
+  /** Binary suspend/resume gate that bridges Netty's `channelWritabilityChanged` event to a
+    * cats-effect fiber. Before each body chunk write, the fiber calls `awaitWritable`; if the
+    * channel is not writable (write buffer exceeds the high watermark), the fiber suspends on a
+    * `Deferred` until the channel drains below the low watermark and `signal` is called.
+    *
+    * Only one fiber writes at a time per connection (HTTP/1.1 responses are serialized by
+    * `lastResponseSent`), so a single-waiter gate is sufficient.
+    *
+    * Uses `AtomicReference` rather than `Ref[F, _]` because the gate is constructed eagerly in the
+    * handler constructor (Java-land, no `F` available).
+    */
+  private[server] final class WritabilityGate[F[_]](implicit F: Async[F]) {
+    private val waiter: AtomicReference[Deferred[F, Unit]] =
+      new AtomicReference[Deferred[F, Unit]]()
+
+    /** Suspend the calling fiber until the channel is writable. If the channel is already writable
+      * or inactive (closed), returns immediately — an inactive channel will fail on the subsequent
+      * `writeAndFlushF`, which is the correct error path.
+      */
+    def awaitWritable(ctx: ChannelHandlerContext): F[Unit] =
+      F.delay(ctx.channel().isWritable || !ctx.channel().isActive).flatMap { canProceed =>
+        if (canProceed) F.unit
+        else
+          Deferred[F, Unit].flatMap { gate =>
+            F.delay(waiter.set(gate)) *>
+              // Double-check: the channel may have become writable (or closed) between our
+              // check and setting the waiter — channelWritabilityChanged (or channelInactive)
+              // would have fired finding no waiter. Re-check catches this race.
+              F.delay(ctx.channel().isWritable || !ctx.channel().isActive).flatMap { canProceedNow =>
+                if (canProceedNow) {
+                  // Clear the waiter we just set — nobody will signal it.
+                  F.delay { val _ = waiter.compareAndSet(gate, null) }
+                } else
+                  gate.get
+              }
+          }
+      }
+
+    /** Complete the pending waiter (if any), waking the suspended fiber. Called from the Netty
+      * event loop thread via `channelWritabilityChanged`.
+      */
+    def signal(disp: Dispatcher[F]): Unit = {
+      val gate = waiter.getAndSet(null)
+      if (gate != null) {
+        disp.unsafeRunAndForget(gate.complete(()))
+      }
+    }
+  }
+
   private class WebsocketHandler[F[_]](
       appFn: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
@@ -267,29 +326,52 @@ object Http4sNettyHandler {
     private[this] val converter: ServerNettyModelConversion[F] = new ServerNettyModelConversion[F]
 
     override def handle(
-        channel: Channel,
+        ctx: ChannelHandlerContext,
         request: HttpRequest,
         dateString: String
-    ): Resource[F, DefaultHttpResponse] =
-      Resource.eval(WebSocketBuilder2[F]).flatMap { b =>
-        val app = appFn(b)
-        logger.trace("Http request received by netty: " + request)
-        converter
-          .fromNettyRequest(channel, request)
-          .flatMap { req =>
-            val pf = serviceErrorHandler(req)
-            D.defer(app(req))
-              .recoverWith { case t if pf.isDefinedAt(t) => Resource.eval(pf(t)) }
-              .flatMap(
-                converter.toNettyResponseWithWebsocket(
-                  channel,
-                  b.webSocketKey,
-                  req,
-                  _,
-                  dateString,
-                  maxWSPayloadLength))
-          }
-      }
+    ): F[Unit] =
+      Resource
+        .eval(WebSocketBuilder2[F])
+        .flatMap { b =>
+          val app = appFn(b)
+          logger.trace("Http request received by netty: " + request)
+          converter
+            .fromNettyRequest(ctx.channel(), request)
+            .evalMap { req =>
+              val pf = serviceErrorHandler(req)
+              // The app is cancelable (via poll) so that idle timeouts
+              // can interrupt slow handlers. Once the app returns a
+              // response, the uncancelable boundary ensures the Resource
+              // finalizer fires — critical for HttpResource routes like:
+              //   client.run(backendReq)  // Resource release = connection release
+              // Without uncancelable, cancellation between .allocated and
+              // the F.guarantee would lose `release`, leaking upstream
+              // connections. writeResponseWithWebsocket is also internally
+              // uncancelable (writeBodyResponse always drains the body to
+              // fire stream finalizers), so it completes even if the
+              // channel is already closed.
+              F.uncancelable { poll =>
+                poll(
+                  D.defer(app(req))
+                    .recoverWith { case t if pf.isDefinedAt(t) => Resource.eval(pf(t)) }
+                    .allocated
+                ).flatMap { case (response, release) =>
+                  F.guarantee(
+                    converter.writeResponseWithWebsocket(
+                      b.webSocketKey,
+                      ctx,
+                      req,
+                      response,
+                      dateString,
+                      maxWSPayloadLength,
+                      writabilityGate.awaitWritable),
+                    release
+                  )
+                }
+              }
+            }
+        }
+        .use_
   }
 
   def websocket[F[_]: Async](

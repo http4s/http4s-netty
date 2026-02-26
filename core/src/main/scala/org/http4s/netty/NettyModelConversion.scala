@@ -236,7 +236,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
   /** Append all headers that _aren't_ `Transfer-Encoding` or `Content-Length`
     */
-  private[this] def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit =
+  protected def appendSomeToNetty(header: Header.Raw, nettyHeaders: HttpHeaders): Unit =
     if (header.name != `Transfer-Encoding`.name && header.name != `Content-Length`.name)
       void(nettyHeaders.add(header.name.toString, header.value))
 
@@ -270,35 +270,16 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           HttpResponseStatus.valueOf(httpResponse.status.code)
         )
         httpResponse.headers.foreach(appendSomeToNetty(_, r.headers()))
-        // HEAD: restore Content-Length so the client knows the representation size.
-        // We intentionally omit Transfer-Encoding: the HttpServerCodec strips it
-        // from the wire anyway, and adding it was the root cause of illegal chunk
-        // framing on HEAD responses when a standalone HttpResponseEncoder was used.
-        if (httpRequest.method == Method.HEAD) {
-          httpResponse.contentLength.foreach { len =>
-            r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
-            ()
-          }
-        }
+        // Edge case: HEAD
+        // Note: Depending on the status of the response, this may be removed further
+        // down the netty pipeline by the HttpResponseEncoder
+        if (httpRequest.method == Method.HEAD)
+          addHeadResponseHeaders(httpResponse, minorVersionIs0, r.headers())
         Resource.pure[F, DefaultHttpResponse](r)
       }
 
     response.map { response =>
-      // Add the cached date if not present
-      if (!response.headers().contains(HttpHeaderNames.DATE)) {
-        response.headers().add(HttpHeaderNames.DATE, dateString)
-        ()
-      }
-
-      httpRequest.headers.get[ConnHeader] match {
-        case Some(conn) =>
-          response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
-        case None =>
-          if (minorVersionIs0) { // Close by default for Http 1.0
-            response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
-            ()
-          }
-      }
+      addDateAndConnectionHeaders(response.headers(), httpRequest, dateString, minorVersionIs0)
       response
     }
   }
@@ -325,19 +306,20 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         response
       }
 
-  private def transferEncoding(
+  /** Write TE/CL headers to the given HttpHeaders based on the http4s Headers. Extracted so
+    * subclasses can use it without needing a StreamedHttpMessage.
+    */
+  protected def addTransferOrContentLengthHeaders(
       headers: Headers,
       minorIs0: Boolean,
-      response: StreamedHttpMessage): Unit = {
-    headers.foreach(appendSomeToNetty(_, response.headers()))
+      nettyHeaders: HttpHeaders): Unit = {
     val transferEncoding = headers.get[`Transfer-Encoding`]
     headers.get[`Content-Length`] match {
       case Some(clenHeader) if transferEncoding.forall(!_.hasChunked) || minorIs0 =>
         // HTTP 1.1: we have a length and no chunked encoding
         // HTTP 1.0: we have a length
-
         // Ignore transfer-encoding if it's not chunked
-        response.headers().add(HttpHeaderNames.CONTENT_LENGTH, clenHeader.length)
+        nettyHeaders.add(HttpHeaderNames.CONTENT_LENGTH, clenHeader.length)
 
       case _ =>
         if (!minorIs0)
@@ -347,17 +329,14 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
                 tr.values.map { v =>
                   // Necessary due to the way netty does transfer encoding checks.
                   if (v != TransferCoding.chunked) {
-                    response.headers().add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
+                    nettyHeaders.add(HttpHeaderNames.TRANSFER_ENCODING, v.coding)
                     ()
                   }
                 }
-                response
-                  .headers()
+                nettyHeaders
                   .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
               case None =>
-                // Netty reactive streams transfers bodies as chunked transfer encoding anyway.
-                response
-                  .headers()
+                nettyHeaders
                   .add(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
             }
           }
@@ -369,6 +348,63 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       // By just spamming http 1.0 Requests, forcing in-memory buffering and OOM.
     }
     ()
+  }
+
+  private def transferEncoding(
+      headers: Headers,
+      minorIs0: Boolean,
+      response: StreamedHttpMessage): Unit = {
+    headers.foreach(appendSomeToNetty(_, response.headers()))
+    addTransferOrContentLengthHeaders(headers, minorIs0, response.headers())
+  }
+
+  /** Add TE/CL headers for HEAD responses (which have no body but should report the headers they
+    * would have sent with a GET).
+    */
+  protected def addHeadResponseHeaders(
+      httpResponse: Response[F],
+      minorIs0: Boolean,
+      nettyHeaders: HttpHeaders): Unit = {
+    val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
+    val contentLength = httpResponse.contentLength
+    (transferEncoding, contentLength) match {
+      case (Some(enc), _) if enc.hasChunked && !minorIs0 =>
+        nettyHeaders.add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
+        ()
+      case (_, Some(len)) =>
+        nettyHeaders.add(HttpHeaderNames.CONTENT_LENGTH, len)
+        ()
+      case _ => // no-op
+    }
+  }
+
+  /** Add Date and Connection headers to a response.
+    *
+    * @param dateString
+    *   Cached formatted date string. Added only if no Date header is already present.
+    * @param minorIs0
+    *   True for HTTP/1.0. HTTP/1.0 defaults to Connection: close.
+    */
+  protected def addDateAndConnectionHeaders(
+      nettyHeaders: HttpHeaders,
+      httpRequest: Request[F],
+      dateString: String,
+      minorIs0: Boolean
+  ): Unit = {
+    if (!nettyHeaders.contains(HttpHeaderNames.DATE)) {
+      nettyHeaders.add(HttpHeaderNames.DATE, dateString)
+      ()
+    }
+    httpRequest.headers.get[ConnHeader] match {
+      case Some(conn) =>
+        nettyHeaders.add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
+        ()
+      case None =>
+        if (minorIs0) {
+          nettyHeaders.add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+          ()
+        }
+    }
   }
 
   /** Convert a Chunk to a Netty ByteBuf. */
@@ -413,6 +449,16 @@ object NettyModelConversion {
     }
     Headers(buffer.result())
   }
+
+  /** Resolve an http4s HttpVersion to a Netty HttpVersion plus a flag indicating HTTP/1.0. */
+  private[netty] def resolveHttpVersion(
+      version: HV): (io.netty.handler.codec.http.HttpVersion, Boolean) =
+    if (version == HV.`HTTP/1.1`)
+      (io.netty.handler.codec.http.HttpVersion.HTTP_1_1, false)
+    else if (version == HV.`HTTP/1.0`)
+      (io.netty.handler.codec.http.HttpVersion.HTTP_1_0, true)
+    else
+      (io.netty.handler.codec.http.HttpVersion.valueOf(version.toString), false)
 
   private[netty] def bytebufToArray(buf: ByteBuf, release: Boolean = true): Array[Byte] = {
     val array = ByteBufUtil.getBytes(buf)
