@@ -33,7 +33,6 @@ import org.http4s.Header
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
-import org.http4s.syntax.header._
 import org.http4s.{HttpVersion => HV}
 import org.playframework.netty.http._
 import org.reactivestreams.FlowAdapters
@@ -274,7 +273,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         // Note: Depending on the status of the response, this may be removed further
         // down the netty pipeline by the HttpResponseEncoder
         if (httpRequest.method == Method.HEAD)
-          addHeadResponseHeaders(httpResponse, minorVersionIs0, r.headers())
+          addHeadResponseHeaders(httpResponse, r.headers())
         Resource.pure[F, DefaultHttpResponse](r)
       }
 
@@ -358,25 +357,16 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     addTransferOrContentLengthHeaders(headers, minorIs0, response.headers())
   }
 
-  /** Add TE/CL headers for HEAD responses (which have no body but should report the headers they
-    * would have sent with a GET).
+  /** Add Content-Length for HEAD responses so the client knows the size the GET body would have.
+    *
+    * Transfer-Encoding is intentionally omitted: RFC 9110 Section 9.3.2 says payload headers MAY be
+    * omitted from HEAD responses, and sending `Transfer-Encoding: chunked` causes the Netty HTTP
+    * client to hang waiting for a chunked body that never arrives.
     */
-  protected def addHeadResponseHeaders(
-      httpResponse: Response[F],
-      minorIs0: Boolean,
-      nettyHeaders: HttpHeaders): Unit = {
-    val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
-    val contentLength = httpResponse.contentLength
-    (transferEncoding, contentLength) match {
-      case (Some(enc), _) if enc.hasChunked && !minorIs0 =>
-        nettyHeaders.add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
-        ()
-      case (_, Some(len)) =>
-        nettyHeaders.add(HttpHeaderNames.CONTENT_LENGTH, len)
-        ()
-      case _ => // no-op
+  protected def addHeadResponseHeaders(httpResponse: Response[F], nettyHeaders: HttpHeaders): Unit =
+    httpResponse.contentLength.foreach { len =>
+      nettyHeaders.add(HttpHeaderNames.CONTENT_LENGTH, len)
     }
-  }
 
   /** Add Date and Connection headers to a response.
     *

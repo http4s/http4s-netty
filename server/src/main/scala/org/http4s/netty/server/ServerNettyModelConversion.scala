@@ -322,7 +322,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     )
     httpResponse.headers.foreach(appendSomeToNetty(_, response.headers()))
     if (httpRequest.method == Method.HEAD) {
-      addHeadResponseHeaders(httpResponse, minorIs0, response.headers())
+      addHeadResponseHeaders(httpResponse, response.headers())
     }
     addDateAndConnectionHeaders(response.headers(), httpRequest, dateString, minorIs0)
     writeAndFlushF(ctx, response) *>
