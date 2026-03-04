@@ -21,22 +21,22 @@ import io.netty.channel.ChannelPromise;
 
 /**
  * Java bridge that provides access to methods on the package-private
- * {@link HttpStreamsHandler} class. Scala 3 enforces Java access modifiers at
+ * {@code HttpStreamsHandler} class. Scala 3 enforces Java access modifiers at
  * runtime so a Scala subclass in another package cannot call
  * {@code super.write()} or {@code sentOutMessage()} directly.
  *
  * <p>By living inside {@code org.playframework.netty.http} this class has the
  * necessary package access, and exposes thin delegating methods that Scala code
- * can call without triggering an {@link IllegalAccessError}.
+ * can call without triggering an {@code IllegalAccessError}.
  */
 public abstract class HttpStreamsServerHandlerBridge extends HttpStreamsServerHandler {
 
-    /** Delegate to {@link HttpStreamsHandler#write}. */
+    /** Delegate to {@code HttpStreamsHandler#write}. */
     protected void superWrite(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         super.write(ctx, msg, promise);
     }
 
-    /** Expose {@link HttpStreamsHandler#sentOutMessage} for bookkeeping. */
+    /** Expose {@code HttpStreamsHandler#sentOutMessage} for bookkeeping. */
     protected void notifySentOutMessage(ChannelHandlerContext ctx) {
         sentOutMessage(ctx);
     }
