@@ -22,8 +22,7 @@ import com.typesafe.netty.http.HttpStreamsServerHandler
 import io.netty.channel.Channel
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
-import io.netty.handler.codec.http.HttpRequestDecoder
-import io.netty.handler.codec.http.HttpResponseEncoder
+import io.netty.handler.codec.http.HttpServerCodec
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder
@@ -71,12 +70,8 @@ private object NettyPipelineHelpers {
     pipeline.channel.config.setAutoRead(false)
 
     pipeline.addLast(
-      "http-decoder",
-      new HttpRequestDecoder(
-        config.maxInitialLineLength,
-        config.maxHeaderSize,
-        config.maxChunkSize))
-    pipeline.addLast("http-encoder", new HttpResponseEncoder())
+      "http-codec",
+      new HttpServerCodec(config.maxInitialLineLength, config.maxHeaderSize, config.maxChunkSize))
     addHttp4sHandlers(pipeline, config, httpApp, serviceErrorHandler, dispatcher)
   }
 
