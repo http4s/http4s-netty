@@ -66,11 +66,12 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
           directStreaming = false
           val doClose = closeAfterResponse
           closeAfterResponse = false
-          val _ = ctx.write(msg, promise)
-          val _ = promise.addListener { (_: ChannelFuture) =>
+          ctx.write(msg, promise)
+          promise.addListener { (_: ChannelFuture) =>
             sentOutMessage(ctx)
             if (doClose) { val _ = ctx.close() }
           }
+          ()
 
         case _ =>
           val _ = ctx.write(msg, promise)
