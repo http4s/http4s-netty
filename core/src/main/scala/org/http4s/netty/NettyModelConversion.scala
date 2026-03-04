@@ -296,20 +296,14 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           HttpResponseStatus.valueOf(httpResponse.status.code)
         )
         httpResponse.headers.foreach(appendSomeToNetty(_, r.headers()))
-        // Edge case: HEAD
-        // Note: Depending on the status of the response, this may be removed further
-        // Down the netty pipeline by the HttpResponseEncoder
+        // HEAD: restore Content-Length so the client knows the representation size.
+        // We intentionally omit Transfer-Encoding: the HttpServerCodec strips it
+        // from the wire anyway, and adding it was the root cause of illegal chunk
+        // framing on HEAD responses when a standalone HttpResponseEncoder was used.
         if (httpRequest.method == Method.HEAD) {
-          val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
-          val contentLength = httpResponse.contentLength
-          (transferEncoding, contentLength) match {
-            case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
-              r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.value)
-              ()
-            case (_, Some(len)) =>
-              r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
-              ()
-            case _ => // no-op
+          httpResponse.contentLength.foreach { len =>
+            r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
+            ()
           }
         }
         Resource.pure[F, DefaultHttpResponse](r)

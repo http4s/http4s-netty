@@ -98,15 +98,10 @@ class HeaderConversionTest extends IOSuite {
     }
   }
 
-  test("HEAD request returns properly formatted Transfer-Encoding header") {
-    // This test specifically exercises the HEAD request code path in toNonWSResponse
-    // which has separate logic for adding Transfer-Encoding headers.
-    // The bug was using enc.toString instead of enc.value, which would produce
-    // "Transfer-Encoding(NonEmptyList(TransferCoding(chunked)))" instead of "chunked"
-    //
-    // Note: We use JDK HttpClient here because the http4s NettyClient strips the
-    // Transfer-Encoding header from HEAD responses (since there's no body).
-    // We need to see the raw wire-level headers to verify server behavior.
+  test("HEAD response omits Transfer-Encoding header") {
+    // We intentionally omit Transfer-Encoding on HEAD responses. Adding it caused
+    // the standalone HttpResponseEncoder to write illegal chunk framing, and the
+    // HttpServerCodec strips it from the wire anyway. Verify it stays absent.
     IO {
       val jdkClient = HttpClient.newHttpClient()
       val request = HttpRequest
@@ -117,23 +112,47 @@ class HeaderConversionTest extends IOSuite {
       val response = jdkClient.send(request, HttpResponse.BodyHandlers.discarding())
 
       val teHeaders = response.headers().allValues("Transfer-Encoding").asScala.toList
-      val allValues = teHeaders.mkString(", ")
+      assert(
+        teHeaders.isEmpty,
+        s"Transfer-Encoding header should not be present on HEAD response, got: $teHeaders"
+      )
+    }
+  }
 
-      // The header should be present and properly formatted
-      assert(teHeaders.nonEmpty, s"Transfer-Encoding header should be present for HEAD request")
-      assert(
-        allValues.contains("chunked"),
-        s"Transfer-Encoding should contain 'chunked', got: $allValues"
-      )
-      // Critical: verify no toString garbage
-      assert(
-        !allValues.contains("TransferCoding("),
-        s"Transfer-Encoding should not contain toString representation: $allValues"
-      )
-      assert(
-        !allValues.contains("NonEmptyList("),
-        s"Transfer-Encoding should not contain toString representation: $allValues"
-      )
+  test("HEAD response with chunked TE must not include chunk framing on the wire") {
+    // HttpServerCodec (unlike standalone HttpResponseEncoder) tracks the request
+    // method, so it suppresses body/chunk framing for HEAD responses. Without this,
+    // the encoder writes an illegal "0\r\n\r\n" chunk terminator that violates
+    // RFC 9110 Section 9.3.2 (HEAD responses MUST NOT contain a message body).
+    IO {
+      val address = server().address
+      val socket = new java.net.Socket(address.getHostName, address.getPort)
+      socket.setSoTimeout(3000)
+      try {
+        val out = socket.getOutputStream
+        val req =
+          s"HEAD /chunked-head HTTP/1.1\r\nHost: ${address.getHostName}:${address.getPort}\r\nConnection: close\r\n\r\n"
+        out.write(req.getBytes("US-ASCII"))
+        out.flush()
+
+        val baos = new java.io.ByteArrayOutputStream()
+        val buf = new Array[Byte](4096)
+        var n = socket.getInputStream.read(buf)
+        while (n >= 0) {
+          baos.write(buf, 0, n)
+          n = socket.getInputStream.read(buf)
+        }
+        val raw = baos.toString("US-ASCII")
+        val idx = raw.indexOf("\r\n\r\n")
+        assert(idx > 0, s"Response must contain header terminator: $raw")
+        val afterHeaders = raw.substring(idx + 4)
+        assertEquals(
+          afterHeaders,
+          "",
+          s"HEAD response must not contain body/chunk-framing, but got: '$afterHeaders'"
+        )
+      } finally
+        socket.close()
     }
   }
 }
