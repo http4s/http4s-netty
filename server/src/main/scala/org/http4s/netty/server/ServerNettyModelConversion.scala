@@ -342,7 +342,14 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
       dateString: String,
       maxPayloadLength: Int
   ): F[Unit] =
-    toWSResponse(ctx, httpRequest, httpResponse, httpVersion, wsContext, dateString, maxPayloadLength)
+    toWSResponse(
+      ctx,
+      httpRequest,
+      httpResponse,
+      httpVersion,
+      wsContext,
+      dateString,
+      maxPayloadLength)
       .use { resp =>
         resp match {
           case _: DefaultWebSocketHttpResponse =>

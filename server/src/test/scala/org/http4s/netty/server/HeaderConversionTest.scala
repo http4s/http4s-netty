@@ -34,7 +34,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import scala.concurrent.duration._
-import scala.jdk.CollectionConverters._
 
 class HeaderConversionTest extends IOSuite {
 
@@ -111,7 +110,7 @@ class HeaderConversionTest extends IOSuite {
         .build()
       val response = jdkClient.send(request, HttpResponse.BodyHandlers.discarding())
 
-      val teHeaders = response.headers().allValues("Transfer-Encoding").asScala.toList
+      val teHeaders = response.headers().allValues("Transfer-Encoding")
       assert(
         teHeaders.isEmpty,
         s"Transfer-Encoding header should not be present on HEAD response, got: $teHeaders"

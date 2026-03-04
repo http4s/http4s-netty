@@ -20,11 +20,11 @@ import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
 import io.netty.handler.codec.http._
-import org.playframework.netty.http.HttpStreamsServerHandler
+import org.playframework.netty.http.HttpStreamsServerHandlerBridge
 import org.playframework.netty.http.StreamedHttpMessage
 import org.playframework.netty.http.WebSocketHttpResponse
 
-/** Extends [[HttpStreamsServerHandler]] to support direct body streaming.
+/** Extends [[HttpStreamsServerHandlerBridge]] to support direct body streaming.
   *
   * The parent class handles [[FullHttpMessage]] and [[StreamedHttpMessage]] on the outbound path
   * but silently drops plain [[DefaultHttpResponse]] (headers-only) messages because its
@@ -36,11 +36,12 @@ import org.playframework.netty.http.WebSocketHttpResponse
   * Messages that the parent already handles ([[FullHttpMessage]], [[StreamedHttpMessage]] including
   * WebSocket upgrades) are delegated unchanged.
   *
-  * Note: This class calls the protected `sentOutMessage(ctx)` method from
-  * [[HttpStreamsServerHandler]] to keep the parent's request/response bookkeeping correct. This is
-  * an internal API of the parent class.
+  * We extend [[HttpStreamsServerHandlerBridge]] (a Java class in the `org.playframework.netty.http`
+  * package) rather than [[HttpStreamsServerHandler]] directly because `HttpStreamsHandler` is
+  * package-private in Java. Scala 3 enforces this at runtime and throws [[IllegalAccessError]] when
+  * `super.write()` or `sentOutMessage()` would resolve through a package-private class.
   */
-private[server] class DirectStreamingServerHandler extends HttpStreamsServerHandler {
+private[server] class DirectStreamingServerHandler extends HttpStreamsServerHandlerBridge {
 
   // Whether we are currently in the direct streaming state (between headers and LastHttpContent).
   private[this] var directStreaming: Boolean = false
@@ -68,7 +69,7 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
           closeAfterResponse = false
           ctx.write(msg, promise)
           promise.addListener { (_: ChannelFuture) =>
-            sentOutMessage(ctx)
+            notifySentOutMessage(ctx)
             if (doClose) { val _ = ctx.close() }
           }
           ()
@@ -90,7 +91,7 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
         case _ =>
           // FullHttpMessage, StreamedHttpMessage, WebSocket, or non-HttpResponse:
           // delegate to the parent's reactive streams handling.
-          super.write(ctx, msg, promise)
+          superWrite(ctx, msg, promise)
       }
 
   /** Determine whether the connection should be closed after this response, mirroring the logic
