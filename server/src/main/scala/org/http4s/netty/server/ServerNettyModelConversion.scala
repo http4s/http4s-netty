@@ -167,11 +167,13 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
           def close(closeFrame: WSFrame): F[Boolean] =
             for {
               modified <- closeFrameSent.modify(alreadySent => true -> !alreadySent)
-              _ <- if (modified) {
-                Sync[F].delay(channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
-              } else {
-                Sync[F].delay(channel.close()).void
-              }
+              _ <-
+                if (modified) {
+                  Sync[F].delay(
+                    channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
+                } else {
+                  Sync[F].delay(channel.close()).void
+                }
             } yield modified
 
           val transformedInput = input
@@ -183,11 +185,12 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
           receiveSend(transformedInput)
             .evalFilterNot(_ => closeFrameSent.get)
             .evalFilter {
-               case closeFrame: CloseWebSocketFrame =>
-                 close(closeFrame).as(false)
-               case _ => true.pure[F]
+              case closeFrame: CloseWebSocketFrame =>
+                close(closeFrame).as(false)
+              case _ => true.pure[F]
             }
-            .onFinalizeWeak(close(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE)).void)
+            .onFinalizeWeak(
+              close(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE)).void)
         }
 
       Resource
