@@ -24,7 +24,7 @@ val http4sVersion = "0.23.33"
 
 val jetty = "12.1.5"
 
-val netty = "4.2.7.Final"
+val netty = "4.2.10.Final"
 
 val munit = "1.2.1"
 val munitScalaCheck = "1.2.0"
@@ -50,7 +50,7 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "org.reactivestreams" % "reactive-streams-flow-adapters" % "1.0.2",
-      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.6")
+      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.7")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
