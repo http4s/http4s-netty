@@ -1,6 +1,6 @@
 import com.typesafe.tools.mima.core._
 
-val Scala212 = "2.12.20"
+val Scala212 = "2.12.21"
 val Scala213 = "2.13.18"
 
 inThisBuild(
@@ -22,11 +22,11 @@ inThisBuild(
 
 val http4sVersion = "0.23.33"
 
-val jetty = "12.1.5"
+val jetty = "12.1.7"
 
-val netty = "4.2.7.Final"
+val netty = "4.2.10.Final"
 
-val munit = "1.2.1"
+val munit = "1.2.4"
 val munitScalaCheck = "1.2.0"
 
 val nativeNettyModules =
@@ -50,7 +50,7 @@ lazy val core = project
     name := "http4s-netty-core",
     libraryDependencies ++= List(
       "org.reactivestreams" % "reactive-streams-flow-adapters" % "1.0.2",
-      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.6")
+      ("org.playframework.netty" % "netty-reactive-streams-http" % "3.0.7")
         .exclude("io.netty", "netty-codec-http")
         .exclude("io.netty", "netty-handler"),
       "io.netty" % "netty-codec-http" % netty,
@@ -77,7 +77,8 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.10.0" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test,
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,

@@ -29,9 +29,11 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
+import org.http4s.Header
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.headers.{Connection => ConnHeader}
+import org.http4s.syntax.header._
 import org.http4s.{HttpVersion => HV}
 import org.playframework.netty.http._
 import org.reactivestreams.FlowAdapters
@@ -268,20 +270,14 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           HttpResponseStatus.valueOf(httpResponse.status.code)
         )
         httpResponse.headers.foreach(appendSomeToNetty(_, r.headers()))
-        // Edge case: HEAD
-        // Note: Depending on the status of the response, this may be removed further
-        // Down the netty pipeline by the HttpResponseEncoder
+        // HEAD: restore Content-Length so the client knows the representation size.
+        // We intentionally omit Transfer-Encoding: the HttpServerCodec strips it
+        // from the wire anyway, and adding it was the root cause of illegal chunk
+        // framing on HEAD responses when a standalone HttpResponseEncoder was used.
         if (httpRequest.method == Method.HEAD) {
-          val transferEncoding = httpResponse.headers.get[`Transfer-Encoding`]
-          val contentLength = httpResponse.contentLength
-          (transferEncoding, contentLength) match {
-            case (Some(enc), _) if enc.hasChunked && !minorVersionIs0 =>
-              r.headers().add(HttpHeaderNames.TRANSFER_ENCODING, enc.toString)
-              ()
-            case (_, Some(len)) =>
-              r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
-              ()
-            case _ => // no-op
+          httpResponse.contentLength.foreach { len =>
+            r.headers().add(HttpHeaderNames.CONTENT_LENGTH, len)
+            ()
           }
         }
         Resource.pure[F, DefaultHttpResponse](r)
@@ -296,7 +292,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
 
       httpRequest.headers.get[ConnHeader] match {
         case Some(conn) =>
-          response.headers().add(HttpHeaderNames.CONNECTION, ConnHeader.headerInstance.value(conn))
+          response.headers().add(HttpHeaderNames.CONNECTION, conn.value)
         case None =>
           if (minorVersionIs0) { // Close by default for Http 1.0
             response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
