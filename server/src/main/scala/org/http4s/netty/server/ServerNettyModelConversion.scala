@@ -17,13 +17,16 @@
 package org.http4s.netty.server
 
 import cats.effect.Async
+import cats.effect.Ref
 import cats.effect.Resource
 import cats.effect.kernel.Sync
-import cats.implicits._
+import cats.syntax.all._
 import fs2.Pipe
+import fs2.Stream
 import fs2.interop.flow.StreamSubscriberWrapper
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
+import io.netty.channel.ChannelFutureListener
 import io.netty.handler.codec.http.DefaultHttpResponse
 import io.netty.handler.codec.http.HttpHeaders
 import io.netty.handler.codec.http.HttpResponseStatus
@@ -34,6 +37,7 @@ import io.netty.handler.codec.http.websocketx.ContinuationWebSocketFrame
 import io.netty.handler.codec.http.websocketx.PingWebSocketFrame
 import io.netty.handler.codec.http.websocketx.PongWebSocketFrame
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory
 import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
 import org.http4s.Header
@@ -88,6 +92,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
 
   /** Create a Netty response from the result */
   def toNettyResponseWithWebsocket(
+      channel: Channel,
       key: Key[WebSocketContext[F]],
       httpRequest: Request[F],
       httpResponse: Response[F],
@@ -108,6 +113,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     httpResponse.attributes.lookup(key) match {
       case Some(wsContext) if !minorIs0 =>
         toWSResponse(
+          channel,
           httpRequest,
           httpResponse,
           httpVersion,
@@ -134,6 +140,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     * @return
     */
   private[this] def toWSResponse(
+      channel: Channel,
       httpRequest: Request[F],
       httpResponse: Response[F],
       httpVersion: HttpVersion,
@@ -160,12 +167,45 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
             stream => receiveSend(stream).map(wsbitsToNetty)
         }
 
+      val receiveSendWithClose: Pipe[F, WebSocketFrame, WSFrame] = input =>
+        Stream.eval(Ref.of(false)).flatMap { closeFrameSent =>
+          def close(closeFrame: WSFrame): F[Boolean] =
+            for {
+              modified <- closeFrameSent.modify(alreadySent => true -> !alreadySent)
+              _ <-
+                if (modified) {
+                  Sync[F]
+                    .delay(
+                      channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
+                    .void
+                } else {
+                  Sync[F].delay(channel.close()).void
+                }
+            } yield modified
+
+          val transformedInput = input
+            .evalFilter {
+              case closeFrame: Close => close(wsbitsToNetty(closeFrame))
+              case _ => closeFrameSent.get.map(!_)
+            }
+
+          receiveSend(transformedInput)
+            .evalFilterNot(_ => closeFrameSent.get)
+            .evalFilter {
+              case closeFrame: CloseWebSocketFrame =>
+                close(closeFrame).as(false)
+              case _ => true.pure[F]
+            }
+            .onFinalizeWeak(
+              close(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE)).void)
+        }
+
       Resource
         .eval(StreamSubscriberWrapper.subscriber[F, WebSocketFrame](1))
         .flatMap { subscriber =>
           subscriber
             .stream(Sync[F].unit)
-            .through(receiveSend)
+            .through(receiveSendWithClose)
             .onFinalize(wsContext.webSocket.onClose)
             .toPublisherResource
             .map { publisher =>

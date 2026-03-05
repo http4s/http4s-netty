@@ -282,6 +282,7 @@ object Http4sNettyHandler {
               .recoverWith { case t if pf.isDefinedAt(t) => Resource.eval(pf(t)) }
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
+                  channel,
                   b.webSocketKey,
                   req,
                   _,
