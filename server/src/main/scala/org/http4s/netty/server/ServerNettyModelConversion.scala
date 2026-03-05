@@ -16,15 +16,18 @@
 
 package org.http4s.netty.server
 
-import cats.effect.{Async, Ref, Resource}
+import cats.effect.Async
+import cats.effect.Ref
+import cats.effect.Resource
 import cats.effect.kernel.Sync
 import cats.implicits._
 import com.typesafe.netty.http.DefaultWebSocketHttpResponse
-import fs2.Stream
 import fs2.Pipe
+import fs2.Stream
 import fs2.interop.reactivestreams._
 import io.netty.buffer.Unpooled
-import io.netty.channel.{Channel, ChannelFutureListener}
+import io.netty.channel.Channel
+import io.netty.channel.ChannelFutureListener
 import io.netty.handler.codec.http.DefaultHttpResponse
 import io.netty.handler.codec.http.HttpHeaders
 import io.netty.handler.codec.http.HttpResponseStatus
@@ -35,9 +38,9 @@ import io.netty.handler.codec.http.websocketx.ContinuationWebSocketFrame
 import io.netty.handler.codec.http.websocketx.PingWebSocketFrame
 import io.netty.handler.codec.http.websocketx.PongWebSocketFrame
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory
 import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
-import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus
 import org.http4s.Header
 import org.http4s.Request
 import org.http4s.Response
@@ -169,8 +172,10 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
               modified <- closeFrameSent.modify(alreadySent => true -> !alreadySent)
               _ <-
                 if (modified) {
-                  Sync[F].delay(
-                    channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
+                  Sync[F]
+                    .delay(
+                      channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
+                    .void
                 } else {
                   Sync[F].delay(channel.close()).void
                 }
