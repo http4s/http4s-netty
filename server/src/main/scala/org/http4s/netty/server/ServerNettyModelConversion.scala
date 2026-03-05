@@ -168,18 +168,14 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
       val receiveSendWithClose: Pipe[F, WebSocketFrame, WSFrame] = input =>
         Stream.eval(Ref.of(false)).flatMap { closeFrameSent =>
           def close(closeFrame: WSFrame): F[Boolean] =
-            for {
-              modified <- closeFrameSent.modify(alreadySent => true -> !alreadySent)
-              _ <-
-                if (modified) {
-                  Sync[F]
-                    .delay(
-                      channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
-                    .void
-                } else {
-                  Sync[F].delay(channel.close()).void
-                }
-            } yield modified
+            closeFrameSent
+              .modify(alreadySent => true -> !alreadySent)
+              .ifM(
+                Sync[F]
+                  .delay(channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
+                  .void,
+                Sync[F].delay(channel.close()).void
+              )
 
           val transformedInput = input
             .evalFilter {
