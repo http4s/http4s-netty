@@ -282,6 +282,7 @@ object Http4sNettyHandler {
               .eval(D.defer(app(req)).recoverWith(serviceErrorHandler(req)))
               .flatMap(
                 converter.toNettyResponseWithWebsocket(
+                  channel,
                   b.webSocketKey,
                   req,
                   _,
