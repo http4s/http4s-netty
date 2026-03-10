@@ -32,7 +32,6 @@ import org.http4s.netty.HttpResource
 import org.http4s.netty.void
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.playframework.netty.http.HttpStreamsServerHandler
 
 private object NettyPipelineHelpers {
 
@@ -96,7 +95,7 @@ private object NettyPipelineHelpers {
           new WebSocketServerCompressionHandler(config.wsMaxFrameLength)))
     }
     pipeline.addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
-    pipeline.addLast("serverStreamsHandler", new HttpStreamsServerHandler())
+    pipeline.addLast("serverStreamsHandler", new DirectStreamingServerHandler())
     pipeline.addLast(
       "http4s",
       Http4sNettyHandler

@@ -26,11 +26,16 @@ import fs2.Stream
 import fs2.interop.flow.StreamSubscriberWrapper
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
+import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelHandlerContext
+import io.netty.handler.codec.http.DefaultFullHttpResponse
+import io.netty.handler.codec.http.DefaultHttpContent
 import io.netty.handler.codec.http.DefaultHttpResponse
 import io.netty.handler.codec.http.HttpHeaders
 import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.codec.http.HttpVersion
+import io.netty.handler.codec.http.LastHttpContent
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame
 import io.netty.handler.codec.http.websocketx.ContinuationWebSocketFrame
@@ -41,11 +46,14 @@ import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory
 import io.netty.handler.codec.http.websocketx.{WebSocketFrame => WSFrame}
 import org.http4s.Header
+import org.http4s.Method
 import org.http4s.Request
 import org.http4s.Response
 import org.http4s.internal.tls._
 import org.http4s.netty.NettyModelConversion
 import org.http4s.netty.NettyModelConversion.bytebufToArray
+import org.http4s.netty.NettyModelConversion.chunkToBytebuf
+import org.http4s.netty.NettyModelConversion.resolveHttpVersion
 import org.http4s.netty.server.websocket.ZeroCopyBinaryText
 import org.http4s.server.SecureSession
 import org.http4s.server.ServerRequestKeys
@@ -54,7 +62,6 @@ import org.http4s.websocket.WebSocketContext
 import org.http4s.websocket.WebSocketFrame
 import org.http4s.websocket.WebSocketFrame._
 import org.http4s.websocket.WebSocketSeparatePipe
-import org.http4s.{HttpVersion => HV}
 import org.playframework.netty.http.DefaultWebSocketHttpResponse
 import org.reactivestreams.FlowAdapters
 import org.reactivestreams.Processor
@@ -69,6 +76,7 @@ import javax.net.ssl.SSLEngine
 
 private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F])
     extends NettyModelConversion[F] {
+  private val logger = org.log4s.getLogger
   override protected def requestAttributes(
       optionalSslEngine: Option[SSLEngine],
       channel: Channel): Vault =
@@ -90,41 +98,6 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
           }
       )
 
-  /** Create a Netty response from the result */
-  def toNettyResponseWithWebsocket(
-      channel: Channel,
-      key: Key[WebSocketContext[F]],
-      httpRequest: Request[F],
-      httpResponse: Response[F],
-      dateString: String,
-      maxPayloadLength: Int
-  ): Resource[F, DefaultHttpResponse] = {
-    // Http version is 1.0. We can assume it's most likely not.
-    var minorIs0 = false
-    val httpVersion: HttpVersion =
-      if (httpRequest.httpVersion == HV.`HTTP/1.1`)
-        HttpVersion.HTTP_1_1
-      else if (httpRequest.httpVersion == HV.`HTTP/1.0`) {
-        minorIs0 = true
-        HttpVersion.HTTP_1_0
-      } else
-        HttpVersion.valueOf(httpRequest.httpVersion.renderString)
-
-    httpResponse.attributes.lookup(key) match {
-      case Some(wsContext) if !minorIs0 =>
-        toWSResponse(
-          channel,
-          httpRequest,
-          httpResponse,
-          httpVersion,
-          wsContext,
-          dateString,
-          maxPayloadLength)
-      case _ =>
-        toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorIs0)
-    }
-  }
-
   /** Render a websocket response, or if the handshake fails eventually, an error Note: This
     * function is only invoked for http 1.1, as websockets aren't supported for http 1.0.
     *
@@ -140,7 +113,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     * @return
     */
   private[this] def toWSResponse(
-      channel: Channel,
+      channel: ChannelHandlerContext,
       httpRequest: Request[F],
       httpResponse: Response[F],
       httpVersion: HttpVersion,
@@ -228,6 +201,181 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
               toNonWSResponse(httpRequest, res, httpVersion, dateString, minorVersionIs0 = true)))
     } else
       toNonWSResponse(httpRequest, httpResponse, httpVersion, dateString, minorVersionIs0 = true)
+
+  /** Write a response (with possible WS upgrade) directly to the channel. Compiles the response
+    * body stream in the handler's fiber rather than bridging through reactive streams, ensuring
+    * body stream finalizers fire.
+    */
+  def writeResponseWithWebsocket(
+      key: Key[WebSocketContext[F]],
+      ctx: ChannelHandlerContext,
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      dateString: String,
+      maxPayloadLength: Int,
+      awaitWritable: ChannelHandlerContext => F[Unit]
+  ): F[Unit] = {
+    val (httpVersion, minorIs0) = resolveHttpVersion(httpRequest.httpVersion)
+
+    httpResponse.attributes.lookup(key) match {
+      case Some(wsContext) if !minorIs0 =>
+        writeWebSocketResponse(
+          ctx,
+          httpRequest,
+          httpResponse,
+          httpVersion,
+          wsContext,
+          dateString,
+          maxPayloadLength)
+      case _ =>
+        writeResponse(
+          ctx,
+          httpRequest,
+          httpResponse,
+          httpVersion,
+          dateString,
+          minorIs0,
+          awaitWritable)
+    }
+  }
+
+  private def writeResponse(
+      ctx: ChannelHandlerContext,
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      dateString: String,
+      minorIs0: Boolean,
+      awaitWritable: ChannelHandlerContext => F[Unit]
+  ): F[Unit] =
+    if (httpResponse.status.isEntityAllowed && httpRequest.method != Method.HEAD)
+      writeBodyResponse(
+        ctx,
+        httpRequest,
+        httpResponse,
+        httpVersion,
+        dateString,
+        minorIs0,
+        awaitWritable)
+    else
+      writeFullResponse(ctx, httpRequest, httpResponse, httpVersion, dateString, minorIs0)
+
+  private def writeBodyResponse(
+      ctx: ChannelHandlerContext,
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      dateString: String,
+      minorIs0: Boolean,
+      awaitWritable: ChannelHandlerContext => F[Unit]
+  ): F[Unit] = {
+    val headersResponse =
+      new DefaultHttpResponse(httpVersion, HttpResponseStatus.valueOf(httpResponse.status.code))
+    httpResponse.headers.foreach(appendSomeToNetty(_, headersResponse.headers()))
+    addTransferOrContentLengthHeaders(httpResponse.headers, minorIs0, headersResponse.headers())
+    addDateAndConnectionHeaders(headersResponse.headers(), httpRequest, dateString, minorIs0)
+
+    // The body MUST be compiled (drained) so that stream finalizers fire —
+    // e.g., onFinalize callbacks that return connections to upstream pools.
+    // The entire drain is uncancelable to prevent cancellation from firing
+    // before compile.drain opens the stream scope (which would skip finalizers).
+    // When the channel is dead, the first chunk write fails immediately,
+    // compile.drain errors, and finalizers fire — so the uncancelable window
+    // is short in practice.
+    F.uncancelable { _ =>
+      writeAndFlushF(ctx, headersResponse).attempt.flatMap {
+        case Right(()) =>
+          F.guarantee(
+            httpResponse.body.chunks
+              .evalMap { chunk =>
+                awaitWritable(ctx) *>
+                  writeAndFlushF(ctx, new DefaultHttpContent(chunkToBytebuf(chunk)))
+              }
+              .compile
+              .drain,
+            writeAndFlushF(ctx, LastHttpContent.EMPTY_LAST_CONTENT).handleError(_ => ())
+          ).handleErrorWith { e =>
+            F.delay(logger.debug(e)("Error writing response body, closing channel")) *>
+              F.delay(ctx.close()).void
+          }
+        case Left(e) =>
+          // Headers write failed (channel already closed). Still drain the body
+          // so that stream finalizers fire (e.g., returning connections to pools).
+          httpResponse.body.compile.drain.handleError(_ => ()) *>
+            F.delay(logger.debug(e)("Channel closed before headers could be sent")) *>
+            F.delay(ctx.close()).void
+      }
+    }
+  }
+
+  private def writeFullResponse(
+      ctx: ChannelHandlerContext,
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      dateString: String,
+      minorIs0: Boolean
+  ): F[Unit] = {
+    val response = new DefaultFullHttpResponse(
+      httpVersion,
+      HttpResponseStatus.valueOf(httpResponse.status.code)
+    )
+    httpResponse.headers.foreach(appendSomeToNetty(_, response.headers()))
+    if (httpRequest.method == Method.HEAD) {
+      addHeadResponseHeaders(httpResponse, response.headers())
+    }
+    addDateAndConnectionHeaders(response.headers(), httpRequest, dateString, minorIs0)
+    writeAndFlushF(ctx, response) *>
+      // Drain the body so that stream finalizers fire even for responses
+      // without entity bodies (HEAD, 204, 304, etc.). In proxy patterns
+      // the body may carry onFinalize callbacks that return connections
+      // to upstream pools — these must fire even when no body is written.
+      httpResponse.body.compile.drain.handleError(_ => ())
+  }
+
+  private def writeWebSocketResponse(
+      ctx: ChannelHandlerContext,
+      httpRequest: Request[F],
+      httpResponse: Response[F],
+      httpVersion: HttpVersion,
+      wsContext: WebSocketContext[F],
+      dateString: String,
+      maxPayloadLength: Int
+  ): F[Unit] =
+    toWSResponse(
+      ctx,
+      httpRequest,
+      httpResponse,
+      httpVersion,
+      wsContext,
+      dateString,
+      maxPayloadLength)
+      .use { resp =>
+        resp match {
+          case _: DefaultWebSocketHttpResponse =>
+            // The WS handshake is performed by HttpStreamsServerHandler which
+            // never completes the original ChannelPromise, so we must use
+            // fire-and-forget here instead of writeAndFlushF.
+            // Keep the Resource alive until the channel closes so the WS
+            // reactive-streams processor continues to run.
+            F.delay { val _ = ctx.writeAndFlush(resp) } *>
+              F.async_[Unit] { cb =>
+                val _ =
+                  ctx.channel().closeFuture().addListener((_: ChannelFuture) => cb(Right(())))
+              }
+          case _ =>
+            // Non-WS fallback (handshake failed): write via normal path.
+            writeAndFlushF(ctx, resp)
+        }
+      }
+
+  private def writeAndFlushF(ctx: ChannelHandlerContext, msg: AnyRef): F[Unit] =
+    F.async_[Unit] { cb =>
+      val _ = ctx.writeAndFlush(msg).addListener { (f: ChannelFuture) =>
+        if (f.isSuccess) cb(Right(()))
+        else cb(Left(f.cause()))
+      }
+    }
 
   private[this] def appendAllToNetty(header: Header.Raw, nettyHeaders: HttpHeaders) = {
     nettyHeaders.add(header.name.toString, header.value)
