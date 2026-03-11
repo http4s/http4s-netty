@@ -56,7 +56,7 @@ lazy val core = project
       "io.netty" % "netty-codec-http" % netty,
       "io.netty" % "netty-handler" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.6.3"
+      "org.typelevel" %% "cats-effect" % "3.7.0"
     )
   )
 
@@ -77,7 +77,7 @@ lazy val server = project
       "org.scalameta" %% "munit-scalacheck" % munitScalaCheck % Test,
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.10.0" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test,
+      "org.typelevel" %% "munit-cats-effect" % "2.2.0" % Test,
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
@@ -106,7 +106,7 @@ lazy val client = project
         .exclude("org.slf4j", "slf4j-api"),
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
-      "org.typelevel" %% "munit-cats-effect" % "2.1.0" % Test
+      "org.typelevel" %% "munit-cats-effect" % "2.2.0" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
