@@ -38,10 +38,10 @@ import scala.concurrent.duration._
   */
 class DrainBodyDoubleSubscribeTest extends CatsEffectSuite {
 
-  /** A reactive-streams Publisher that only supports one subscriber, matching HandlerPublisher When
-    * completeAfterEmit = true - calls onComplete after emitting one chunk, simulating a small
-    * finished upload. When completeAfterEmit = false - emits one chunk then blocks forever,
-    * simulating a slow/large upload in progress.
+  /** A reactive-streams Publisher that only supports one subscriber, matching HandlerPublisher.
+    * When completeAfterEmit = true - calls onComplete after emitting one chunk, simulating a small
+    * finished upload. When completeAfterEmit = false - never emits, simulating a slow/large upload
+    * in progress.
     */
   private class SingleSubscriberPublisher(completeAfterEmit: Boolean)
       extends Publisher[HttpContent] {
@@ -49,16 +49,21 @@ class DrainBodyDoubleSubscribeTest extends CatsEffectSuite {
 
     override def subscribe(s: Subscriber[_ >: HttpContent]): Unit =
       if (!hasSubscriber.compareAndSet(false, true)) {
+        // Per reactive-streams spec, onSubscribe must be called before onError.
+        s.onSubscribe(new Subscription {
+          override def request(n: Long): Unit = ()
+          override def cancel(): Unit = ()
+        })
         s.onError(new IllegalStateException("This publisher only supports one subscriber"))
       } else {
         s.onSubscribe(new Subscription {
           private val emitted = new AtomicBoolean(false)
           override def request(n: Long): Unit =
-            if (emitted.compareAndSet(false, true)) {
+            if (completeAfterEmit && emitted.compareAndSet(false, true)) {
               val content =
                 new DefaultHttpContent(Unpooled.wrappedBuffer(Array.fill(64)(42.toByte)))
               s.onNext(content)
-              if (completeAfterEmit) s.onComplete()
+              s.onComplete()
             }
           override def cancel(): Unit = ()
         })
