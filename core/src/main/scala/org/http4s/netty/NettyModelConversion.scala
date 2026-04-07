@@ -232,22 +232,37 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         }
       case streamed: StreamedHttpMessage =>
         val isDrained = new AtomicBoolean(false)
+        val subscribed = new AtomicBoolean(false)
         val stream =
-          streamed
-            .toStreamBuffered(1)
+          Stream
+            .eval(F.delay(subscribed.set(true)))
+            .flatMap(_ =>
+              streamed
+                .toStreamBuffered(1))
             .flatMap(c =>
               Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
             .onFinalize(F.delay(void(isDrained.compareAndSet(false, true))))
-        (stream, drainBody(_, stream, isDrained))
+        (stream, drainBody(_, stream, isDrained, subscribed))
       case _ => (Stream.empty.covary[F], _ => F.unit)
     }
 
   /** Return an action that will drain the channel stream in the case that it wasn't drained.
     */
-  private[this] def drainBody(c: Channel, f: Stream[F, Byte], isDrained: AtomicBoolean): F[Unit] =
+  private[this] def drainBody(
+      c: Channel,
+      f: Stream[F, Byte],
+      isDrained: AtomicBoolean,
+      subscribed: AtomicBoolean): F[Unit] =
     F.delay {
       if (isDrained.compareAndSet(false, true)) {
-        if (c.isOpen) {
+        if (subscribed.get()) {
+          // The stream was already subscribed to (body partially consumed).
+          // HandlerPublisher only supports one subscriber, so we cannot
+          // re-subscribe to drain. Close the connection instead. The
+          // remaining request bytes would corrupt the next request anyway.
+          logger.info("Request body not fully drained but already subscribed. Closing connection")
+          F.delay(c.close()).void
+        } else if (c.isOpen) {
           logger.info("Response body not drained to completion. Draining and closing connection")
           // Drain the stream regardless. Some bytebufs often
           // Remain in the buffers. Draining them solves this issue
