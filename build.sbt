@@ -20,11 +20,11 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.23.33"
+val http4sVersion = "0.23.34"
 
-val jetty = "12.1.7"
+val jetty = "12.1.8"
 
-val netty = "4.2.10.Final"
+val netty = "4.2.12.Final"
 
 val munit = "1.2.4"
 val munitScalaCheck = "1.2.0"
