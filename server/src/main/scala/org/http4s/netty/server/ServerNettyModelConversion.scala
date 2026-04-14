@@ -102,8 +102,9 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     }
     httpResponse.contentLength.foreach(len =>
       response.headers().set(HttpHeaderNames.CONTENT_LENGTH, len))
-    if (!response.headers().contains(HttpHeaderNames.CONNECTION))
-      response.headers().set(HttpHeaderNames.CONNECTION, "close")
+    if (!response.headers().contains(HttpHeaderNames.CONNECTION)) {
+      val _ = response.headers().set(HttpHeaderNames.CONNECTION, "close")
+    }
     Resource.pure[F, DefaultHttpResponse](response)
   }
 

@@ -100,7 +100,13 @@ lazy val server = project
       ProblemFilters.exclude[DirectMissingMethodProblem](
         "org.http4s.netty.server.Http4sNettyHandler#WebsocketHandler.this"),
       ProblemFilters.exclude[MissingTypesProblem](
-        "org.http4s.netty.server.NegotiationHandler$Config$")
+        "org.http4s.netty.server.NegotiationHandler$Config$"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildHttp1Pipeline"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildHttp2Pipeline"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.PriorKnowledgeDetectionHandler.this")
     )
   )
 
