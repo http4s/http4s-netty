@@ -30,6 +30,7 @@ import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.timeout.IdleStateHandler
 import org.http4s.HttpApp
+import org.http4s.Response
 import org.http4s.netty.void
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -41,6 +42,7 @@ private object NettyPipelineHelpers {
       config: NegotiationHandler.Config,
       httpApp: WebSocketBuilder2[F] => HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
+      requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F]): Unit = void {
     // H2, being a multiplexed protocol, needs to always be reading events in case
     // it needs to close a stream, etc. Flow control is provided by the protocol itself.
@@ -52,7 +54,13 @@ private object NettyPipelineHelpers {
         new Http2MultiplexHandler(new ChannelInitializer[Channel] {
           override def initChannel(ch: Channel): Unit = {
             ch.pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(true))
-            addHttp4sHandlers(ch.pipeline, config, httpApp, serviceErrorHandler, dispatcher)
+            addHttp4sHandlers(
+              ch.pipeline,
+              config,
+              httpApp,
+              serviceErrorHandler,
+              requestLineParseErrorHandler,
+              dispatcher)
           }
         })
       )
@@ -63,6 +71,7 @@ private object NettyPipelineHelpers {
       config: NegotiationHandler.Config,
       httpApp: WebSocketBuilder2[F] => HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
+      requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F]): Unit = void {
     // For HTTP/1.x pipelines the only backpressure we can exert is via the TCP
     // flow control mechanisms. That means we set auto-read to false so that we
@@ -72,7 +81,13 @@ private object NettyPipelineHelpers {
     pipeline.addLast(
       "http-codec",
       new HttpServerCodec(config.maxInitialLineLength, config.maxHeaderSize, config.maxChunkSize))
-    addHttp4sHandlers(pipeline, config, httpApp, serviceErrorHandler, dispatcher)
+    addHttp4sHandlers(
+      pipeline,
+      config,
+      httpApp,
+      serviceErrorHandler,
+      requestLineParseErrorHandler,
+      dispatcher)
   }
 
   private[this] def addHttp4sHandlers[F[_]: Async](
@@ -80,6 +95,7 @@ private object NettyPipelineHelpers {
       config: NegotiationHandler.Config,
       httpApp: WebSocketBuilder2[F] => HttpApp[F],
       serviceErrorHandler: ServiceErrorHandler[F],
+      requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F]): Unit = void {
 
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
@@ -100,7 +116,12 @@ private object NettyPipelineHelpers {
     pipeline.addLast(
       "http4s",
       Http4sNettyHandler
-        .websocket(httpApp, serviceErrorHandler, config.wsMaxFrameLength, dispatcher)
+        .websocket(
+          httpApp,
+          serviceErrorHandler,
+          requestLineParseErrorHandler,
+          config.wsMaxFrameLength,
+          dispatcher)
     )
   }
 }

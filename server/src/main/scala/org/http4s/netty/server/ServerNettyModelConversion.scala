@@ -28,7 +28,9 @@ import fs2.interop.reactivestreams._
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFutureListener
+import io.netty.handler.codec.http.DefaultFullHttpResponse
 import io.netty.handler.codec.http.DefaultHttpResponse
+import io.netty.handler.codec.http.HttpHeaderNames
 import io.netty.handler.codec.http.HttpHeaders
 import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.codec.http.HttpVersion
@@ -87,6 +89,24 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
             ).mapN(SecureSession.apply)
           }
       )
+
+  /** Convert an http4s Response to a simple Netty response without requiring a parsed Request. Used
+    * for error responses when request parsing fails
+    */
+  def toSimpleNettyResponse(httpResponse: Response[F]): Resource[F, DefaultHttpResponse] = {
+    val response = new DefaultFullHttpResponse(
+      HttpVersion.HTTP_1_1,
+      HttpResponseStatus.valueOf(httpResponse.status.code))
+    httpResponse.headers.foreach { h =>
+      val _ = response.headers().add(h.name.toString, h.value)
+    }
+    httpResponse.contentLength.foreach(len =>
+      response.headers().set(HttpHeaderNames.CONTENT_LENGTH, len))
+    if (!response.headers().contains(HttpHeaderNames.CONNECTION)) {
+      val _ = response.headers().set(HttpHeaderNames.CONNECTION, "close")
+    }
+    Resource.pure[F, DefaultHttpResponse](response)
+  }
 
   /** Create a Netty response from the result */
   def toNettyResponseWithWebsocket(
