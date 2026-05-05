@@ -23,7 +23,7 @@ val http4sVersion = "0.23.34"
 
 val jetty = "12.1.8"
 
-val netty = "4.1.132.Final"
+val netty = "4.1.133.Final"
 
 val munit = "1.3.0"
 
