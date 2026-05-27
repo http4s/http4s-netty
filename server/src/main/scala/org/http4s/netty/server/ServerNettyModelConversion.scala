@@ -110,8 +110,9 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
     }
     httpResponse.contentLength.foreach(len =>
       response.headers().set(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH, len))
-    if (!response.headers().contains(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION))
-      response.headers().set(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION, "close")
+    if (!response.headers().contains(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION)) {
+      val _ = response.headers().set(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION, "close")
+    }
     writeAndFlushF(ctx, response)
   }
 
