@@ -79,7 +79,8 @@ final class NettyServerBuilder[F[_]] private (
     nettyChannelOptions: NettyChannelOptions,
     sslConfig: NettyServerBuilder.SslConfig,
     wsMaxFrameLength: Int,
-    wsCompression: Boolean
+    wsCompression: Boolean,
+    requestLineParseErrorHandler: Throwable => F[Response[F]]
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -98,7 +99,8 @@ final class NettyServerBuilder[F[_]] private (
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       sslConfig: NettyServerBuilder.SslConfig = sslConfig,
       wsMaxFrameLength: Int = wsMaxFrameLength,
-      wsCompression: Boolean = wsCompression
+      wsCompression: Boolean = wsCompression,
+      requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -114,7 +116,8 @@ final class NettyServerBuilder[F[_]] private (
       nettyChannelOptions,
       sslConfig,
       wsMaxFrameLength,
-      wsCompression
+      wsCompression,
+      requestLineParseErrorHandler
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -195,6 +198,23 @@ final class NettyServerBuilder[F[_]] private (
   def withWebSocketCompression: Self = copy(wsCompression = true)
   def withoutWebSocketCompression: Self = copy(wsCompression = false)
 
+  /** An error handler which will run in cases where the server is unable to parse the "start-line"
+    * (http 2 name) or "request-line" (http 1.1 name). This is the first line of the request, e.g.
+    * "GET / HTTP/1.1".
+    *
+    * In this case, RFC 9112 (HTTP 2) says a 400 should be returned.
+    *
+    * This handler allows for configuring the behavior.
+    *
+    * @see
+    *   [[https://www.rfc-editor.org/rfc/rfc9112#section-2.2-9 RFC 9112]]
+    * @see
+    *   [[https://www.rfc-editor.org/rfc/rfc7230 RFC 7230]]
+    */
+  def withRequestLineParseErrorHandler(
+      handler: Throwable => F[Response[F]]
+  ): Self = copy(requestLineParseErrorHandler = handler)
+
   /** Configures the server with TLS, using the provided `SSLContext` and `SSLParameters`. We only
     * look at the needClientAuth and wantClientAuth boolean params. For more control use overload.
     */
@@ -270,6 +290,7 @@ final class NettyServerBuilder[F[_]] private (
                 config,
                 httpApp,
                 serviceErrorHandler,
+                requestLineParseErrorHandler,
                 dispatcher
               )
               pipeline.addLast("ssl", handler)
@@ -281,6 +302,7 @@ final class NettyServerBuilder[F[_]] private (
                 config,
                 httpApp,
                 serviceErrorHandler,
+                requestLineParseErrorHandler,
                 dispatcher
               )
               pipeline.addLast("h2-prior-knowledge-detection", h2PriorKnowledgeDetection)
@@ -363,8 +385,18 @@ object NettyServerBuilder {
       nettyChannelOptions = NettyChannelOptions.empty,
       sslConfig = NettyServerBuilder.NoSsl,
       wsMaxFrameLength = DefaultWSMaxFrameLength,
-      wsCompression = false
+      wsCompression = false,
+      requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F]
     )
+
+  private def defaultRequestLineParseErrorHandler[F[_]](implicit
+      F: Async[F]): Throwable => F[Response[F]] = { case _ =>
+    F.pure(
+      Response[F](
+        org.http4s.Status.BadRequest,
+        org.http4s.HttpVersion.`HTTP/1.1`,
+        org.http4s.Headers(org.http4s.headers.`Content-Length`.zero)))
+  }
 
   private sealed trait SslConfig {
     def toHandler(alloc: ByteBufAllocator): Option[SslHandler]

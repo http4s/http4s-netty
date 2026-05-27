@@ -25,6 +25,7 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.ByteToMessageDecoder
 import io.netty.handler.codec.http2.Http2CodecUtil
+import org.http4s.Response
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.log4s.getLogger
@@ -35,6 +36,7 @@ private class PriorKnowledgeDetectionHandler[F[_]: Async](
     config: NegotiationHandler.Config,
     httpApp: WebSocketBuilder2[F] => HttpResource[F],
     serviceErrorHandler: ServiceErrorHandler[F],
+    requestLineParseErrorHandler: Throwable => F[Response[F]],
     dispatcher: Dispatcher[F]
 ) extends ByteToMessageDecoder {
 
@@ -68,6 +70,7 @@ private class PriorKnowledgeDetectionHandler[F[_]: Async](
       config,
       httpApp,
       serviceErrorHandler,
+      requestLineParseErrorHandler,
       dispatcher)
     pipeline.remove(this)
   }
@@ -79,6 +82,7 @@ private class PriorKnowledgeDetectionHandler[F[_]: Async](
       config,
       httpApp,
       serviceErrorHandler,
+      requestLineParseErrorHandler,
       dispatcher)
     pipeline.remove(this)
   }
