@@ -98,6 +98,25 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
           }
       )
 
+  /** Write a simple error response directly to the channel without requiring a parsed Request. Used
+    * for error responses when request parsing fails.
+    */
+  def writeSimpleErrorResponse(ctx: ChannelHandlerContext, httpResponse: Response[F]): F[Unit] = {
+    val response = new DefaultFullHttpResponse(
+      HttpVersion.HTTP_1_1,
+      HttpResponseStatus.valueOf(httpResponse.status.code))
+    httpResponse.headers.foreach { h =>
+      val _ = response.headers().add(h.name.toString, h.value)
+    }
+    httpResponse.contentLength.foreach(len =>
+      response.headers().set(io.netty.handler.codec.http.HttpHeaderNames.CONTENT_LENGTH, len))
+    if (!response.headers().contains(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION)) {
+      val _ =
+        response.headers().set(io.netty.handler.codec.http.HttpHeaderNames.CONNECTION, "close")
+    }
+    writeAndFlushF(ctx, response)
+  }
+
   /** Render a websocket response, or if the handshake fails eventually, an error Note: This
     * function is only invoked for http 1.1, as websockets aren't supported for http 1.0.
     *

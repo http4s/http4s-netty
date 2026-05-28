@@ -27,6 +27,8 @@ import io.netty.channel._
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
+import org.http4s.ParseFailure
+import org.http4s.Response
 import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
 import org.http4s.netty.server.Http4sNettyHandler.WritabilityGate
 import org.http4s.server.ServiceErrorHandler
@@ -316,6 +318,7 @@ object Http4sNettyHandler {
   private class WebsocketHandler[F[_]](
       appFn: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
+      requestLineParseErrorHandler: Throwable => F[Response[F]],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]
   )(implicit
@@ -370,6 +373,14 @@ object Http4sNettyHandler {
                 }
               }
             }
+            .handleErrorWith {
+              case e: ParseFailure =>
+                Resource.eval(
+                  requestLineParseErrorHandler(e)
+                    .flatMap(converter.writeSimpleErrorResponse(ctx, _))
+                )
+              case e => Resource.eval(F.raiseError(e))
+            }
         }
         .use_
   }
@@ -377,8 +388,14 @@ object Http4sNettyHandler {
   def websocket[F[_]: Async](
       app: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
+      requestLineParseErrorHandler: Throwable => F[Response[F]],
       maxWSPayloadLength: Int,
       dispatcher: Dispatcher[F]
   ): Http4sNettyHandler[F] =
-    new WebsocketHandler[F](app, serviceErrorHandler, maxWSPayloadLength, dispatcher)
+    new WebsocketHandler[F](
+      app,
+      serviceErrorHandler,
+      requestLineParseErrorHandler,
+      maxWSPayloadLength,
+      dispatcher)
 }

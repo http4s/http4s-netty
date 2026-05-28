@@ -22,6 +22,7 @@ import cats.effect.std.Dispatcher
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.ApplicationProtocolNegotiationHandler
+import org.http4s.Response
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 
@@ -31,6 +32,7 @@ private[server] class NegotiationHandler[F[_]: Async](
     config: NegotiationHandler.Config,
     httpApp: WebSocketBuilder2[F] => HttpResource[F],
     serviceErrorHandler: ServiceErrorHandler[F],
+    requestLineParseErrorHandler: Throwable => F[Response[F]],
     dispatcher: Dispatcher[F]
 ) extends ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
   override def configurePipeline(ctx: ChannelHandlerContext, protocol: String): Unit =
@@ -41,6 +43,7 @@ private[server] class NegotiationHandler[F[_]: Async](
           config,
           httpApp,
           serviceErrorHandler,
+          requestLineParseErrorHandler,
           dispatcher)
 
       case ApplicationProtocolNames.HTTP_1_1 =>
@@ -49,6 +52,7 @@ private[server] class NegotiationHandler[F[_]: Async](
           config,
           httpApp,
           serviceErrorHandler,
+          requestLineParseErrorHandler,
           dispatcher)
 
       case _ => throw new IllegalStateException(s"Protocol: $protocol not supported")
