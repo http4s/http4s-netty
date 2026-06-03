@@ -22,12 +22,12 @@ inThisBuild(
 
 val http4sVersion = "0.23.34"
 
-val jetty = "12.1.8"
+val jetty = "12.1.10"
 
 val netty = "4.2.12.Final"
 
 val munit = "1.3.2"
-val munitScalaCheck = "1.2.0"
+val munitScalaCheck = "1.3.0"
 
 val nativeNettyModules =
   Seq(
