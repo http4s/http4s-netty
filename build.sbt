@@ -26,7 +26,7 @@ val jetty = "12.1.10"
 
 val netty = "4.2.15.Final"
 
-val munit = "1.2.4"
+val munit = "1.3.2"
 val munitScalaCheck = "1.3.0"
 
 val nativeNettyModules =
