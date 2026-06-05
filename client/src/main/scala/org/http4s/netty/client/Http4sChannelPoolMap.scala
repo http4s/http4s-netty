@@ -40,7 +40,6 @@ import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
-import io.netty.util.concurrent.Future
 import org.http4s.Headers
 import org.http4s.HttpVersion
 import org.http4s.Request
@@ -261,6 +260,4 @@ private[client] object Http4sChannelPoolMap {
       defaultRequestHeaders: Headers,
       readTimeout: Duration
   )
-
-  private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] = ???
 }
