@@ -3,7 +3,8 @@
 
 Unfreeze of [@jmcardon](https://github.com/jmcardon) branch from [1831](https://github.com/http4s/http4s/pull/1831) to attempt to get [Netty Reactive Streams](https://github.com/playframework/netty-reactive-streams) working in Http4s.
 
-This branch targets `http4s-0.23`
+This branch targets `http4s-0.23`.
+Since `0.7.0` we will require Java 11.
 
 You can test it out by adding 
 
