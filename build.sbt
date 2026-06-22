@@ -13,7 +13,7 @@ inThisBuild(
     ),
     licenses := Seq(License.Apache2),
     tlBaseVersion := "0.7",
-    crossScalaVersions := Seq(Scala213, Scala212, "3.3.7"),
+    crossScalaVersions := Seq(Scala213, Scala212, "3.3.8"),
     ThisBuild / scalaVersion := Scala213,
     tlJdkRelease := Some(11),
     githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
