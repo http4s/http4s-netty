@@ -49,6 +49,7 @@ import java.security.cert.X509Certificate
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
+import scala.concurrent.duration.DurationInt
 import scala.util.Try
 
 abstract class SslServerTest(typ: String = "TLS") extends IOSuite {
@@ -223,6 +224,7 @@ object SslServerTest {
       .withHttpWebSocketApp(routes(_).orNotFound)
       .withNioTransport
       .withoutBanner
+      .withShutdownTimeout(1.second)
       .bindAny()
       .withSslContext(ctx)
 }

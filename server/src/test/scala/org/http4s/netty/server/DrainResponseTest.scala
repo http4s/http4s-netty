@@ -52,6 +52,7 @@ class DrainResponseTest extends IOSuite {
           }
           .orNotFound)
       .withoutBanner
+      .withShutdownTimeout(1.second)
       .bindAny()
       .resource,
     "server"
