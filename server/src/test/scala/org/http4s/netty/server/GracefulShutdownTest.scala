@@ -18,6 +18,7 @@ package org.http4s.netty.server
 
 import cats.effect.Deferred
 import cats.effect.IO
+import cats.effect.Outcome
 import munit.CatsEffectSuite
 import org.http4s.HttpRoutes
 import org.http4s.Request
@@ -26,7 +27,6 @@ import org.http4s.implicits._
 import org.http4s.netty.client.NettyClientBuilder
 
 import scala.concurrent.duration._
-import cats.effect.Outcome
 
 class GracefulShutdownTest extends CatsEffectSuite {
 
