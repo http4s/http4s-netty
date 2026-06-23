@@ -47,6 +47,7 @@ abstract class WebsocketTest(_client: Resource[IO, WSClient[IO]]) extends IOSuit
         .withHttpWebSocketApp(echoRoutes(_).orNotFound)
         .withNioTransport
         .withoutBanner
+        .withShutdownTimeout(1.second)
         .bindAny()
         .resource
         .map(s => httpToWsUri(s.baseUri))

@@ -45,6 +45,7 @@ class InvalidRequestLineTest extends CatsEffectSuite {
       .withHttpApp(app)
       .withNioTransport
       .withIdleTimeout(5.seconds)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource
@@ -77,6 +78,7 @@ class InvalidRequestLineTest extends CatsEffectSuite {
       .withHttpApp(app)
       .withNioTransport
       .withIdleTimeout(5.seconds)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .withRequestLineParseErrorHandler(_ => IO.pure(Response[IO](Status.NotFound)))
       .bindAny()

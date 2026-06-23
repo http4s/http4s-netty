@@ -42,6 +42,7 @@ class HeaderConversionTest extends IOSuite {
       .withHttpApp(HeaderConversionTest.routes)
       .withNioTransport
       .withIdleTimeout(2.seconds)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource,

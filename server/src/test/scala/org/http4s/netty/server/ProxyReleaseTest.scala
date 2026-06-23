@@ -65,6 +65,7 @@ class ProxyReleaseTest extends IOSuite {
         )
         .withNioTransport
         .withoutBanner
+        .withShutdownTimeout(1.second)
         .bindAny()
         .resource
 
@@ -85,6 +86,7 @@ class ProxyReleaseTest extends IOSuite {
           .withHttpWebSocketResource(_ => proxyRoutes)
           .withNioTransport
           .withoutBanner
+          .withShutdownTimeout(1.second)
           .bindAny()
           .resource
       }

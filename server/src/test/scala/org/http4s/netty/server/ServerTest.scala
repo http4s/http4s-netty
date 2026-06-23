@@ -43,6 +43,7 @@ abstract class ServerTest extends IOSuite {
       .withHttpApp(ServerTest.routes)
       .withNioTransport
       .withIdleTimeout(2.seconds)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource,
@@ -103,6 +104,7 @@ abstract class ServerTest extends IOSuite {
       .withServiceErrorHandler(_ => PartialFunction.empty)
       .withEventLoopThreads(1)
       .withIdleTimeout(2.seconds)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource
@@ -129,6 +131,7 @@ abstract class ServerTest extends IOSuite {
       .withIdleTimeout(
         1.seconds
       ) // Basically going to send the request and hope it times out immediately.
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource
@@ -161,6 +164,7 @@ abstract class ServerTest extends IOSuite {
     val server: Resource[IO, Server] = NettyServerBuilder[IO]
       .withHttpApp(ServerTest.routes)
       .withEventLoopThreads(1)
+      .withShutdownTimeout(1.second)
       .withoutBanner
       .bindAny()
       .resource

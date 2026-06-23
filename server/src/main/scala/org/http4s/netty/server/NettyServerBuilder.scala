@@ -20,9 +20,9 @@ package server
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.effect.kernel.Async
-import cats.effect.std.CountDownLatch
 import cats.effect.std.Dispatcher
-import cats.implicits._
+import cats.effect.syntax.all._
+import cats.syntax.all._
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBufAllocator
@@ -30,6 +30,8 @@ import io.netty.channel._
 import io.netty.channel.epoll.Epoll
 import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollServerSocketChannel
+import io.netty.channel.group.ChannelGroup
+import io.netty.channel.group.DefaultChannelGroup
 import io.netty.channel.kqueue.KQueue
 import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueServerSocketChannel
@@ -49,6 +51,7 @@ import io.netty.handler.ssl.IdentityCipherSuiteFilter
 import io.netty.handler.ssl.JdkSslContext
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslHandler
+import io.netty.util.concurrent.GlobalEventExecutor
 import org.http4s.HttpApp
 import org.http4s.Request
 import org.http4s.Response
@@ -80,7 +83,8 @@ final class NettyServerBuilder[F[_]] private (
     sslConfig: NettyServerBuilder.SslConfig,
     wsMaxFrameLength: Int,
     wsCompression: Boolean,
-    requestLineParseErrorHandler: Throwable => F[Response[F]]
+    requestLineParseErrorHandler: Throwable => F[Response[F]],
+    shutdownTimeout: Duration
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -100,7 +104,8 @@ final class NettyServerBuilder[F[_]] private (
       sslConfig: NettyServerBuilder.SslConfig = sslConfig,
       wsMaxFrameLength: Int = wsMaxFrameLength,
       wsCompression: Boolean = wsCompression,
-      requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler
+      requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler,
+      shutdownTimeout: Duration = shutdownTimeout
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -117,7 +122,8 @@ final class NettyServerBuilder[F[_]] private (
       sslConfig,
       wsMaxFrameLength,
       wsCompression,
-      requestLineParseErrorHandler
+      requestLineParseErrorHandler,
+      shutdownTimeout
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -262,7 +268,9 @@ final class NettyServerBuilder[F[_]] private (
 
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
 
-  private def bind(dispatcher: Dispatcher[F]) = {
+  def withShutdownTimeout(timeout: Duration): Self = copy(shutdownTimeout = timeout)
+
+  private def bind(dispatcher: Dispatcher[F], loop: EventLoopHolder[_ <: ServerChannel]) = {
     val resolvedAddress =
       if (socketAddress.isUnresolved)
         new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
@@ -275,13 +283,15 @@ final class NettyServerBuilder[F[_]] private (
       idleTimeout,
       wsMaxFrameLength,
       wsCompression)
-    val loop = getEventLoop
+    val allChannels =
+      new DefaultChannelGroup(GlobalEventExecutor.INSTANCE)
     val server = new ServerBootstrap()
     server.option(ChannelOption.SO_BACKLOG, Int.box(1024))
     val channel = loop
       .configure(server)
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = void {
+          allChannels.add(ch)
           val pipeline = ch.pipeline()
           sslConfig.toHandler(ch.alloc()) match {
             case Some(handler) =>
@@ -312,20 +322,47 @@ final class NettyServerBuilder[F[_]] private (
       .bind(resolvedAddress)
       .await()
       .channel()
-    Bound(channel.localAddress().asInstanceOf[InetSocketAddress], loop, channel)
+    Bound(channel.localAddress().asInstanceOf[InetSocketAddress], loop, channel, allChannels)
   }
 
   def resource: Resource[F, Server] =
     for {
+      loop <- Resource.make(Sync[F].delay(getEventLoop))(l =>
+        Sync[F].delay {
+          l.shutdown()
+          logger.info("All channels shut down. Server shut down gracefully")
+        })
       dispatcher <- Dispatcher.parallel[F](await = true)
-      latch <- Resource.make(CountDownLatch[F](1))(_.await)
-      bound <- Resource.make(Sync[F].delay(bind(dispatcher))) {
-        case Bound(address, loop, channel) =>
+      bound <- Resource.make(Sync[F].delay(bind(dispatcher, loop))) {
+        case Bound(address, _, channel, allChannels) =>
           Sync[F].delay {
             channel.close().awaitUninterruptibly()
-            loop.shutdown()
-            dispatcher.unsafeRunSync(latch.release)
-            logger.info(s"All channels shut down. Server bound at ${address} shut down gracefully")
+            logger.info(
+              s"Server bound at $address no longer accepting new connections, waiting for in-flight requests to complete")
+          } *> {
+            val awaitAllClosed = Async[F].async[Unit] { cb =>
+              Sync[F].delay {
+                void(
+                  allChannels
+                    .newCloseFuture()
+                    .addListener((_: io.netty.util.concurrent.Future[_]) => cb(Right(())))
+                )
+                Some(Async[F].unit)
+              }
+            }
+            shutdownTimeout match {
+              case d: FiniteDuration =>
+                awaitAllClosed
+                  .timeoutTo(
+                    d,
+                    Sync[F].delay {
+                      logger.info(
+                        s"Shutdown timeout expired. Force-closing ${allChannels.size()} connection(s)")
+                      void(allChannels.close().awaitUninterruptibly())
+                    }
+                  )
+              case _ => awaitAllClosed
+            }
           }
       }
     } yield {
@@ -364,7 +401,8 @@ final class NettyServerBuilder[F[_]] private (
   private case class Bound(
       address: InetSocketAddress,
       holder: EventLoopHolder[_ <: ServerChannel],
-      channel: Channel)
+      channel: Channel,
+      allChannels: ChannelGroup)
 }
 
 object NettyServerBuilder {
@@ -386,7 +424,8 @@ object NettyServerBuilder {
       sslConfig = NettyServerBuilder.NoSsl,
       wsMaxFrameLength = DefaultWSMaxFrameLength,
       wsCompression = false,
-      requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F]
+      requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F],
+      shutdownTimeout = defaults.ShutdownTimeout
     )
 
   private def defaultRequestLineParseErrorHandler[F[_]](implicit
