@@ -40,7 +40,8 @@ import org.typelevel.ci.CIString
 import org.typelevel.vault.Vault
 
 import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.Flow
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLEngine
 
 /** Helpers for converting http4s request/response objects to and from the netty model
@@ -222,18 +223,28 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
           ) // No cleanup action needed
         }
       case streamed: StreamedHttpMessage =>
-        val isDrained = new AtomicBoolean(false)
-        val subscribed = new AtomicBoolean(false)
+        val state = new AtomicReference[BodyState](BodyState.New)
+        val publisher = FlowAdapters.toFlowPublisher(streamed)
         val stream =
           Stream
-            .eval(F.delay(subscribed.set(true)))
-            .flatMap(_ =>
-              Stream
-                .fromPublisher[F](FlowAdapters.toFlowPublisher(streamed), 1))
-            .flatMap(c =>
-              Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
-            .onFinalize(F.delay(void(isDrained.compareAndSet(false, true))))
-        (stream, drainBody(_, stream, isDrained, subscribed))
+            .eval(F.delay(state.compareAndSet(BodyState.New, BodyState.Subscribed)))
+            .flatMap { won =>
+              if (won)
+                Stream
+                  .fromPublisher[F](publisher, 1)
+                  .flatMap(c =>
+                    Stream.chunk(Chunk.array(NettyModelConversion.bytebufToArray(c.content()))))
+              else
+                // drainBody won the race and already consumed the publisher. We cannot
+                // serve a correct response. Emitting Stream.empty would silently produce
+                // a zero-byte body. This allows a handler to handle this separately.
+                Stream.raiseError[F](
+                  new IllegalStateException(
+                    "Request body publisher already consumed (drained by finalizer or compiled twice)"))
+            }
+            .onFinalize(
+              F.delay(void(state.compareAndSet(BodyState.Subscribed, BodyState.Finished))))
+        (stream, drainBody(_, publisher, state))
       case _ => (Stream.empty.covary[F], _ => F.unit)
     }
 
@@ -417,33 +428,44 @@ object NettyModelConversion {
 
   val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
 
+  private[netty] sealed trait BodyState
+  private[netty] object BodyState {
+    case object New extends BodyState
+    case object Subscribed extends BodyState
+    case object Finished extends BodyState
+  }
+
   /** Return an action that will drain the channel stream in the case that it wasn't drained.
+    *
+    * Uses `state` to atomically decide who owns the publisher: the route's body stream or this finalizer.
+    * Whoever loses must not call `subscribe` the underlying `HandlerPublisher` only accepts one subscriber.
     */
   private[netty] def drainBody[F[_]](
       c: Channel,
-      f: Stream[F, Byte],
-      isDrained: AtomicBoolean,
-      subscribed: AtomicBoolean)(implicit F: Async[F]): F[Unit] =
+      publisher: Flow.Publisher[HttpContent],
+      state: AtomicReference[BodyState])(implicit F: Async[F]): F[Unit] =
     F.delay {
-      if (isDrained.compareAndSet(false, true)) {
-        if (subscribed.get()) {
-          // The stream was already subscribed to (body partially consumed).
-          // HandlerPublisher only supports one subscriber, so we cannot
-          // re-subscribe to drain. Close the connection instead. The
-          // remaining request bytes would corrupt the next request anyway.
-          logger.info("Request body not fully drained but already subscribed. Closing connection")
-          F.delay(c.close()).void
-        } else if (c.isOpen) {
-          logger.info("Response body not drained to completion. Draining and closing connection")
-          // Drain the stream regardless. Some bytebufs often
-          // Remain in the buffers. Draining them solves this issue
-          F.delay(c.close()).liftToF >> f.compile.drain
-        } else
-          // Drain anyway, don't close the channel
-          f.compile.drain
-      } else {
-        F.unit
-      }
+      if (state.compareAndSet(BodyState.New, BodyState.Finished)) {
+        logger.info("Response body not drained to completion. Draining and closing connection")
+        // We own the publisher, so we drain via a fresh subscription.
+        val drain = Stream.fromPublisher[F](publisher, 1).compile.drain
+        if (c.isOpen)
+          F.delay(c.close()).liftToF >> drain
+        else
+          drain
+      } else
+        state.get() match {
+          case BodyState.Subscribed =>
+            // Route is mid-flight on the body. We cannot re-subscribe, and the remaining
+            // request bytes would corrupt the next request, so close the connection.
+            logger.info("Request body not fully drained but already subscribed. Closing connection")
+            F.delay(c.close()).void
+          case BodyState.Finished =>
+            F.unit
+          case BodyState.New =>
+            // Unreachable: CAS New→Finished failed, so state is no longer New.
+            F.unit
+        }
     }.flatMap(identity)
 
   private[netty] def toHeaders(headers: HttpHeaders): Headers = {
