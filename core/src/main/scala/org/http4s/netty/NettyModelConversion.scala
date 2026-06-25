@@ -238,9 +238,8 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
                 // drainBody won the race and already consumed the publisher. We cannot
                 // serve a correct response. Emitting Stream.empty would silently produce
                 // a zero-byte body. This allows a handler to handle this separately.
-                Stream.raiseError[F](
-                  new IllegalStateException(
-                    "Request body publisher already consumed (drained by finalizer or compiled twice)"))
+                Stream.raiseError[F](new IllegalStateException(
+                  "Request body publisher already consumed (drained by finalizer or compiled twice)"))
             }
             .onFinalize(
               F.delay(void(state.compareAndSet(BodyState.Subscribed, BodyState.Finished))))
@@ -437,8 +436,9 @@ object NettyModelConversion {
 
   /** Return an action that will drain the channel stream in the case that it wasn't drained.
     *
-    * Uses `state` to atomically decide who owns the publisher: the route's body stream or this finalizer.
-    * Whoever loses must not call `subscribe` the underlying `HandlerPublisher` only accepts one subscriber.
+    * Uses `state` to atomically decide who owns the publisher: the route's body stream or this
+    * finalizer. Whoever loses must not call `subscribe` the underlying `HandlerPublisher` only
+    * accepts one subscriber.
     */
   private[netty] def drainBody[F[_]](
       c: Channel,

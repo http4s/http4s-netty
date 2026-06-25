@@ -107,8 +107,8 @@ class DrainBodyDoubleSubscribeTest extends CatsEffectSuite {
     }
   }
 
-  /** Like SingleSubscriberPublisher, but counts every `subscribe` call so a test can assert it
-    * was only invoked once even when no `onError` propagates back to the caller.
+  /** Like SingleSubscriberPublisher, but counts every `subscribe` call so a test can assert it was
+    * only invoked once even when no `onError` propagates back to the caller.
     */
   private class CountingSingleSubscriberPublisher extends Publisher[HttpContent] {
     val subscribeCount = new AtomicInteger(0)
@@ -150,8 +150,9 @@ class DrainBodyDoubleSubscribeTest extends CatsEffectSuite {
   /** Deterministic racing using deferred and fibers.
     *
     * Thread A (route handler) starts compiling the body but is paused before evaluating the body
-    * stream. Thread B (the request Resource finalizer) runs drainBody while A is paused.
-    * When A is unpaused it cannot also subscribe as that would violate the requirements of a single subscriber.
+    * stream. Thread B (the request Resource finalizer) runs drainBody while A is paused. When A is
+    * unpaused it cannot also subscribe as that would violate the requirements of a single
+    * subscriber.
     *
     * We use a `Deferred` to make the interleaving deterministic. Under load the same interleaving
     * occurs naturally, just less reliably.
