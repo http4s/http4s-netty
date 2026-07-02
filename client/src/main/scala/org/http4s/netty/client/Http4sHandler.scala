@@ -129,7 +129,7 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
         if (promises.nonEmpty) {
           val promise = promises.dequeue()
           logger.trace("dequeuing promise")
-          val result = modelConversion.fromNettyResponsePure(h, ctx.channel())
+          val result = modelConversion.fromNettyResponse(h, ctx.channel())
           promise(result)
         }
       case x: Http2PingFrame =>

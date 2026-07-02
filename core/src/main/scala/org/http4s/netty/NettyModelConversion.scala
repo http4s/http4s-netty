@@ -95,14 +95,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     }
   }
 
-  def fromNettyResponse(response: HttpResponse, channel: Channel): F[Resource[F, Response[F]]] =
-    F.fromEither(fromNettyResponsePure(response, channel))
-
-  /** Pure variant of [[fromNettyResponse]] that avoids an async round-trip through the effect
-    * runtime. Used by the client handler to resolve the response promise synchronously on the Netty
-    * event loop, eliminating a race between channelRead and channelInactive.
-    */
-  def fromNettyResponsePure(
+  def fromNettyResponse(
       response: HttpResponse,
       channel: Channel): Either[Throwable, Resource[F, Response[F]]] = {
     logger.trace(s"converting response: $response")
