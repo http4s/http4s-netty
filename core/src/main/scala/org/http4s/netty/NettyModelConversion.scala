@@ -95,10 +95,19 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
     }
   }
 
-  def fromNettyResponse(response: HttpResponse, channel: Channel): F[Resource[F, Response[F]]] = {
+  def fromNettyResponse(response: HttpResponse, channel: Channel): F[Resource[F, Response[F]]] =
+    F.fromEither(fromNettyResponsePure(response, channel))
+
+  /** Pure variant of [[fromNettyResponse]] that avoids an async round-trip through the effect
+    * runtime. Used by the client handler to resolve the response promise synchronously on the Netty
+    * event loop, eliminating a race between channelRead and channelInactive.
+    */
+  def fromNettyResponsePure(
+      response: HttpResponse,
+      channel: Channel): Either[Throwable, Resource[F, Response[F]]] = {
     logger.trace(s"converting response: $response")
     val (body, drain) = convertHttpBody(response)
-    val res = for {
+    (for {
       status <- Status.fromInt(response.status().code())
       version <- HV.fromString(response.protocolVersion().text())
     } yield Response(
@@ -106,9 +115,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
       version,
       toHeaders(response.headers()),
       body
-    )
-
-    F.fromEither(res).tupleRight(drain).map(t => Resource.make(F.pure(t._1))(_ => t._2(channel)))
+    )).map(resp => Resource.make(F.pure(resp))(_ => drain(channel)))
   }
 
   def toNettyHeaders(headers: Headers): HttpHeaders = {

@@ -39,11 +39,7 @@ import org.http4s.netty.client.Http4sHandler.logger
 import java.io.IOException
 import java.nio.channels.ClosedChannelException
 import java.util.concurrent.CancellationException
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
 import scala.concurrent.TimeoutException
-import scala.util.Failure
-import scala.util.Success
 
 private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: Async[F])
     extends ChannelInboundHandlerAdapter {
@@ -58,10 +54,6 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   //     That means calls to ctx.read(), and ct.write(..), would have to be trampolined otherwise.
   //  2. We get serialization of execution: the EventLoop is a serial execution queue so
   //     we can rest easy knowing that no two events will be executed in parallel.
-  private var eventLoopContext: ExecutionContext = _
-
-  private var pending: Future[Unit] = Future.unit
-  private var inFlight: Option[Promise] = None
 
   private def write2(request: Request[F], channel: Channel, key: Key): F[Unit] = {
     import io.netty.handler.codec.http2._
@@ -132,31 +124,13 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   override def isSharable: Boolean = false
 
   override def channelRead(ctx: ChannelHandlerContext, msg: Any): Unit = void {
-    implicit val ec: ExecutionContext = eventLoopContext
-
     msg match {
       case h: HttpResponse =>
-        val responseResourceF = modelConversion.fromNettyResponse(h, ctx.channel())
-        val result = dispatcher.unsafeToFuture(responseResourceF)
-
         if (promises.nonEmpty) {
           val promise = promises.dequeue()
-          inFlight = Some(promise)
           logger.trace("dequeuing promise")
-          pending = pending.flatMap { _ =>
-            result.transform {
-              case Failure(exception) =>
-                logger.trace("handling promise failure")
-                promise(Left(exception))
-                inFlight = None
-                Failure(exception)
-              case Success(res) =>
-                logger.trace("handling promise success")
-                promise(Right(res))
-                inFlight = None
-                Success(())
-            }
-          }
+          val result = modelConversion.fromNettyResponsePure(h, ctx.channel())
+          promise(result)
         }
       case x: Http2PingFrame =>
         if (!x.ack()) {
@@ -183,12 +157,6 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
   }
 
-  override def handlerAdded(ctx: ChannelHandlerContext): Unit =
-    if (eventLoopContext == null) void {
-      // Initialize our ExecutionContext
-      eventLoopContext = ExecutionContext.fromExecutor(ctx.channel.eventLoop)
-    }
-
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
     onException(ctx.channel(), new ClosedChannelException())
 
@@ -206,13 +174,9 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
     }
 
   private def onException(channel: Channel, e: Throwable): Unit = void {
-    implicit val ec: ExecutionContext = eventLoopContext
-
-    val allPromises =
-      (inFlight.toList ++ promises.dequeueAll(_ => true)).map(promise => Future(promise(Left(e))))
+    val allPromises = promises.dequeueAll(_ => true)
     logger.trace(s"onException: dequeueAll(${allPromises.size})")
-    pending = pending.flatMap(_ => Future.sequence(allPromises).map(_ => ()))
-    inFlight = None
+    allPromises.foreach(_(Left(e)))
 
     channel.close()
   }
