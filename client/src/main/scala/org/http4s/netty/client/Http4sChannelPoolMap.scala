@@ -277,13 +277,13 @@ private[client] object Http4sChannelPoolMap {
       (channel: Channel) => {
         val eventLoop = channel.eventLoop()
         if (!channel.isActive)
-          eventLoop.newSucceededFuture(java.lang.Boolean.FALSE)
+          eventLoop.newSucceededFuture(false)
         else {
           val createdAt = channel.attr(CreatedAt).get()
           if (createdAt != null && (System.nanoTime() - createdAt) > maxAgeNanos)
-            eventLoop.newSucceededFuture(java.lang.Boolean.FALSE)
+            eventLoop.newSucceededFuture(false)
           else
-            eventLoop.newSucceededFuture(java.lang.Boolean.TRUE)
+            eventLoop.newSucceededFuture(true)
         }
       }
     }

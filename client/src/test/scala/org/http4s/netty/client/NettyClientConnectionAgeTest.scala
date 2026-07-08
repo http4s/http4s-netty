@@ -47,7 +47,8 @@ class NettyClientConnectionAgeTest extends IOSuite {
       .withHttpApp(
         HttpRoutes
           .of[IO] {
-            case GET -> Root / "fast" => Ok("fast")
+            case req @ GET -> Root / "port" =>
+              Ok(req.remote.fold("unknown")(_.port.value.toString))
             case GET -> Root / "slow" => IO.sleep(2.seconds) >> Ok("slow")
           }
           .orNotFound
@@ -60,15 +61,12 @@ class NettyClientConnectionAgeTest extends IOSuite {
     val s = server()
     val c = shortAgeClient()
 
-    val req = Request[IO](uri = s.baseUri / "fast")
+    val req = Request[IO](uri = s.baseUri / "port")
     for {
-      r1 <- c.expect[String](req)
+      port1 <- c.expect[String](req)
       _ <- IO.sleep(3.seconds)
-      r2 <- c.expect[String](req)
-    } yield {
-      assertEquals(r1, "fast")
-      assertEquals(r2, "fast")
-    }
+      port2 <- c.expect[String](req)
+    } yield assertNotEquals(port1, port2, "expected a new connection (different remote port)")
   }
 
   test("in-flight request completes even if connection age expires during request") {
