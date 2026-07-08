@@ -41,7 +41,8 @@ class NettyClientBuilder[F[_]](
     nettyChannelOptions: NettyChannelOptions,
     proxy: Option[Proxy],
     http2: Boolean,
-    defaultRequestHeaders: Headers
+    defaultRequestHeaders: Headers,
+    maxConnectionAge: Duration
 )(implicit F: Async[F]) {
   type Self = NettyClientBuilder[F]
 
@@ -58,7 +59,8 @@ class NettyClientBuilder[F[_]](
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
       proxy: Option[Proxy] = proxy,
       http2: Boolean = http2,
-      defaultRequestHeaders: Headers = defaultRequestHeaders
+      defaultRequestHeaders: Headers = defaultRequestHeaders,
+      maxConnectionAge: Duration = maxConnectionAge
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -73,7 +75,8 @@ class NettyClientBuilder[F[_]](
       nettyChannelOptions,
       proxy,
       http2,
-      defaultRequestHeaders
+      defaultRequestHeaders,
+      maxConnectionAge
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -86,6 +89,7 @@ class NettyClientBuilder[F[_]](
 
   def withIdleTimeout(duration: Duration): Self = copy(idleTimeout = duration)
   def withReadTimeout(duration: Duration): Self = copy(readTimeout = duration)
+  def withMaxConnectionAge(duration: Duration): Self = copy(maxConnectionAge = duration)
 
   def withSSLContext(sslContext: SSLContext): Self =
     copy(sslContext = SSLContextOption.Provided(sslContext))
@@ -142,7 +146,8 @@ class NettyClientBuilder[F[_]](
         sslContext,
         http2,
         defaultRequestHeaders,
-        readTimeout
+        readTimeout,
+        maxConnectionAge
       )
       Client[F](new Http4sChannelPoolMap[F](bs, config).run)
     }
@@ -163,6 +168,7 @@ object NettyClientBuilder {
       nettyChannelOptions = NettyChannelOptions.empty,
       proxy = Proxy.fromSystemProperties,
       http2 = false,
-      defaultRequestHeaders = Headers()
+      defaultRequestHeaders = Headers(),
+      maxConnectionAge = Duration.Inf
     )
 }

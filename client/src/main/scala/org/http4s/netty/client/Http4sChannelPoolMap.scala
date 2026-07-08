@@ -30,6 +30,7 @@ import io.netty.channel.ChannelPipeline
 import io.netty.channel.ChannelPromise
 import io.netty.channel.pool.AbstractChannelPoolHandler
 import io.netty.channel.pool.AbstractChannelPoolMap
+import io.netty.channel.pool.ChannelHealthChecker
 import io.netty.channel.pool.ChannelPoolHandler
 import io.netty.channel.pool.FixedChannelPool
 import io.netty.handler.codec.http.HttpClientCodec
@@ -40,6 +41,7 @@ import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.ssl.ApplicationProtocolNames
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
+import io.netty.util.AttributeKey
 import io.netty.util.concurrent.Future
 import org.http4s.Headers
 import org.http4s.HttpVersion
@@ -140,19 +142,34 @@ private[client] class Http4sChannelPoolMap[F[_]](
     } yield response
   }
 
-  override def newPool(key: Key): FixedChannelPool =
+  override def newPool(key: Key): FixedChannelPool = {
+    val healthChecker =
+      Http4sChannelPoolMap.connectionAgeHealthChecker(config.maxConnectionAge)
     new MyFixedChannelPool(
       bootstrap,
       new WrappedChannelPoolHandler(key, config),
+      healthChecker,
       config.maxConnections,
       key.requestKey)
+  }
 
   class MyFixedChannelPool(
       bs: Bootstrap,
       handler: ChannelPoolHandler,
+      healthChecker: ChannelHealthChecker,
       maxConnections: Int,
       key: RequestKey)
-      extends FixedChannelPool(bs, handler, maxConnections) {
+      extends FixedChannelPool(
+        bs,
+        handler,
+        healthChecker,
+        null, // no acquire timeout action
+        -1L, // no acquire timeout
+        maxConnections,
+        Int.MaxValue, // maxPendingAcquires
+        true, // releaseHealthCheck
+        true // lastRecentUsed
+      ) {
     override def connectChannel(bs: Bootstrap): ChannelFuture = {
       val host = key.authority.host.value
       val port = (key.scheme, key.authority.port) match {
@@ -177,6 +194,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
     override def channelCreated(ch: Channel): Unit = void {
       logger.trace(s"Created $ch for ${key}")
+      ch.attr(Http4sChannelPoolMap.CreatedAt).set(System.nanoTime())
       buildPipeline(ch)
     }
 
@@ -249,6 +267,27 @@ private[client] class Http4sChannelPoolMap[F[_]](
 }
 
 private[client] object Http4sChannelPoolMap {
+  private val CreatedAt: AttributeKey[java.lang.Long] =
+    AttributeKey.valueOf("http4s.channel.createdAt")
+
+  private def connectionAgeHealthChecker(maxConnectionAge: Duration): ChannelHealthChecker =
+    if (!maxConnectionAge.isFinite) ChannelHealthChecker.ACTIVE
+    else {
+      val maxAgeNanos = maxConnectionAge.toNanos
+      (channel: Channel) => {
+        val eventLoop = channel.eventLoop()
+        if (!channel.isActive)
+          eventLoop.newSucceededFuture(false)
+        else {
+          val createdAt = channel.attr(CreatedAt).get()
+          if (createdAt != null && (System.nanoTime() - createdAt) > maxAgeNanos)
+            eventLoop.newSucceededFuture(false)
+          else
+            eventLoop.newSucceededFuture(true)
+        }
+      }
+    }
+
   final case class Config(
       maxInitialLength: Int,
       maxHeaderSize: Int,
@@ -259,7 +298,8 @@ private[client] object Http4sChannelPoolMap {
       sslConfig: SSLContextOption,
       http2: Boolean,
       defaultRequestHeaders: Headers,
-      readTimeout: Duration
+      readTimeout: Duration,
+      maxConnectionAge: Duration
   )
 
   private[client] def fromFuture[F[_]: Async, A](future: => Future[A]): F[A] = ???
