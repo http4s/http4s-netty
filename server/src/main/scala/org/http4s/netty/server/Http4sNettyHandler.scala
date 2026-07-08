@@ -91,6 +91,10 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   // if the connection gets closed.
   private[this] val pendingResponses = MutableQueue.empty[() => Future[Unit]]
 
+  // Set to true when the connection age has expired; the connection will be closed
+  // after all pending responses have been written.
+  private[this] var closeAfterResponses: Boolean = false
+
   // Compute the formatted date string only once per second, and cache the result.
   // This should help microscopically under load.
   private[this] var cachedDate: Long = Long.MinValue
@@ -142,9 +146,12 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
             case Success(()) =>
               pendingResponses.dequeue()
               if (pendingResponses.isEmpty)
-                // Since we've now gone down to zero, we need to issue a
-                // read, in case we ignored an earlier read complete
-                void(ctx.read())
+                if (closeAfterResponses)
+                  void(ctx.close())
+                else
+                  // Since we've now gone down to zero, we need to issue a
+                  // read, in case we ignored an earlier read complete
+                  void(ctx.read())
               Success(())
 
             case Failure(NonFatal(e)) =>
@@ -218,7 +225,15 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
     evt match {
       case _: IdleStateEvent if ctx.channel().isOpen =>
         logger.trace(s"Closing connection due to idle timeout")
-        ctx.close();
+        ctx.close()
+      case ConnectionAgeExpiredEvent if ctx.channel().isOpen =>
+        if (pendingResponses.isEmpty) {
+          logger.trace(s"Closing connection due to max connection age")
+          ctx.close()
+        } else {
+          logger.trace(s"Connection age exceeded, will close after pending responses")
+          closeAfterResponses = true
+        }
       case _ => super.userEventTriggered(ctx, evt)
     }
   }

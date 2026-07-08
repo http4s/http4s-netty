@@ -97,6 +97,12 @@ private object NettyPipelineHelpers {
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F]): Unit = void {
 
+    if (config.maxConnectionAge.isFinite && config.maxConnectionAge.length > 0) {
+      void(
+        pipeline
+          .addLast("connection-age-handler", new ConnectionAgeHandler(config.maxConnectionAge)))
+    }
+
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
       void(
         pipeline.addLast(

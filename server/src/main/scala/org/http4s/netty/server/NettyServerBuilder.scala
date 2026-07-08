@@ -84,7 +84,8 @@ final class NettyServerBuilder[F[_]] private (
     wsMaxFrameLength: Int,
     wsCompression: Boolean,
     requestLineParseErrorHandler: Throwable => F[Response[F]],
-    shutdownTimeout: Duration
+    shutdownTimeout: Duration,
+    maxConnectionAge: Duration
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -105,7 +106,8 @@ final class NettyServerBuilder[F[_]] private (
       wsMaxFrameLength: Int = wsMaxFrameLength,
       wsCompression: Boolean = wsCompression,
       requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler,
-      shutdownTimeout: Duration = shutdownTimeout
+      shutdownTimeout: Duration = shutdownTimeout,
+      maxConnectionAge: Duration = maxConnectionAge
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -123,7 +125,8 @@ final class NettyServerBuilder[F[_]] private (
       wsMaxFrameLength,
       wsCompression,
       requestLineParseErrorHandler,
-      shutdownTimeout
+      shutdownTimeout,
+      maxConnectionAge
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -267,6 +270,7 @@ final class NettyServerBuilder[F[_]] private (
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
   def withIdleTimeout(duration: FiniteDuration): Self = copy(idleTimeout = duration)
+  def withMaxConnectionAge(duration: FiniteDuration): Self = copy(maxConnectionAge = duration)
 
   def withShutdownTimeout(timeout: Duration): Self = copy(shutdownTimeout = timeout)
 
@@ -282,7 +286,8 @@ final class NettyServerBuilder[F[_]] private (
       maxChunkSize,
       idleTimeout,
       wsMaxFrameLength,
-      wsCompression)
+      wsCompression,
+      maxConnectionAge)
     val allChannels =
       new DefaultChannelGroup(GlobalEventExecutor.INSTANCE)
     val server = new ServerBootstrap()
@@ -425,7 +430,8 @@ object NettyServerBuilder {
       wsMaxFrameLength = DefaultWSMaxFrameLength,
       wsCompression = false,
       requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F],
-      shutdownTimeout = defaults.ShutdownTimeout
+      shutdownTimeout = defaults.ShutdownTimeout,
+      maxConnectionAge = Duration.Inf
     )
 
   private def defaultRequestLineParseErrorHandler[F[_]](implicit
