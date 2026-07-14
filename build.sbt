@@ -102,7 +102,7 @@ lazy val client = project
       ("com.github.monkeywie" % "proxyee" % "1.7.6" % Test)
         .excludeAll("io.netty")
         .excludeAll("org.bouncycastle"),
-      ("com.github.bbottema" % "java-socks-proxy-server" % "4.1.2" % Test)
+      ("com.github.bbottema" % "java-socks-proxy-server" % "4.2.0" % Test)
         .exclude("org.slf4j", "slf4j-api"),
       "org.scalameta" %% "munit" % munit % Test,
       "ch.qos.logback" % "logback-classic" % "1.2.13" % Test,
