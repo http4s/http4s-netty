@@ -307,15 +307,16 @@ final class NettyServerBuilder[F[_]] private (
               pipeline.addLast(negotiationHandler)
 
             case None =>
-              logger.debug("Starting pipeline cleartext with HTTP/2 prior knowledge detection")
-              val h2PriorKnowledgeDetection = new PriorKnowledgeDetectionHandler[F](
+              logger.debug(
+                "Starting cleartext pipeline with H2 prior knowledge and upgrade support")
+              NettyPipelineHelpers.buildCleartextPipeline(
+                pipeline,
                 config,
                 httpApp,
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
                 dispatcher
               )
-              pipeline.addLast("h2-prior-knowledge-detection", h2PriorKnowledgeDetection)
           }
         }
       })
