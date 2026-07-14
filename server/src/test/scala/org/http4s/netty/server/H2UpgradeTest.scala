@@ -16,10 +16,14 @@
 
 package org.http4s.netty.server
 
+import cats.effect.Deferred
 import cats.effect.IO
 import cats.effect.Resource
 import munit.CatsEffectSuite
+import org.http4s.HttpRoutes
+import org.http4s.dsl.io._
 import org.http4s.server.Server
+import org.typelevel.ci._
 
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -29,18 +33,9 @@ import scala.concurrent.duration._
 
 class H2UpgradeTest extends CatsEffectSuite {
 
-  private val serverResource: Resource[IO, Server] =
-    NettyServerBuilder[IO]
-      .withHttpApp(ServerTest.routes)
-      .withEventLoopThreads(1)
-      .withShutdownTimeout(1.second)
-      .withoutBanner
-      .bindAny()
-      .resource
-
   test("H2 upgrade from HTTP/1.1 is supported") {
-    serverResource.use { server =>
-      sendUpgradeRequest(server).map { statusLine =>
+    serverResource(ServerTest.routes).use { server =>
+      sendUpgradeRequest(server, "/simple").map { statusLine =>
         assert(
           statusLine.contains("101"),
           s"Expected 101 Switching Protocols but got: $statusLine"
@@ -49,7 +44,62 @@ class H2UpgradeTest extends CatsEffectSuite {
     }
   }
 
-  private def sendUpgradeRequest(server: Server): IO[String] =
+  test("H2 upgrade request is processed on an HTTP/2 stream") {
+    Deferred[IO, Boolean].flatMap { wasH2Stream =>
+      val routes = HttpRoutes
+        .of[IO] { case req @ GET -> Root / "protocol" =>
+          val isH2 = req.headers.get(ci"x-http2-stream-id").isDefined
+          wasH2Stream.complete(isH2) *> Ok("ok")
+        }
+        .orNotFound
+      serverResource(routes).use { server =>
+        val addr = server.address
+        Resource
+          .make(IO.blocking(new Socket(addr.getHostName, addr.getPort)))(s =>
+            IO.blocking(s.close()))
+          .use { socket =>
+            IO.blocking {
+              socket.setSoTimeout(5000)
+              val out = socket.getOutputStream
+              val writer = new PrintWriter(out, true)
+              writer.print(
+                s"GET /protocol HTTP/1.1\r\n" +
+                  s"Host: ${addr.getHostName}:${addr.getPort}\r\n" +
+                  "Connection: Upgrade, HTTP2-Settings\r\n" +
+                  "Upgrade: h2c\r\n" +
+                  "HTTP2-Settings: AAMAAABkAAQBAAAAAAIAAAAA\r\n" +
+                  "\r\n"
+              )
+              writer.flush()
+
+              val reader = new BufferedReader(new InputStreamReader(socket.getInputStream))
+              val statusLine = reader.readLine()
+              assert(statusLine.contains("101"), s"Expected 101 but got: $statusLine")
+
+              // Read remaining 101 headers
+              var line = reader.readLine()
+              while (line != null && line.nonEmpty) line = reader.readLine()
+
+              // Send HTTP/2 client connection preface + empty SETTINGS
+              out.write("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes("US-ASCII"))
+              out.write(Array[Byte](0, 0, 0, 0x04, 0, 0, 0, 0, 0))
+              out.flush()
+            } *> wasH2Stream.get.map(assert(_, "Expected request on an HTTP/2 stream"))
+          }
+      }
+    }
+  }
+
+  private def serverResource(app: org.http4s.HttpApp[IO]): Resource[IO, Server] =
+    NettyServerBuilder[IO]
+      .withHttpApp(app)
+      .withEventLoopThreads(1)
+      .withShutdownTimeout(1.second)
+      .withoutBanner
+      .bindAny()
+      .resource
+
+  private def sendUpgradeRequest(server: Server, path: String): IO[String] =
     IO.blocking {
       val addr = server.address
       val socket = new Socket(addr.getHostName, addr.getPort)
@@ -57,7 +107,7 @@ class H2UpgradeTest extends CatsEffectSuite {
         socket.setSoTimeout(5000)
         val writer = new PrintWriter(socket.getOutputStream, true)
         writer.print(
-          s"GET /simple HTTP/1.1\r\n" +
+          s"GET $path HTTP/1.1\r\n" +
             s"Host: ${addr.getHostName}:${addr.getPort}\r\n" +
             "Connection: Upgrade, HTTP2-Settings\r\n" +
             "Upgrade: h2c\r\n" +
