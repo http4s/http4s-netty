@@ -43,6 +43,22 @@ import org.http4s.server.websocket.WebSocketBuilder2
 
 private object NettyPipelineHelpers {
 
+  private val idleHandlerName = "idle-handler"
+  private val wsCompressionName = "websocket-compression"
+  private val wsAggregatorName = "websocket-aggregator"
+  private val streamsHandlerName = "serverStreamsHandler"
+  private val http4sHandlerName = "http4s"
+  private val h2cUpgradeCleanupName = "h2c-upgrade-cleanup"
+
+  private val h1HandlerNames =
+    Seq(
+      idleHandlerName,
+      wsCompressionName,
+      wsAggregatorName,
+      streamsHandlerName,
+      http4sHandlerName,
+      h2cUpgradeCleanupName)
+
   def buildCleartextPipeline[F[_]: Async](
       pipeline: ChannelPipeline,
       config: NegotiationHandler.Config,
@@ -102,7 +118,7 @@ private object NettyPipelineHelpers {
 
     // Cleanup handler for h2c upgrade path: removes H1 handlers after successful upgrade
     pipeline.addLast(
-      "h2c-upgrade-cleanup",
+      h2cUpgradeCleanupName,
       new ChannelInboundHandlerAdapter {
         override def userEventTriggered(ctx: ChannelHandlerContext, evt: AnyRef): Unit =
           evt match {
@@ -197,20 +213,20 @@ private object NettyPipelineHelpers {
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
       void(
         pipeline.addLast(
-          "idle-handler",
+          idleHandlerName,
           new IdleStateHandler(0, 0, config.idleTimeout.length, config.idleTimeout.unit)))
     }
 
     if (config.wsCompression) {
       void(
         pipeline.addLast(
-          "websocket-compression",
+          wsCompressionName,
           new WebSocketServerCompressionHandler(config.wsMaxFrameLength)))
     }
-    pipeline.addLast("websocket-aggregator", new WebSocketFrameAggregator(config.wsMaxFrameLength))
-    pipeline.addLast("serverStreamsHandler", new DirectStreamingServerHandler())
+    pipeline.addLast(wsAggregatorName, new WebSocketFrameAggregator(config.wsMaxFrameLength))
+    pipeline.addLast(streamsHandlerName, new DirectStreamingServerHandler())
     pipeline.addLast(
-      "http4s",
+      http4sHandlerName,
       Http4sNettyHandler
         .websocket(
           httpApp,
@@ -221,17 +237,8 @@ private object NettyPipelineHelpers {
     )
   }
 
-  private def removeH1Handlers(pipeline: ChannelPipeline): Unit = {
-    val handlerNames =
-      Seq(
-        "idle-handler",
-        "websocket-compression",
-        "websocket-aggregator",
-        "serverStreamsHandler",
-        "http4s",
-        "h2c-upgrade-cleanup")
-    handlerNames.foreach { name =>
+  private def removeH1Handlers(pipeline: ChannelPipeline): Unit =
+    h1HandlerNames.foreach { name =>
       if (pipeline.get(name) != null) void(pipeline.remove(name))
     }
-  }
 }
