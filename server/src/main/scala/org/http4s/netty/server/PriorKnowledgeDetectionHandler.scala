@@ -23,7 +23,9 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageDecoder
 
 import java.util
+import org.typelevel.scalaccompat.annotation.nowarn
 
+@nowarn("msg=never used")
 private class PriorKnowledgeDetectionHandler[F[_]: Async]() extends ByteToMessageDecoder {
 
   override protected def handlerRemoved0(ctx: ChannelHandlerContext): Unit =
