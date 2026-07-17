@@ -18,20 +18,31 @@ package org.http4s.netty
 package server
 
 import cats.effect.Async
+import cats.effect.std.Dispatcher
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageDecoder
+import org.http4s.Response
+import org.http4s.server.ServiceErrorHandler
+import org.http4s.server.websocket.WebSocketBuilder2
+
+import scala.annotation.nowarn
 
 import java.util
-import org.typelevel.scalaccompat.annotation.nowarn
 
-@nowarn("msg=never used")
-private class PriorKnowledgeDetectionHandler[F[_]: Async]() extends ByteToMessageDecoder {
-
+/** Kept as a stub for binary compatibility (MiMa). */
+@deprecated("No longer used", "0.7")
+@nowarn("msg=is never used")
+private class PriorKnowledgeDetectionHandler[F[_]: Async](
+    config: NegotiationHandler.Config,
+    httpApp: WebSocketBuilder2[F] => HttpResource[F],
+    serviceErrorHandler: ServiceErrorHandler[F],
+    requestLineParseErrorHandler: Throwable => F[Response[F]],
+    dispatcher: Dispatcher[F]
+) extends ByteToMessageDecoder {
   override protected def handlerRemoved0(ctx: ChannelHandlerContext): Unit =
     throw new UnsupportedOperationException()
 
   override def decode(ctx: ChannelHandlerContext, in: ByteBuf, out: util.List[AnyRef]): Unit =
     throw new UnsupportedOperationException()
-
 }
