@@ -17,13 +17,17 @@
 package org.http4s.netty
 package server
 
+import cats.effect.Async
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.ByteToMessageDecoder
 
 import java.util
 
-private class PriorKnowledgeDetectionHandler[F[_]]() extends ByteToMessageDecoder {
+private class PriorKnowledgeDetectionHandler[F[_]: Async]() extends ByteToMessageDecoder {
+
+  override protected def handlerRemoved0(ctx: ChannelHandlerContext): Unit =
+    throw new UnsupportedOperationException()
 
   override def decode(ctx: ChannelHandlerContext, in: ByteBuf, out: util.List[AnyRef]): Unit =
     throw new UnsupportedOperationException()
