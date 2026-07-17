@@ -26,9 +26,8 @@ import org.http4s.Response
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
 
-import scala.annotation.nowarn
-
 import java.util
+import scala.annotation.nowarn
 
 /** Kept as a stub for binary compatibility (MiMa). */
 @deprecated("No longer used", "0.7")
