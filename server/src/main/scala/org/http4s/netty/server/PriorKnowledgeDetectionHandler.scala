@@ -31,7 +31,7 @@ import scala.annotation.nowarn
 
 /** Kept as a stub for binary compatibility (MiMa). */
 @deprecated("No longer used", "0.7")
-@nowarn("msg=is never used")
+@nowarn("msg=used")
 private class PriorKnowledgeDetectionHandler[F[_]: Async](
     config: NegotiationHandler.Config,
     httpApp: WebSocketBuilder2[F] => HttpResource[F],
