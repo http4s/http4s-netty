@@ -171,6 +171,7 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
                       channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
                     .void
                 } else {
+                  closeFrame.release()
                   Sync[F].delay(channel.close()).void
                 }
             } yield modified
