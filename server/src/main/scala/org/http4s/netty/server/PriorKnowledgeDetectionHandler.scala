@@ -20,18 +20,18 @@ package server
 import cats.effect.Async
 import cats.effect.std.Dispatcher
 import io.netty.buffer.ByteBuf
-import io.netty.buffer.ByteBufUtil
 import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelPipeline
 import io.netty.handler.codec.ByteToMessageDecoder
-import io.netty.handler.codec.http2.Http2CodecUtil
 import org.http4s.Response
 import org.http4s.server.ServiceErrorHandler
 import org.http4s.server.websocket.WebSocketBuilder2
-import org.log4s.getLogger
 
 import java.util
+import scala.annotation.nowarn
 
+/** Kept as a stub for binary compatibility (MiMa). */
+@deprecated("No longer used", "0.7")
+@nowarn("msg=used")
 private class PriorKnowledgeDetectionHandler[F[_]: Async](
     config: NegotiationHandler.Config,
     httpApp: WebSocketBuilder2[F] => HttpResource[F],
@@ -39,51 +39,9 @@ private class PriorKnowledgeDetectionHandler[F[_]: Async](
     requestLineParseErrorHandler: Throwable => F[Response[F]],
     dispatcher: Dispatcher[F]
 ) extends ByteToMessageDecoder {
+  override protected def handlerRemoved0(ctx: ChannelHandlerContext): Unit =
+    throw new UnsupportedOperationException()
 
-  private[this] val logger = getLogger
-
-  // The `connectionPrefaceBuf()` method returns a duplicate
-  private[this] val preface = Http2CodecUtil.connectionPrefaceBuf()
-
-  override protected def handlerRemoved0(ctx: ChannelHandlerContext): Unit = void {
-    preface.release()
-  }
-
-  override def decode(ctx: ChannelHandlerContext, in: ByteBuf, out: util.List[AnyRef]): Unit = {
-    logger.trace(s"decode: ctx = $ctx, in.readableBytes = ${in.readableBytes}")
-    if (ByteBufUtil.equals(in, 0, preface, 0, Math.min(in.readableBytes, preface.readableBytes))) {
-      // So far they're equal. Have we read the whole message? If so, it's H2 prior knowledge.
-      // Otherwise we just don't have enough bytes yet to be sure.
-      if (preface.readableBytes <= in.readableBytes) {
-        initializeH2PriorKnowledge(ctx.pipeline)
-      }
-    } else {
-      // Doesn't match the prior knowledge preface. Initialize H1 pipeline.
-      initializeH1(ctx.pipeline)
-    }
-  }
-
-  private[this] def initializeH2PriorKnowledge(pipeline: ChannelPipeline): Unit = void {
-    logger.trace(s"initializing h2 pipeline. Current pipeline: $pipeline")
-    NettyPipelineHelpers.buildHttp2Pipeline(
-      pipeline,
-      config,
-      httpApp,
-      serviceErrorHandler,
-      requestLineParseErrorHandler,
-      dispatcher)
-    pipeline.remove(this)
-  }
-
-  private[this] def initializeH1(pipeline: ChannelPipeline): Unit = void {
-    logger.trace(s"initializing h1 pipeline. Current pipeline: $pipeline")
-    NettyPipelineHelpers.buildHttp1Pipeline(
-      pipeline,
-      config,
-      httpApp,
-      serviceErrorHandler,
-      requestLineParseErrorHandler,
-      dispatcher)
-    pipeline.remove(this)
-  }
+  override def decode(ctx: ChannelHandlerContext, in: ByteBuf, out: util.List[AnyRef]): Unit =
+    throw new UnsupportedOperationException()
 }
