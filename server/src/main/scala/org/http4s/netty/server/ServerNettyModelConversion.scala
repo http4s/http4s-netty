@@ -166,7 +166,6 @@ private[server] final class ServerNettyModelConversion[F[_]](implicit F: Async[F
               modified <- closeFrameSent.modify(alreadySent => true -> !alreadySent)
               _ <-
                 if (modified) {
-                  closeFrame.release()
                   Sync[F]
                     .delay(
                       channel.writeAndFlush(closeFrame).addListener(ChannelFutureListener.CLOSE))
