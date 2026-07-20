@@ -55,8 +55,7 @@ class H2UpgradeTest extends CatsEffectSuite {
       serverResource(routes).use { server =>
         val addr = server.address
         Resource
-          .make(IO.blocking(new Socket(addr.getHostName, addr.getPort)))(s =>
-            IO.blocking(s.close()))
+          .fromAutoCloseable(IO.blocking(new Socket(addr.getHostName, addr.getPort)))
           .use { socket =>
             IO.blocking {
               socket.setSoTimeout(5000)
