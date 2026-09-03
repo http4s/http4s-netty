@@ -89,8 +89,7 @@ class NettyClientStreamCancelTest extends IOSuite {
     } yield assertEquals(result, "ok")
   }
 
-  test(
-    "explicitly cancelled streaming response should not corrupt next request") {
+  test("explicitly cancelled streaming response should not corrupt next request") {
     val s = server()
     val c = client()
 
