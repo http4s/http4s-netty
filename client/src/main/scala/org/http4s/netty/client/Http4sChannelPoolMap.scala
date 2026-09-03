@@ -22,8 +22,8 @@ import cats.effect.Ref
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
-import fs2.io.net.tls.TLSParameters
 import fs2.Stream
+import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFuture
