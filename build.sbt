@@ -20,7 +20,7 @@ inThisBuild(
   )
 )
 
-val http4sVersion = "0.23.36"
+val http4sVersion = "0.23.37"
 
 val jetty = "12.1.11"
 
