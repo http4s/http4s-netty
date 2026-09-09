@@ -18,8 +18,11 @@ package org.http4s.netty
 package client
 
 import cats.effect.Async
+import cats.effect.Ref
 import cats.effect.Resource
 import cats.effect.std.Dispatcher
+import cats.syntax.all._
+import fs2.Stream
 import fs2.io.net.tls.TLSParameters
 import io.netty.bootstrap.Bootstrap
 import io.netty.channel.Channel
@@ -95,11 +98,16 @@ private[client] class Http4sChannelPoolMap[F[_]](
       new IdleStateHandler(readTimeout, 0, idletimeout, TimeUnit.MILLISECONDS))
   }
 
-  private def connectAndConfigure(key: Key): Resource[F, Channel] = {
+  private def connectAndConfigure(
+      key: Key,
+      responseComplete: Ref[F, Boolean]): Resource[F, Channel] = {
     val pool = get(key)
 
     val connect = Resource.make(F.delay(pool.acquire()).liftToFA) { channel =>
-      F.delay(pool.release(channel)).liftToF
+      responseComplete.get.flatMap { complete =>
+        if (complete) F.delay(pool.release(channel)).liftToF
+        else F.delay(channel.close()).liftToF >> F.delay(pool.release(channel)).liftToF
+      }
     }
 
     Util.runInVersion(
@@ -118,7 +126,8 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
     for {
       dispatcher <- Dispatcher.sequential[F](await = true)
-      channel <- connectAndConfigure(key)
+      responseComplete <- Resource.eval(Ref.of[F, Boolean](false))
+      channel <- connectAndConfigure(key, responseComplete)
       handler <- Resource.make {
         F.pure {
           val handler =
@@ -139,7 +148,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
         }
       }
       response <- handler.dispatch(request, channel, key)
-    } yield response
+    } yield response.copy(body = response.body ++ Stream.exec(responseComplete.set(true)))
   }
 
   override def newPool(key: Key): FixedChannelPool = {

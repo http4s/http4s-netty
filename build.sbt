@@ -22,11 +22,12 @@ inThisBuild(
 
 val http4sVersion = "0.23.36"
 
-val jetty = "12.1.11"
+val jetty = "12.1.13"
 
-val netty = "4.2.16.Final"
+val netty = "4.2.17.Final"
 
-val munit = "1.3.4"
+val munit = "1.3.6"
+
 val munitScalaCheck = "1.3.1"
 
 val nativeNettyModules =
@@ -56,7 +57,7 @@ lazy val core = project
       "io.netty" % "netty-codec-http" % netty,
       "io.netty" % "netty-handler" % netty,
       "org.http4s" %% "http4s-core" % http4sVersion,
-      "org.typelevel" %% "cats-effect" % "3.7.0"
+      "org.typelevel" %% "cats-effect" % "3.7.1"
     )
   )
 
