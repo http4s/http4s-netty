@@ -27,6 +27,7 @@ import io.netty.channel._
 import io.netty.handler.codec.TooLongFrameException
 import io.netty.handler.codec.http._
 import io.netty.handler.timeout.IdleStateEvent
+import io.netty.util.ReferenceCountUtil
 import org.http4s.ParseFailure
 import org.http4s.Response
 import org.http4s.netty.server.Http4sNettyHandler.RFC7231InstantFormatter
@@ -160,9 +161,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
           }(eventLoopContext)
         }(eventLoopContext)
 
-      case LastHttpContent.EMPTY_LAST_CONTENT =>
-        // These are empty trailers... what do do???
-        ()
+      case content: HttpContent =>
+        // Orphaned HttpContent (e.g. DefaultLastHttpContent from Http2StreamFrameToHttpObjectCodec)
+        // that slipped past the body publisher due to a race or pipeline state.
+        // Release the reference-counted buffer to avoid leaks.
+        void(ReferenceCountUtil.release(content))
       case msg =>
         logger.error(s"Invalid message type received, ${msg.getClass}")
         throw InvalidMessageException
