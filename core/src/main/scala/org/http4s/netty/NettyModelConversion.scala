@@ -448,7 +448,11 @@ object NettyModelConversion {
       if (state.compareAndSet(BodyState.New, BodyState.Finished)) {
         logger.info("Response body not drained to completion. Draining and closing connection")
         // We own the publisher, so we drain via a fresh subscription.
-        val drain = Stream.fromPublisher[F](publisher, 1).compile.drain
+        val drain = Stream
+          .fromPublisher[F](publisher, 1)
+          .evalMap(content => F.delay(void(ReferenceCountUtil.release(content))))
+          .compile
+          .drain
         if (c.isOpen)
           F.delay(c.close()).liftToF >> drain
         else
