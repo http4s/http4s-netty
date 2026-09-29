@@ -23,8 +23,10 @@ import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelInboundHandlerAdapter
 import io.netty.channel.ChannelInitializer
 import io.netty.channel.ChannelPipeline
+import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpServerCodec
 import io.netty.handler.codec.http.HttpServerUpgradeHandler
+import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler
@@ -88,7 +90,13 @@ private object NettyPipelineHelpers {
           )
         else null
 
-    val upgradeHandler = new HttpServerUpgradeHandler(httpCodec, upgradeCodecFactory)
+    val upgradeHandler = new HttpServerUpgradeHandler(httpCodec, upgradeCodecFactory) {
+      // Serve requests with a body as HTTP/1.1:
+      // the upgrade handler buffers them with a 0-byte limit and would answer 413
+      override protected def shouldHandleUpgradeRequest(req: HttpRequest): Boolean =
+        !HttpUtil.isTransferEncodingChunked(req) &&
+          HttpUtil.getContentLength(req, 0L) == 0L
+    }
 
     // Handler for H2 prior knowledge: cleans up H1 handlers and sets up H2 pipeline
     val h2PriorKnowledgeHandler = new ChannelInitializer[Channel] {

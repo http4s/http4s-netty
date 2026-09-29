@@ -89,6 +89,30 @@ class H2UpgradeTest extends CatsEffectSuite {
     }
   }
 
+  test("H2 upgrade request with a body is served as HTTP/1.1") {
+    serverResource(ServerTest.routes).use { server =>
+      sendUpgradeRequest(
+        server,
+        "/echo",
+        method = "POST",
+        extraHeaders = "Content-Length: 5\r\n",
+        body = "hello")
+        .map(assertEquals(_, "HTTP/1.1 200 OK"))
+    }
+  }
+
+  test("H2 upgrade request with a chunked body is served as HTTP/1.1") {
+    serverResource(ServerTest.routes).use { server =>
+      sendUpgradeRequest(
+        server,
+        "/echo",
+        method = "POST",
+        extraHeaders = "Transfer-Encoding: chunked\r\n",
+        body = "5\r\nhello\r\n0\r\n\r\n")
+        .map(assertEquals(_, "HTTP/1.1 200 OK"))
+    }
+  }
+
   private def serverResource(app: org.http4s.HttpApp[IO]): Resource[IO, Server] =
     NettyServerBuilder[IO]
       .withHttpApp(app)
@@ -98,7 +122,12 @@ class H2UpgradeTest extends CatsEffectSuite {
       .bindAny()
       .resource
 
-  private def sendUpgradeRequest(server: Server, path: String): IO[String] =
+  private def sendUpgradeRequest(
+      server: Server,
+      path: String,
+      method: String = "GET",
+      extraHeaders: String = "",
+      body: String = ""): IO[String] =
     IO.blocking {
       val addr = server.address
       val socket = new Socket(addr.getHostName, addr.getPort)
@@ -106,12 +135,14 @@ class H2UpgradeTest extends CatsEffectSuite {
         socket.setSoTimeout(5000)
         val writer = new PrintWriter(socket.getOutputStream, true)
         writer.print(
-          s"GET $path HTTP/1.1\r\n" +
+          s"$method $path HTTP/1.1\r\n" +
             s"Host: ${addr.getHostName}:${addr.getPort}\r\n" +
             "Connection: Upgrade, HTTP2-Settings\r\n" +
             "Upgrade: h2c\r\n" +
             "HTTP2-Settings: AAMAAABkAAQBAAAAAAIAAAAA\r\n" +
-            "\r\n"
+            extraHeaders +
+            "\r\n" +
+            body
         )
         writer.flush()
         val reader = new BufferedReader(new InputStreamReader(socket.getInputStream))
