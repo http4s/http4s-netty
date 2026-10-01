@@ -136,8 +136,11 @@ class NettyWSClientBuilder[F[_]](
     })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
 
   def resource: Resource[F, WSClient[F]] = for {
-    bs <- createBootstrap
+    // the dispatcher must outlive the event loop: Http4sWebsocketHandler hands every frame over
+    // with dispatcher.unsafeRunSync on the event loop, which never returns once the dispatcher is
+    // closed, so shutdownGracefully would wait for that event loop forever
     disp <- Dispatcher.parallel[F](await = true)
+    bs <- createBootstrap
   } yield mkWSClient(bs, disp)
 
   private def mkWSClient(bs: Bootstrap, dispatcher: Dispatcher[F]) =
