@@ -42,7 +42,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
-import scala.collection.mutable.{Queue => MutableQueue}
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Failure
@@ -87,10 +86,14 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   // in.
   private[this] var lastResponseSent: Future[Unit] = Future.unit
 
-  // We keep track of the cancellation tokens for all the requests in flight. This gives us
-  // observability into the number of requests in flight and the ability to cancel them all
-  // if the connection gets closed.
-  private[this] val pendingResponses = MutableQueue.empty[() => Future[Unit]]
+  private[this] var pendingCount: Int = 0
+  private[this] var currentCancel: Option[() => Future[Unit]] = None
+  private[this] var closed: Boolean = false
+
+  private[this] def requestCompleted(): Unit = {
+    currentCancel = None
+    pendingCount -= 1
+  }
 
   // Compute the formatted date string only once per second, and cache the result.
   // This should help microscopically under load.
@@ -131,34 +134,40 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
 
     msg match {
       case req: HttpRequest =>
-        val handleF = handle(ctx, req, cachedDateString)
-        val (f, cancelRequest) = disp.unsafeToFutureCancelable(handleF)
-        pendingResponses.enqueue(cancelRequest)
-
-        // This attaches all writes sequentially using
-        // LastResponseSent as a queue. `eventLoopContext` ensures we do not
-        // CTX switch the writes.
+        // Pipelined requests are executed sequentially: the next request's
+        // handler does not start until the previous response has been fully
+        // written.  This guarantees responses are sent in request order as
+        // required by RFC 9112 §9.3.2.
+        pendingCount += 1
         lastResponseSent = lastResponseSent.flatMap[Unit] { _ =>
-          f.transform {
-            case Success(()) =>
-              pendingResponses.dequeue()
-              if (pendingResponses.isEmpty)
-                // Since we've now gone down to zero, we need to issue a
-                // read, in case we ignored an earlier read complete
-                void(ctx.read())
-              Success(())
+          if (closed) Future.unit
+          else {
+            val handleF = handle(ctx, req, cachedDateString)
+            val (f, cancelRequest) = disp.unsafeToFutureCancelable(handleF)
+            currentCancel = Some(cancelRequest)
+            f.transform {
+              case Success(()) =>
+                requestCompleted()
+                if (pendingCount == 0)
+                  // Since we've now gone down to zero, we need to issue a
+                  // read, in case we ignored an earlier read complete
+                  void(ctx.read())
+                Success(())
 
-            case Failure(NonFatal(e)) =>
-              logger.warn(e)(
-                "Error caught during service handling. Check the configured ServiceErrorHandler.")
-              void {
-                sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
-              }
-              Failure(e)
+              case Failure(NonFatal(e)) =>
+                requestCompleted()
+                logger.warn(e)(
+                  "Error caught during service handling. Check the configured ServiceErrorHandler.")
+                void {
+                  sendSimpleErrorResponse(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                }
+                Failure(e)
 
-            case Failure(e) => // fatal: just let it go.
-              Failure(e)
-          }(eventLoopContext)
+              case Failure(e) => // fatal: just let it go.
+                requestCompleted()
+                Failure(e)
+            }(eventLoopContext)
+          }
         }(eventLoopContext)
 
       case content: HttpContent =>
@@ -182,7 +191,7 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
     // we don't get in the way of the request body reactive streams,
     // which will be using channel read complete and read to implement
     // their own back pressure
-    if (pendingResponses.isEmpty) {
+    if (pendingCount == 0) {
       ctx.read()
     } else {
       // otherwise forward it, so that any handler publishers downstream
@@ -235,9 +244,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
       // When the channel closes we want to cancel any pending dispatches.
       // Since the listener will be executed from the channels EventLoop everything is thread safe.
       ctx.channel.closeFuture.addListener { (_: ChannelFuture) =>
+        closed = true
         logger.debug(
-          s"Http channel to ${ctx.channel.remoteAddress} closed. Cancelling ${pendingResponses.length} responses.")
-        pendingResponses.foreach(_.apply())
+          s"Http channel to ${ctx.channel.remoteAddress} closed. Cancelling $pendingCount responses.")
+        currentCancel.foreach(_.apply())
+        currentCancel = None
       }
 
       // AUTO_READ is off, so need to do the first read explicitly.
