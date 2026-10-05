@@ -69,7 +69,8 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
     val headersFrame = new DefaultHttp2HeadersFrame(
       http2Headers,
-      NettyModelConversion.notAllowedWithBody.contains(request.method))
+      NettyModelConversion.notAllowedWithBody.contains(
+        request.method) || (request.body eq EmptyBody))
 
     def endOfStream: F[Unit] = request.trailerHeaders.flatMap { headers =>
       val trail =

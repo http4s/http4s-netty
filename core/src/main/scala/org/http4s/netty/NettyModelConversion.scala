@@ -29,6 +29,7 @@ import io.netty.channel.Channel
 import io.netty.handler.codec.http._
 import io.netty.handler.ssl.SslHandler
 import io.netty.util.ReferenceCountUtil
+import org.http4s.EmptyBody
 import org.http4s.Header
 import org.http4s.headers.`Content-Length`
 import org.http4s.headers.`Transfer-Encoding`
@@ -68,7 +69,7 @@ private[netty] class NettyModelConversion[F[_]](implicit F: Async[F]) {
         Resource.eval(F.raiseError(new IllegalArgumentException("Not a valid URI", value)))
       case Right(_) =>
         val req =
-          if (notAllowedWithBody.contains(request.method)) {
+          if (notAllowedWithBody.contains(request.method) || (request.body eq EmptyBody)) {
             val defaultReq = new DefaultFullHttpRequest(version, method, uri)
             request.headers.foreach(appendSomeToNetty(_, defaultReq.headers()))
             Resource.pure[F, HttpRequest](defaultReq)
@@ -425,7 +426,7 @@ object NettyModelConversion {
   private[NettyModelConversion] val CachedEmpty: DefaultHttpContent =
     new DefaultHttpContent(Unpooled.EMPTY_BUFFER)
 
-  val notAllowedWithBody: Set[Method] = Set(Method.HEAD, Method.GET)
+  val notAllowedWithBody: Set[Method] = Set(Method.HEAD)
 
   private[netty] sealed trait BodyState
   private[netty] object BodyState {

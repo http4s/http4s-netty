@@ -80,6 +80,14 @@ abstract class ServerTest extends IOSuite {
       assertEquals(body, "hello")
     }
   }
+  test("GET request with body echoes back") {
+    val uri = server().baseUri / "echo-body"
+
+    client().expect[String](Request[IO](GET, uri).withEntity("hello")).map { body =>
+      assertEquals(body, "hello")
+    }
+  }
+
   test("chunked") {
     val uri = server().baseUri / "chunked"
 
@@ -214,6 +222,8 @@ object ServerTest {
             Ok("delayed path")
         case GET -> Root / "no-content" => NoContent()
         case r @ POST -> Root / "echo" =>
+          Ok(r.as[String])
+        case r @ GET -> Root / "echo-body" =>
           Ok(r.as[String])
         case GET -> Root / "not-found" => NotFound("not found")
         case GET -> Root / "empty-not-found" => NotFound()
