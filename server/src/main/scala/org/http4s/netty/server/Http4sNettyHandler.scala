@@ -86,11 +86,11 @@ private[netty] abstract class Http4sNettyHandler[F[_]](disp: Dispatcher[F])(impl
   // in.
   private[this] var lastResponseSent: Future[Unit] = Future.unit
 
-  private[this] var pendingCount: Int = 0
-  private[this] var currentCancel: Option[() => Future[Unit]] = None
-  private[this] var closed: Boolean = false
+  private var pendingCount: Int = 0
+  private var currentCancel: Option[() => Future[Unit]] = None
+  private var closed: Boolean = false
 
-  private[this] def requestCompleted(): Unit = {
+  private def requestCompleted(): Unit = {
     currentCancel = None
     pendingCount -= 1
   }
