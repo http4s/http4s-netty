@@ -46,6 +46,7 @@ import io.netty.handler.codec.quic.QuicException
 import io.netty.handler.codec.quic.QuicSslContextBuilder
 import io.netty.handler.codec.quic.QuicStreamChannel
 import io.netty.util.ReferenceCountUtil
+import org.http4s.EmptyBody
 import org.http4s.Uri.Scheme
 import org.http4s.client.Client
 import org.http4s.client.RequestKey
@@ -218,20 +219,22 @@ class NettyHttp3ClientBuilder[F[_]](
       writeFrame(frame, stream, key)
     }
 
-    val body = if (!NettyModelConversion.notAllowedWithBody.contains(request.method)) {
-      val trailers = request.trailerHeaders.flatMap { h =>
-        val frame = new DefaultHttp3HeadersFrame(toHttp3Headers(h)(identity))
-        writeFrame(frame, stream, key)
-      }
-
-      request.body.chunks
-        .map { chunk =>
-          new DefaultHttp3DataFrame(NettyModelConversion.chunkToBytebuf(chunk))
+    val body =
+      if (!NettyModelConversion.notAllowedWithBody.contains(
+          request.method) && (request.body ne EmptyBody)) {
+        val trailers = request.trailerHeaders.flatMap { h =>
+          val frame = new DefaultHttp3HeadersFrame(toHttp3Headers(h)(identity))
+          writeFrame(frame, stream, key)
         }
-        .evalMap(frame => writeFrame(frame, stream, key))
-        .compile
-        .drain >> trailers
-    } else F.unit
+
+        request.body.chunks
+          .map { chunk =>
+            new DefaultHttp3DataFrame(NettyModelConversion.chunkToBytebuf(chunk))
+          }
+          .evalMap(frame => writeFrame(frame, stream, key))
+          .compile
+          .drain >> trailers
+      } else F.unit
 
     headerFrame >> body
   }
