@@ -49,7 +49,8 @@ class NettyWSClientReleaseTest extends IOSuite {
     "server"
   )
 
-  // a fresh client per round: the release of the client is what is under test
+  // a fresh client per round: the release of the client is what is under test. Rounds are independent
+  // and run in parallel, so their graceful-shutdown quiet periods overlap.
   private def connectReceiveOneAndRelease: IO[Unit] =
     NettyWSClientBuilder[IO].withNioTransport.resource
       .use(_.connect(WSRequest(server())).use(_.receive))
@@ -58,7 +59,7 @@ class NettyWSClientReleaseTest extends IOSuite {
   test("releasing the client while the server keeps sending frames does not hang") {
     connectReceiveOneAndRelease
       .timeoutAndForget(5.seconds)
-      .replicateA_(2)
+      .parReplicateA_(4)
   }
 
   /** Sends text frames as fast as it can, so frames are always in flight when the client is
