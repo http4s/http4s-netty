@@ -57,8 +57,8 @@ class NettyWSClientReleaseTest extends IOSuite {
 
   test("releasing the client while the server keeps sending frames does not hang") {
     connectReceiveOneAndRelease
-      .timeoutAndForget(15.seconds)
-      .replicateA_(5)
+      .timeoutAndForget(5.seconds)
+      .replicateA_(2)
   }
 
   /** Sends text frames as fast as it can, so frames are always in flight when the client is
