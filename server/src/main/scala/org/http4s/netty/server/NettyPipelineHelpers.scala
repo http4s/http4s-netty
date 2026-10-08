@@ -31,9 +31,11 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler
 import io.netty.handler.codec.http2.Http2CodecUtil
+import io.netty.handler.codec.http2.Http2FrameCodec
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder
 import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2ServerUpgradeCodec
+import io.netty.handler.codec.http2.Http2Settings
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AsciiString
@@ -80,7 +82,7 @@ private object NettyPipelineHelpers {
             Http2CodecUtil.HTTP_UPGRADE_PROTOCOL_NAME,
             protocol))
           new Http2ServerUpgradeCodec(
-            Http2FrameCodecBuilder.forServer().build(),
+            newH2FrameCodec(config),
             newH2MultiplexHandler(
               config,
               httpApp,
@@ -157,7 +159,7 @@ private object NettyPipelineHelpers {
 
     pipeline
       .addLast(
-        Http2FrameCodecBuilder.forServer().build(),
+        newH2FrameCodec(config),
         newH2MultiplexHandler(
           config,
           httpApp,
@@ -190,6 +192,15 @@ private object NettyPipelineHelpers {
       requestLineParseErrorHandler,
       dispatcher)
   }
+
+  // Apply maxHeaderSize to HTTP/2 as well, otherwise Netty's 8 KiB default
+  // SETTINGS_MAX_HEADER_LIST_SIZE applies and large headers are rejected with 431.
+  private def newH2FrameCodec(config: NegotiationHandler.Config): Http2FrameCodec =
+    Http2FrameCodecBuilder
+      .forServer()
+      .initialSettings(
+        Http2Settings.defaultSettings().maxHeaderListSize(config.maxHeaderSize.toLong))
+      .build()
 
   private def newH2MultiplexHandler[F[_]: Async](
       config: NegotiationHandler.Config,
