@@ -26,6 +26,7 @@ import org.http4s.client.Client
 import org.http4s.headers.`User-Agent`
 
 import javax.net.ssl.SSLContext
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration._
 
 class NettyClientBuilder[F[_]](
@@ -132,7 +133,7 @@ class NettyClientBuilder[F[_]](
         boot.option(opt, value)
       }
       bootstrap
-    })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
+    })(bs => F.delay(bs.config().group().shutdownGracefully(0, 0, TimeUnit.SECONDS)).liftToF)
 
   def resource: Resource[F, Client[F]] =
     createBootstrap.map { bs =>
