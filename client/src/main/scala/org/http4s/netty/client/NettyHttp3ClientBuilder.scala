@@ -68,7 +68,9 @@ class NettyHttp3ClientBuilder[F[_]](
     transport: NettyTransport,
     trustManager: Option[TrustManagerFactory],
     nettyChannelOptions: NettyChannelOptions,
-    defaultRequestHeaders: Headers
+    defaultRequestHeaders: Headers,
+    shutdownQuietPeriod: FiniteDuration,
+    shutdownTimeout: FiniteDuration
 )(implicit F: Async[F]) {
   type Self = NettyHttp3ClientBuilder[F]
 
@@ -82,7 +84,9 @@ class NettyHttp3ClientBuilder[F[_]](
       transport: NettyTransport = transport,
       trustManager: Option[TrustManagerFactory] = trustManager,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      defaultRequestHeaders: Headers = defaultRequestHeaders
+      defaultRequestHeaders: Headers = defaultRequestHeaders,
+      shutdownQuietPeriod: FiniteDuration = shutdownQuietPeriod,
+      shutdownTimeout: FiniteDuration = shutdownTimeout
   ): NettyHttp3ClientBuilder[F] =
     new NettyHttp3ClientBuilder[F](
       headerTimeout,
@@ -94,7 +98,9 @@ class NettyHttp3ClientBuilder[F[_]](
       transport,
       trustManager,
       nettyChannelOptions,
-      defaultRequestHeaders
+      defaultRequestHeaders,
+      shutdownQuietPeriod,
+      shutdownTimeout
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -129,6 +135,16 @@ class NettyHttp3ClientBuilder[F[_]](
   def withDefaultRequestHeaders(headers: Headers): Self =
     copy(defaultRequestHeaders = headers)
 
+  /** How long the event loop group waits for new tasks to be submitted after shutdown is requested,
+    * before actually shutting down. Defaults to <code>0 seconds</code>.
+    */
+  def withShutdownQuietPeriod(duration: FiniteDuration): Self = copy(shutdownQuietPeriod = duration)
+
+  /** Maximum time to wait for the event loop group to shut down. Defaults to <code>0
+    * seconds</code>.
+    */
+  def withShutdownTimeout(duration: FiniteDuration): Self = copy(shutdownTimeout = duration)
+
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
@@ -138,7 +154,15 @@ class NettyHttp3ClientBuilder[F[_]](
         boot.option(opt, value)
       }
       bootstrap
-    })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
+    })(bs =>
+      F.delay(
+        bs.config()
+          .group()
+          .shutdownGracefully(
+            shutdownQuietPeriod.toMillis,
+            shutdownTimeout.toMillis,
+            TimeUnit.MILLISECONDS))
+        .liftToF)
 
   def resource: Resource[F, Client[F]] = for {
     bs <- createBootstrap
@@ -264,7 +288,9 @@ object NettyHttp3ClientBuilder {
       transport = NettyTransport.defaultFor(Os.get),
       trustManager = None,
       nettyChannelOptions = NettyChannelOptions.empty,
-      defaultRequestHeaders = Headers()
+      defaultRequestHeaders = Headers(),
+      shutdownQuietPeriod = 0.seconds,
+      shutdownTimeout = 0.seconds
     )
 
   private[NettyHttp3ClientBuilder] class Http3Handler[F[_]: Async](
