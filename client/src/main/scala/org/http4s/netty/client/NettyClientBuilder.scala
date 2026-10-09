@@ -43,7 +43,9 @@ class NettyClientBuilder[F[_]](
     proxy: Option[Proxy],
     http2: Boolean,
     defaultRequestHeaders: Headers,
-    maxConnectionAge: Duration
+    maxConnectionAge: Duration,
+    shutdownQuietPeriod: FiniteDuration,
+    shutdownTimeout: FiniteDuration
 )(implicit F: Async[F]) {
   type Self = NettyClientBuilder[F]
 
@@ -61,7 +63,9 @@ class NettyClientBuilder[F[_]](
       proxy: Option[Proxy] = proxy,
       http2: Boolean = http2,
       defaultRequestHeaders: Headers = defaultRequestHeaders,
-      maxConnectionAge: Duration = maxConnectionAge
+      maxConnectionAge: Duration = maxConnectionAge,
+      shutdownQuietPeriod: FiniteDuration = shutdownQuietPeriod,
+      shutdownTimeout: FiniteDuration = shutdownTimeout
   ): NettyClientBuilder[F] =
     new NettyClientBuilder[F](
       idleTimeout,
@@ -77,7 +81,9 @@ class NettyClientBuilder[F[_]](
       proxy,
       http2,
       defaultRequestHeaders,
-      maxConnectionAge
+      maxConnectionAge,
+      shutdownQuietPeriod,
+      shutdownTimeout
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -124,6 +130,16 @@ class NettyClientBuilder[F[_]](
   def withDefaultRequestHeaders(headers: Headers): NettyClientBuilder[F] =
     copy(defaultRequestHeaders = headers)
 
+  /** How long the event loop group waits for new tasks to be submitted after shutdown is requested,
+    * before actually shutting down. Defaults to <code>0 seconds</code>.
+    */
+  def withShutdownQuietPeriod(duration: FiniteDuration): Self = copy(shutdownQuietPeriod = duration)
+
+  /** Maximum time to wait for the event loop group to shut down. Defaults to <code>0
+    * seconds</code>.
+    */
+  def withShutdownTimeout(duration: FiniteDuration): Self = copy(shutdownTimeout = duration)
+
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
@@ -133,7 +149,15 @@ class NettyClientBuilder[F[_]](
         boot.option(opt, value)
       }
       bootstrap
-    })(bs => F.delay(bs.config().group().shutdownGracefully(0, 0, TimeUnit.SECONDS)).liftToF)
+    })(bs =>
+      F.delay(
+        bs.config()
+          .group()
+          .shutdownGracefully(
+            shutdownQuietPeriod.toMillis,
+            shutdownTimeout.toMillis,
+            TimeUnit.MILLISECONDS))
+        .liftToF)
 
   def resource: Resource[F, Client[F]] =
     createBootstrap.map { bs =>
@@ -170,6 +194,8 @@ object NettyClientBuilder {
       proxy = Proxy.fromSystemProperties,
       http2 = false,
       defaultRequestHeaders = Headers(),
-      maxConnectionAge = Duration.Inf
+      maxConnectionAge = Duration.Inf,
+      shutdownQuietPeriod = 0.seconds,
+      shutdownTimeout = 0.seconds
     )
 }
