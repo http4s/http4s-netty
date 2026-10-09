@@ -25,8 +25,8 @@ import org.http4s.Headers
 import org.http4s.client.Client
 import org.http4s.headers.`User-Agent`
 
-import javax.net.ssl.SSLContext
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
 import scala.concurrent.duration._
 
 class NettyClientBuilder[F[_]](
