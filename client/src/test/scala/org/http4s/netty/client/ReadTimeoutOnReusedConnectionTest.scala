@@ -64,13 +64,12 @@ class ReadTimeoutOnReusedConnectionTest extends IOSuite {
     for {
       // Request A: fast response, establishes and uses the connection.
       _ <- c.expect[String](Request[IO](uri = s.baseUri / "fast"))
-      // Connection returns to pool. The IdleStateHandler's READER_IDLE
-      // timer has been counting since the last channelReadComplete (~now).
-      // Sleep 5 seconds so only ~1 second remains on the 6s timer.
+      // Connection returns to pool. The read timeout handler is removed
+      // from the pipeline on release. Sleep 5 seconds to simulate pool idle time.
       _ <- IO.sleep(5.seconds)
       // Request B: server takes 3 seconds to respond.
       // 3s is well within the 6s readTimeout, so this SHOULD succeed.
-      // But if the timer was never reset, it fires ~1s after reuse.
+      // A fresh read timeout handler is added on acquire.
       result <- c.expect[String](Request[IO](uri = s.baseUri / "slow")).attempt
     } yield result match {
       case Right(body) =>
@@ -78,7 +77,7 @@ class ReadTimeoutOnReusedConnectionTest extends IOSuite {
       case Left(_: TimeoutException) =>
         fail(
           "Read timeout on reused connection fired early — " +
-            "the IdleStateHandler timer was not reset when the connection was reused")
+            "the read timeout handler was not added fresh on acquire")
       case Left(e) =>
         fail(s"Unexpected error: $e")
     }
