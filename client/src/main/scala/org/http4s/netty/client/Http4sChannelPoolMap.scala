@@ -98,7 +98,7 @@ private[client] class Http4sChannelPoolMap[F[_]](
     val readTimeout = if (config.readTimeout.isFinite) config.readTimeout.toMillis else 0L
 
     pipeline.addLast(
-      "timeout",
+      Http4sChannelPoolMap.TimeoutHandlerName,
       new IdleStateHandler(readTimeout, 0, idletimeout, TimeUnit.MILLISECONDS))
   }
 
@@ -210,6 +210,16 @@ private[client] class Http4sChannelPoolMap[F[_]](
         void(pipeline.remove(Http4sChannelPoolMap.MaxAgeCloserHandlerName))
       if (pipeline.get(Http4sChannelPoolMap.MaxAgeIdleHandlerName) != null)
         void(pipeline.remove(Http4sChannelPoolMap.MaxAgeIdleHandlerName))
+      if (pipeline.get(Http4sChannelPoolMap.TimeoutHandlerName) != null) {
+        val idletimeout = if (config.idleTimeout.isFinite) config.idleTimeout.toMillis else 0L
+        val readTimeout = if (config.readTimeout.isFinite) config.readTimeout.toMillis else 0L
+        void(
+          pipeline.replace(
+            Http4sChannelPoolMap.TimeoutHandlerName,
+            Http4sChannelPoolMap.TimeoutHandlerName,
+            new IdleStateHandler(readTimeout, 0, idletimeout, TimeUnit.MILLISECONDS)
+          ))
+      }
     }
 
     override def channelCreated(ch: Channel): Unit = void {
@@ -318,6 +328,7 @@ private[client] object Http4sChannelPoolMap {
   private val CheckedOut: AttributeKey[java.lang.Boolean] =
     AttributeKey.valueOf("http4s.channel.checkedOut")
 
+  private val TimeoutHandlerName = "timeout"
   private val MaxAgeIdleHandlerName = "max-age-idle"
   private val MaxAgeCloserHandlerName = "max-age-closer"
 
