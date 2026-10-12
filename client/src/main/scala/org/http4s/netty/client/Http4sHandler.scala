@@ -22,6 +22,7 @@ import cats.effect.Resource
 import cats.effect.implicits._
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
+import io.netty.channel.ChannelFutureListener
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame
@@ -222,9 +223,11 @@ private object Http4sHandler {
     // always enqueue
     if (channel.isActive) {
       logger.trace(s"ch $channel: sending ${event} to $key")
-      // The voidPromise lets us receive failed-write signals from the
-      // exceptionCaught method.
-      channel.writeAndFlush(event, channel.voidPromise)
+      // Use a real promise instead of voidPromise because HttpStreamsHandler
+      // calls addListener on the promise, which is not allowed on VoidChannelPromise.
+      // FIRE_EXCEPTION_ON_FAILURE preserves the same error handling: write failures
+      // are routed through exceptionCaught.
+      channel.writeAndFlush(event).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE)
       logger.trace(s"ch $channel: after ${event} to $key")
     } else {
       // make sure we call all enqueued promises
