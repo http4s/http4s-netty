@@ -97,9 +97,10 @@ private[client] class Http4sChannelPoolMap[F[_]](
     val idletimeout = if (config.idleTimeout.isFinite) config.idleTimeout.toMillis else 0L
 
     if (idletimeout > 0)
-      pipeline.addLast(
-        Http4sChannelPoolMap.IdleTimeoutHandlerName,
-        new IdleStateHandler(0, 0, idletimeout, TimeUnit.MILLISECONDS))
+      void(
+        pipeline.addLast(
+          Http4sChannelPoolMap.IdleTimeoutHandlerName,
+          new IdleStateHandler(0, 0, idletimeout, TimeUnit.MILLISECONDS)))
   }
 
   private def connectAndConfigure(
@@ -214,9 +215,10 @@ private[client] class Http4sChannelPoolMap[F[_]](
       if (pipeline.get(Http4sChannelPoolMap.MaxAgeIdleHandlerName) != null)
         void(pipeline.remove(Http4sChannelPoolMap.MaxAgeIdleHandlerName))
       if (readTimeoutMillis > 0)
-        pipeline.addLast(
-          Http4sChannelPoolMap.ReadTimeoutHandlerName,
-          new IdleStateHandler(readTimeoutMillis, 0, 0, TimeUnit.MILLISECONDS))
+        void(
+          pipeline.addLast(
+            Http4sChannelPoolMap.ReadTimeoutHandlerName,
+            new IdleStateHandler(readTimeoutMillis, 0, 0, TimeUnit.MILLISECONDS)))
     }
 
     override def channelCreated(ch: Channel): Unit = void {
