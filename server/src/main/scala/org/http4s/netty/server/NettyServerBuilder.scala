@@ -84,7 +84,8 @@ final class NettyServerBuilder[F[_]] private (
     wsMaxFrameLength: Int,
     wsCompression: Boolean,
     requestLineParseErrorHandler: Throwable => F[Response[F]],
-    shutdownTimeout: Duration
+    shutdownTimeout: Duration,
+    pipelineCustomizer: PipelineCustomizer
 )(implicit F: Async[F]) {
   private val logger = org.log4s.getLogger
   type Self = NettyServerBuilder[F]
@@ -105,7 +106,8 @@ final class NettyServerBuilder[F[_]] private (
       wsMaxFrameLength: Int = wsMaxFrameLength,
       wsCompression: Boolean = wsCompression,
       requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler,
-      shutdownTimeout: Duration = shutdownTimeout
+      shutdownTimeout: Duration = shutdownTimeout,
+      pipelineCustomizer: PipelineCustomizer = pipelineCustomizer
   ): NettyServerBuilder[F] =
     new NettyServerBuilder[F](
       httpApp,
@@ -123,7 +125,8 @@ final class NettyServerBuilder[F[_]] private (
       wsMaxFrameLength,
       wsCompression,
       requestLineParseErrorHandler,
-      shutdownTimeout
+      shutdownTimeout,
+      pipelineCustomizer
     )
 
   private def getEventLoop: EventLoopHolder[_ <: ServerChannel] =
@@ -203,6 +206,14 @@ final class NettyServerBuilder[F[_]] private (
     copy(wsMaxFrameLength = wsMaxFrameLength)
   def withWebSocketCompression: Self = copy(wsCompression = true)
   def withoutWebSocketCompression: Self = copy(wsCompression = false)
+
+  /** Customizes the channel pipelines of the server's connections, see [[PipelineCustomizer]].
+    *
+    * Calling this method again replaces the previously configured customizer, use
+    * [[PipelineCustomizer.combine]] to apply several.
+    */
+  def withPipelineCustomizer(customizer: PipelineCustomizer): Self =
+    copy(pipelineCustomizer = customizer)
 
   /** An error handler which will run in cases where the server is unable to parse the "start-line"
     * (http 2 name) or "request-line" (http 1.1 name). This is the first line of the request, e.g.
@@ -301,7 +312,8 @@ final class NettyServerBuilder[F[_]] private (
                 httpApp,
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
-                dispatcher
+                dispatcher,
+                pipelineCustomizer
               )
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
@@ -315,7 +327,8 @@ final class NettyServerBuilder[F[_]] private (
                 httpApp,
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
-                dispatcher
+                dispatcher,
+                pipelineCustomizer
               )
           }
         }
@@ -426,7 +439,8 @@ object NettyServerBuilder {
       wsMaxFrameLength = DefaultWSMaxFrameLength,
       wsCompression = false,
       requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F],
-      shutdownTimeout = defaults.ShutdownTimeout
+      shutdownTimeout = defaults.ShutdownTimeout,
+      pipelineCustomizer = PipelineCustomizer.empty
     )
 
   private def defaultRequestLineParseErrorHandler[F[_]](implicit

@@ -69,9 +69,14 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      pipelineCustomizer: PipelineCustomizer): Unit = void {
     // Start with H1 autoRead setting. Will be switched to true on H2 upgrade or prior knowledge.
     pipeline.channel.config.setAutoRead(false)
+
+    // Handlers added by the pipeline customizer, removed along with the H1 handlers on a switch to H2.
+    // Assigned once the pipeline is assembled, only read on this channel's event loop afterwards.
+    var customizerHandlerNames: List[String] = Nil
 
     val httpCodec =
       new HttpServerCodec(config.maxInitialLineLength, config.maxHeaderSize, config.maxChunkSize)
@@ -103,7 +108,7 @@ private object NettyPipelineHelpers {
     // Handler for H2 prior knowledge: cleans up H1 handlers and sets up H2 pipeline
     val h2PriorKnowledgeHandler = new ChannelInitializer[Channel] {
       override def initChannel(ch: Channel): Unit = {
-        removeH1Handlers(ch.pipeline)
+        removeH1Handlers(ch.pipeline, customizerHandlerNames)
         buildHttp2Pipeline(
           ch.pipeline,
           config,
@@ -136,7 +141,7 @@ private object NettyPipelineHelpers {
               try {
                 void(ctx.channel.config.setAutoRead(true))
                 // removeH1Handlers also removes this cleanup handler
-                removeH1Handlers(ctx.pipeline)
+                removeH1Handlers(ctx.pipeline, customizerHandlerNames)
               } finally
                 void(upgrade.release())
             case _ =>
@@ -144,6 +149,8 @@ private object NettyPipelineHelpers {
           }
       }
     )
+
+    customizerHandlerNames = customizeHttp1(pipeline, pipelineCustomizer)
   }
 
   def buildHttp2Pipeline[F[_]: Async](
@@ -175,7 +182,8 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      pipelineCustomizer: PipelineCustomizer): Unit = void {
     // For HTTP/1.x pipelines the only backpressure we can exert is via the TCP
     // flow control mechanisms. That means we set auto-read to false so that we
     // can explicitly signal that we're ready for more data.
@@ -191,6 +199,7 @@ private object NettyPipelineHelpers {
       serviceErrorHandler,
       requestLineParseErrorHandler,
       dispatcher)
+    pipelineCustomizer.http1(pipeline)
   }
 
   // Apply maxHeaderSize to HTTP/2 as well, otherwise Netty's 8 KiB default
@@ -256,8 +265,23 @@ private object NettyPipelineHelpers {
     )
   }
 
-  private def removeH1Handlers(pipeline: ChannelPipeline): Unit =
-    h1HandlerNames.foreach { name =>
+  /** Applies the HTTP/1.1 customization, tracking what it adds so that it can be removed on a
+    * switch to H2.
+    * @return
+    *   the names of the handlers added by the customizer
+    */
+  private def customizeHttp1(
+      pipeline: ChannelPipeline,
+      pipelineCustomizer: PipelineCustomizer): List[String] = {
+    val before = pipeline.names()
+    pipelineCustomizer.http1(pipeline)
+    pipeline.names().toArray(Array.empty[String]).filterNot(before.contains).toList
+  }
+
+  private def removeH1Handlers(
+      pipeline: ChannelPipeline,
+      customizerHandlerNames: List[String]): Unit =
+    (h1HandlerNames ++ customizerHandlerNames).foreach { name =>
       if (pipeline.get(name) != null) void(pipeline.remove(name))
     }
 }
