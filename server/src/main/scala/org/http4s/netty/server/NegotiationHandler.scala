@@ -33,7 +33,8 @@ private[server] class NegotiationHandler[F[_]: Async](
     httpApp: WebSocketBuilder2[F] => HttpResource[F],
     serviceErrorHandler: ServiceErrorHandler[F],
     requestLineParseErrorHandler: Throwable => F[Response[F]],
-    dispatcher: Dispatcher[F]
+    dispatcher: Dispatcher[F],
+    wsCompression: WebSocketCompression
 ) extends ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1) {
   override def configurePipeline(ctx: ChannelHandlerContext, protocol: String): Unit =
     protocol match {
@@ -44,7 +45,8 @@ private[server] class NegotiationHandler[F[_]: Async](
           httpApp,
           serviceErrorHandler,
           requestLineParseErrorHandler,
-          dispatcher)
+          dispatcher,
+          wsCompression)
 
       case ApplicationProtocolNames.HTTP_1_1 =>
         NettyPipelineHelpers.buildHttp1Pipeline(
@@ -53,7 +55,8 @@ private[server] class NegotiationHandler[F[_]: Async](
           httpApp,
           serviceErrorHandler,
           requestLineParseErrorHandler,
-          dispatcher)
+          dispatcher,
+          wsCompression)
 
       case _ => throw new IllegalStateException(s"Protocol: $protocol not supported")
     }
