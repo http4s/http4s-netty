@@ -83,7 +83,13 @@ lazy val server = project
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
-    mimaBinaryIssueFilters ++= Nil
+    mimaBinaryIssueFilters ++= Seq(
+      // private object; MiMa treats it as public on Scala 2.12 only
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildCleartextPipeline"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildHttp1Pipeline")
+    )
   )
 
 lazy val client = project
