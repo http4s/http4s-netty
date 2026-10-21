@@ -111,7 +111,14 @@ lazy val client = project
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
-    mimaBinaryIssueFilters ++= Nil
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.NettyClientBuilder.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.NettyWSClientBuilder.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.client.NettyHttp3ClientBuilder.this")
+    )
   )
 
 lazy val root = tlCrossRootProject.aggregate(core, client, server)
