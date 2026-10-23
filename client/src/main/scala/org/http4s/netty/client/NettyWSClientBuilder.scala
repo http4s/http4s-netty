@@ -43,6 +43,7 @@ import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
 
 import java.net.InetSocketAddress
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import scala.concurrent.duration._
 
@@ -54,7 +55,9 @@ class NettyWSClientBuilder[F[_]](
     subprotocol: Option[String],
     maxFramePayloadLength: Int,
     nettyChannelOptions: NettyChannelOptions,
-    wsCompression: Boolean
+    wsCompression: Boolean,
+    shutdownQuietPeriod: FiniteDuration,
+    shutdownTimeout: FiniteDuration
 )(implicit F: Async[F]) {
   private[this] val logger = org.log4s.getLogger
   private val WS = Uri.Scheme.unsafeFromString("ws")
@@ -70,7 +73,9 @@ class NettyWSClientBuilder[F[_]](
       subprotocol: Option[String] = subprotocol,
       maxFramePayloadLength: Int = maxFramePayloadLength,
       nettyChannelOptions: NettyChannelOptions = nettyChannelOptions,
-      wsCompression: Boolean = wsCompression
+      wsCompression: Boolean = wsCompression,
+      shutdownQuietPeriod: FiniteDuration = shutdownQuietPeriod,
+      shutdownTimeout: FiniteDuration = shutdownTimeout
   ): NettyWSClientBuilder[F] =
     new NettyWSClientBuilder[F](
       idleTimeout,
@@ -80,7 +85,9 @@ class NettyWSClientBuilder[F[_]](
       subprotocol,
       maxFramePayloadLength,
       nettyChannelOptions,
-      wsCompression
+      wsCompression,
+      shutdownQuietPeriod,
+      shutdownTimeout
     )
 
   def withNativeTransport: Self = copy(transport = NettyTransport.defaultFor(Os.get))
@@ -120,6 +127,16 @@ class NettyWSClientBuilder[F[_]](
     */
   def withEventLoopThreads(nThreads: Int): Self = copy(eventLoopThreads = nThreads)
 
+  /** How long the event loop group waits for new tasks to be submitted after shutdown is requested,
+    * before actually shutting down. Defaults to <code>0 seconds</code>.
+    */
+  def withShutdownQuietPeriod(duration: FiniteDuration): Self = copy(shutdownQuietPeriod = duration)
+
+  /** Maximum time to wait for the event loop group to shut down. Defaults to <code>0
+    * seconds</code>.
+    */
+  def withShutdownTimeout(duration: FiniteDuration): Self = copy(shutdownTimeout = duration)
+
   private def createBootstrap: Resource[F, Bootstrap] =
     Resource.make(F.delay {
       val bootstrap = new Bootstrap()
@@ -133,7 +150,15 @@ class NettyWSClientBuilder[F[_]](
         boot.option(opt, value)
       }
       bootstrap
-    })(bs => F.delay(bs.config().group().shutdownGracefully()).liftToF)
+    })(bs =>
+      F.delay(
+        bs.config()
+          .group()
+          .shutdownGracefully(
+            shutdownQuietPeriod.toMillis,
+            shutdownTimeout.toMillis,
+            TimeUnit.MILLISECONDS))
+        .liftToF)
 
   def resource: Resource[F, WSClient[F]] = for {
     // the dispatcher must outlive the event loop: Http4sWebsocketHandler hands every frame over
@@ -242,6 +267,8 @@ object NettyWSClientBuilder {
       subprotocol = None,
       maxFramePayloadLength = 65536,
       nettyChannelOptions = NettyChannelOptions.empty,
-      wsCompression = false
+      wsCompression = false,
+      shutdownQuietPeriod = 0.seconds,
+      shutdownTimeout = 0.seconds
     )
 }
