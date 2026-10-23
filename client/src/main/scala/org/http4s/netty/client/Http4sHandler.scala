@@ -22,6 +22,7 @@ import cats.effect.Resource
 import cats.effect.implicits._
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
+import io.netty.channel.ChannelFutureListener
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame
@@ -205,7 +206,7 @@ private object Http4sHandler {
   private val logger = org.log4s.getLogger
 
   final case class Http2GoAwayError(error: Http2Error, lastStreamId: Int)
-      extends Exception(s"http/2 recieved GoAway with ${error.name} and streamId=${lastStreamId}")
+      extends Exception(s"http/2 received GoAway with ${error.name} and streamId=${lastStreamId}")
 
   private[client] def writeInEventLoop(event: AnyRef, channel: Channel, key: RequestKey)(
       onException: (Channel, Throwable) => Unit) =
@@ -222,9 +223,7 @@ private object Http4sHandler {
     // always enqueue
     if (channel.isActive) {
       logger.trace(s"ch $channel: sending ${event} to $key")
-      // The voidPromise lets us receive failed-write signals from the
-      // exceptionCaught method.
-      channel.writeAndFlush(event, channel.voidPromise)
+      channel.writeAndFlush(event).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE)
       logger.trace(s"ch $channel: after ${event} to $key")
     } else {
       // make sure we call all enqueued promises

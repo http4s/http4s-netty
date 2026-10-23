@@ -79,11 +79,20 @@ lazy val server = project
       "org.http4s" %% "http4s-circe" % http4sVersion % Test,
       "org.http4s" %% "http4s-jdk-http-client" % "0.10.0" % Test,
       "org.typelevel" %% "munit-cats-effect" % "2.2.1" % Test,
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0" % Test
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0" % Test,
+      "com.jcraft" % "jzlib" % "1.1.3" % Test
     ),
     libraryDependencySchemes += "org.typelevel" %% "munit-cats-effect" % VersionScheme.Always, // "early-semver",
     libraryDependencies ++= nativeNettyModules,
-    mimaBinaryIssueFilters ++= Nil
+    mimaBinaryIssueFilters ++= Seq(
+      // private object; MiMa treats it as public on Scala 2.12 only
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildCleartextPipeline"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildHttp1Pipeline"),
+      ProblemFilters.exclude[DirectMissingMethodProblem](
+        "org.http4s.netty.server.NettyPipelineHelpers.buildHttp2Pipeline")
+    )
   )
 
 lazy val client = project

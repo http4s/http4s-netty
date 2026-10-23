@@ -41,6 +41,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.channel.uring.IoUring
 import io.netty.channel.uring.IoUringIoHandler
 import io.netty.channel.uring.IoUringServerSocketChannel
+import io.netty.handler.codec.compression.ZlibCodecFactory
 import io.netty.handler.ssl.ApplicationProtocolConfig
 import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
 import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
@@ -83,6 +84,7 @@ final class NettyServerBuilder[F[_]] private (
     sslConfig: NettyServerBuilder.SslConfig,
     wsMaxFrameLength: Int,
     wsCompression: Boolean,
+    wsCompressionSettings: WebSocketCompression,
     requestLineParseErrorHandler: Throwable => F[Response[F]],
     shutdownTimeout: Duration
 )(implicit F: Async[F]) {
@@ -104,6 +106,7 @@ final class NettyServerBuilder[F[_]] private (
       sslConfig: NettyServerBuilder.SslConfig = sslConfig,
       wsMaxFrameLength: Int = wsMaxFrameLength,
       wsCompression: Boolean = wsCompression,
+      wsCompressionSettings: WebSocketCompression = wsCompressionSettings,
       requestLineParseErrorHandler: Throwable => F[Response[F]] = requestLineParseErrorHandler,
       shutdownTimeout: Duration = shutdownTimeout
   ): NettyServerBuilder[F] =
@@ -122,6 +125,7 @@ final class NettyServerBuilder[F[_]] private (
       sslConfig,
       wsMaxFrameLength,
       wsCompression,
+      wsCompressionSettings,
       requestLineParseErrorHandler,
       shutdownTimeout
     )
@@ -201,7 +205,13 @@ final class NettyServerBuilder[F[_]] private (
     copy(nettyChannelOptions = opts)
   def withWebSocketMaxFrameLength(wsMaxFrameLength: Int): Self =
     copy(wsMaxFrameLength = wsMaxFrameLength)
-  def withWebSocketCompression: Self = copy(wsCompression = true)
+  def withWebSocketCompression: Self = withWebSocketCompression(WebSocketCompression.default)
+
+  /** Enables WebSocket compression with the given settings. Without arguments,
+    * `withWebSocketCompression` uses [[WebSocketCompression.default]].
+    */
+  def withWebSocketCompression(compression: WebSocketCompression): Self =
+    copy(wsCompression = true, wsCompressionSettings = compression)
   def withoutWebSocketCompression: Self = copy(wsCompression = false)
 
   /** An error handler which will run in cases where the server is unable to parse the "start-line"
@@ -301,7 +311,8 @@ final class NettyServerBuilder[F[_]] private (
                 httpApp,
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
-                dispatcher
+                dispatcher,
+                wsCompressionSettings
               )
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
@@ -315,7 +326,8 @@ final class NettyServerBuilder[F[_]] private (
                 httpApp,
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
-                dispatcher
+                dispatcher,
+                wsCompressionSettings
               )
           }
         }
@@ -328,6 +340,7 @@ final class NettyServerBuilder[F[_]] private (
 
   def resource: Resource[F, Server] =
     for {
+      _ <- Resource.eval(checkWebSocketCompression)
       loop <- Resource.make(Sync[F].delay(getEventLoop))(l =>
         Sync[F].delay {
           l.shutdown()
@@ -377,6 +390,16 @@ final class NettyServerBuilder[F[_]] private (
       server
     }
 
+  // without this check the first compressed frame would fail with NoClassDefFoundError
+  private def checkWebSocketCompression: F[Unit] =
+    F.raiseError[Unit](
+      new IllegalArgumentException(
+        s"$wsCompressionSettings needs JZlib (com.jcraft:jzlib) on the classpath: the JDK's zlib " +
+          "only supports windowBits 15 and memLevel 8, and allowServerWindowBits lets clients " +
+          "choose a smaller window"))
+      .whenA(wsCompression && wsCompressionSettings.requiresJZlib &&
+        !ZlibCodecFactory.isSupportingWindowSizeAndMemLevel)
+
   def allocated: F[(Server, F[Unit])] = resource.allocated
   def stream: fs2.Stream[F, Server] = fs2.Stream.resource(resource)
 
@@ -425,6 +448,7 @@ object NettyServerBuilder {
       sslConfig = NettyServerBuilder.NoSsl,
       wsMaxFrameLength = DefaultWSMaxFrameLength,
       wsCompression = false,
+      wsCompressionSettings = WebSocketCompression.default,
       requestLineParseErrorHandler = defaultRequestLineParseErrorHandler[F],
       shutdownTimeout = defaults.ShutdownTimeout
     )

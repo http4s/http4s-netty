@@ -27,13 +27,22 @@ import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpServerCodec
 import io.netty.handler.codec.http.HttpServerUpgradeHandler
 import io.netty.handler.codec.http.HttpUtil
+import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame
+import io.netty.handler.codec.http.websocketx.TextWebSocketFrame
+import io.netty.handler.codec.http.websocketx.WebSocketFrame
 import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator
-import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler
+import io.netty.handler.codec.http.websocketx.extensions.WebSocketExtensionFilter
+import io.netty.handler.codec.http.websocketx.extensions.WebSocketExtensionFilterProvider
+import io.netty.handler.codec.http.websocketx.extensions.WebSocketServerExtensionHandler
+import io.netty.handler.codec.http.websocketx.extensions.compression.DeflateFrameServerExtensionHandshaker
+import io.netty.handler.codec.http.websocketx.extensions.compression.PerMessageDeflateServerExtensionHandshaker
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler
 import io.netty.handler.codec.http2.Http2CodecUtil
+import io.netty.handler.codec.http2.Http2FrameCodec
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder
 import io.netty.handler.codec.http2.Http2MultiplexHandler
 import io.netty.handler.codec.http2.Http2ServerUpgradeCodec
+import io.netty.handler.codec.http2.Http2Settings
 import io.netty.handler.codec.http2.Http2StreamFrameToHttpObjectCodec
 import io.netty.handler.timeout.IdleStateHandler
 import io.netty.util.AsciiString
@@ -67,7 +76,8 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      wsCompression: WebSocketCompression): Unit = void {
     // Start with H1 autoRead setting. Will be switched to true on H2 upgrade or prior knowledge.
     pipeline.channel.config.setAutoRead(false)
 
@@ -80,13 +90,14 @@ private object NettyPipelineHelpers {
             Http2CodecUtil.HTTP_UPGRADE_PROTOCOL_NAME,
             protocol))
           new Http2ServerUpgradeCodec(
-            Http2FrameCodecBuilder.forServer().build(),
+            newH2FrameCodec(config),
             newH2MultiplexHandler(
               config,
               httpApp,
               serviceErrorHandler,
               requestLineParseErrorHandler,
-              dispatcher)
+              dispatcher,
+              wsCompression)
           )
         else null
 
@@ -108,7 +119,8 @@ private object NettyPipelineHelpers {
           httpApp,
           serviceErrorHandler,
           requestLineParseErrorHandler,
-          dispatcher)
+          dispatcher,
+          wsCompression)
       }
     }
 
@@ -122,7 +134,8 @@ private object NettyPipelineHelpers {
       httpApp,
       serviceErrorHandler,
       requestLineParseErrorHandler,
-      dispatcher)
+      dispatcher,
+      wsCompression)
 
     // Cleanup handler for h2c upgrade path: removes H1 handlers after successful upgrade
     pipeline.addLast(
@@ -150,20 +163,22 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      wsCompression: WebSocketCompression): Unit = void {
     // H2, being a multiplexed protocol, needs to always be reading events in case
     // it needs to close a stream, etc. Flow control is provided by the protocol itself.
     pipeline.channel.config.setAutoRead(true)
 
     pipeline
       .addLast(
-        Http2FrameCodecBuilder.forServer().build(),
+        newH2FrameCodec(config),
         newH2MultiplexHandler(
           config,
           httpApp,
           serviceErrorHandler,
           requestLineParseErrorHandler,
-          dispatcher)
+          dispatcher,
+          wsCompression)
       )
   }
 
@@ -173,7 +188,8 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      wsCompression: WebSocketCompression): Unit = void {
     // For HTTP/1.x pipelines the only backpressure we can exert is via the TCP
     // flow control mechanisms. That means we set auto-read to false so that we
     // can explicitly signal that we're ready for more data.
@@ -188,15 +204,26 @@ private object NettyPipelineHelpers {
       httpApp,
       serviceErrorHandler,
       requestLineParseErrorHandler,
-      dispatcher)
+      dispatcher,
+      wsCompression)
   }
+
+  // Apply maxHeaderSize to HTTP/2 as well, otherwise Netty's 8 KiB default
+  // SETTINGS_MAX_HEADER_LIST_SIZE applies and large headers are rejected with 431.
+  private def newH2FrameCodec(config: NegotiationHandler.Config): Http2FrameCodec =
+    Http2FrameCodecBuilder
+      .forServer()
+      .initialSettings(
+        Http2Settings.defaultSettings().maxHeaderListSize(config.maxHeaderSize.toLong))
+      .build()
 
   private def newH2MultiplexHandler[F[_]: Async](
       config: NegotiationHandler.Config,
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Http2MultiplexHandler =
+      dispatcher: Dispatcher[F],
+      wsCompression: WebSocketCompression): Http2MultiplexHandler =
     new Http2MultiplexHandler(new ChannelInitializer[Channel] {
       override def initChannel(ch: Channel): Unit = {
         ch.pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(true))
@@ -206,7 +233,8 @@ private object NettyPipelineHelpers {
           httpApp,
           serviceErrorHandler,
           requestLineParseErrorHandler,
-          dispatcher)
+          dispatcher,
+          wsCompression)
       }
     })
 
@@ -216,7 +244,8 @@ private object NettyPipelineHelpers {
       httpApp: WebSocketBuilder2[F] => HttpResource[F],
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
-      dispatcher: Dispatcher[F]): Unit = void {
+      dispatcher: Dispatcher[F],
+      wsCompression: WebSocketCompression): Unit = void {
 
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
       void(
@@ -229,7 +258,7 @@ private object NettyPipelineHelpers {
       void(
         pipeline.addLast(
           wsCompressionName,
-          new WebSocketServerCompressionHandler(config.wsMaxFrameLength)))
+          newWebSocketCompressionHandler(wsCompression, config.wsMaxFrameLength)))
     }
     pipeline.addLast(wsAggregatorName, new WebSocketFrameAggregator(config.wsMaxFrameLength))
     pipeline.addLast(streamsHandlerName, new DirectStreamingServerHandler())
@@ -244,6 +273,52 @@ private object NettyPipelineHelpers {
           dispatcher)
     )
   }
+
+  /** netty's `WebSocketServerCompressionHandler`, with its handshakers built from `compression`.
+    */
+  private[server] def newWebSocketCompressionHandler(
+      compression: WebSocketCompression,
+      maxAllocation: Int): WebSocketServerExtensionHandler = {
+    val filters = compressionFilters(compression.compressionThreshold)
+    new WebSocketServerExtensionHandler(
+      new PerMessageDeflateServerExtensionHandshaker(
+        compression.compressionLevel,
+        compression.allowServerWindowBits,
+        PerMessageDeflateServerExtensionHandshaker.MAX_WINDOW_SIZE, // client_max_window_bits
+        false, // allowServerNoContext
+        false, // preferredClientNoContext
+        compression.windowBits,
+        compression.memLevel,
+        filters,
+        maxAllocation
+      ),
+      new DeflateFrameServerExtensionHandshaker(
+        compression.compressionLevel,
+        compression.windowBits,
+        compression.memLevel,
+        filters,
+        maxAllocation)
+    )
+  }
+
+  /** Sends messages whose first frame is below `threshold` bytes uncompressed. Continuation frames
+    * follow the decision taken on the first frame of their message: netty's permessage-deflate
+    * encoder fails when asked to skip a frame in the middle of a compressed message.
+    */
+  private def compressionFilters(threshold: Int): WebSocketExtensionFilterProvider =
+    if (threshold <= 0) WebSocketExtensionFilterProvider.DEFAULT
+    else {
+      val skipSmallMessages: WebSocketExtensionFilter = (frame: WebSocketFrame) =>
+        frame match {
+          case _: TextWebSocketFrame | _: BinaryWebSocketFrame =>
+            frame.content.readableBytes < threshold
+          case _ => false
+        }
+      new WebSocketExtensionFilterProvider {
+        override def encoderFilter(): WebSocketExtensionFilter = skipSmallMessages
+        override def decoderFilter(): WebSocketExtensionFilter = WebSocketExtensionFilter.NEVER_SKIP
+      }
+    }
 
   private def removeH1Handlers(pipeline: ChannelPipeline): Unit =
     h1HandlerNames.foreach { name =>
