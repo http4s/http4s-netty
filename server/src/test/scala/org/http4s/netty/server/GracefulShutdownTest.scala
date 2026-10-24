@@ -30,7 +30,10 @@ import scala.concurrent.duration._
 
 class GracefulShutdownTest extends CatsEffectSuite {
 
-  private val clientR = NettyClientBuilder[IO].withNioTransport.resource
+  private val clientR = NettyClientBuilder[IO].withNioTransport
+    .withShutdownTimeout(2.second)
+    .withShutdownQuietPeriod(1.second)
+    .resource
 
   private val commonPath = "common"
   private val httpResponseText = "done"
