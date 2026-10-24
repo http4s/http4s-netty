@@ -38,7 +38,6 @@ import org.http4s.netty.client.Http4sHandler.Http2GoAwayError
 import org.http4s.netty.client.Http4sHandler.logger
 
 import java.io.IOException
-import java.nio.channels.ClosedChannelException
 import java.util.concurrent.CancellationException
 import scala.concurrent.TimeoutException
 
@@ -160,7 +159,9 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
   }
 
   override def channelInactive(ctx: ChannelHandlerContext): Unit =
-    onException(ctx.channel(), new ClosedChannelException())
+    onException(
+      ctx.channel(),
+      new CancellationException(s"Channel(${ctx.channel()}) closed, we cancel the request"))
 
   @SuppressWarnings(Array("deprecation"))
   override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
@@ -226,9 +227,11 @@ private object Http4sHandler {
       channel.writeAndFlush(event).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE)
       logger.trace(s"ch $channel: after ${event} to $key")
     } else {
-      // make sure we call all enqueued promises
+      // make sure we cancel all enqueued promises
       logger.info(s"ch $channel: message dispatched by closed channel to destination $key.")
-      onException(channel, new ClosedChannelException)
+      onException(
+        channel,
+        new CancellationException(s"Channel($channel) closed, we cancel the request"))
     }
   }
 }
