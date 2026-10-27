@@ -103,14 +103,12 @@ private[client] class Http4sChannelPoolMap[F[_]](
           new IdleStateHandler(0, 0, idletimeout, TimeUnit.MILLISECONDS)))
   }
 
-  private def connectAndConfigure(
-      key: Key,
-      responseComplete: Ref[F, Boolean]): Resource[F, Channel] = {
+  private def connectAndConfigure(key: Key, reusable: Ref[F, Boolean]): Resource[F, Channel] = {
     val pool = get(key)
 
     val connect = Resource.make(F.delay(pool.acquire()).liftToFA) { channel =>
-      responseComplete.get.flatMap { complete =>
-        if (complete) F.delay(pool.release(channel)).liftToF
+      reusable.get.flatMap { canReuse =>
+        if (canReuse) F.delay(pool.release(channel)).liftToF
         else F.delay(channel.close()).liftToF >> F.delay(pool.release(channel)).liftToF
       }
     }
@@ -131,8 +129,9 @@ private[client] class Http4sChannelPoolMap[F[_]](
 
     for {
       dispatcher <- Dispatcher.sequential[F](await = true)
-      responseComplete <- Resource.eval(Ref.of[F, Boolean](false))
-      channel <- connectAndConfigure(key, responseComplete)
+      // true once the body is fully read, unless the server asked to close the connection
+      reusable <- Resource.eval(Ref.of[F, Boolean](false))
+      channel <- connectAndConfigure(key, reusable)
       handler <- Resource.make {
         F.pure {
           val handler =
@@ -153,7 +152,10 @@ private[client] class Http4sChannelPoolMap[F[_]](
         }
       }
       response <- handler.dispatch(request, channel, key)
-    } yield response.copy(body = response.body ++ Stream.exec(responseComplete.set(true)))
+    } yield {
+      val keepAlive = response.attributes.lookup(Http4sHandler.KeepAlive).getOrElse(false)
+      response.copy(body = response.body ++ Stream.exec(reusable.set(keepAlive)))
+    }
   }
 
   override def newPool(key: Key): FixedChannelPool = {

@@ -19,12 +19,14 @@ package client
 
 import cats.effect.Async
 import cats.effect.Resource
+import cats.effect.SyncIO
 import cats.effect.implicits._
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
 import io.netty.channel.ChannelFutureListener
 import io.netty.channel._
 import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame
 import io.netty.handler.codec.http2.Http2Error
 import io.netty.handler.codec.http2.Http2GoAwayFrame
@@ -36,6 +38,7 @@ import org.http4s._
 import org.http4s.client.RequestKey
 import org.http4s.netty.client.Http4sHandler.Http2GoAwayError
 import org.http4s.netty.client.Http4sHandler.logger
+import org.typelevel.vault.{Key => VaultKey}
 
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -130,7 +133,10 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
         if (promises.nonEmpty) {
           val promise = promises.dequeue()
           logger.trace("dequeuing promise")
-          val result = modelConversion.fromNettyResponse(h, ctx.channel())
+          val keepAlive = HttpUtil.isKeepAlive(h)
+          val result = modelConversion
+            .fromNettyResponse(h, ctx.channel())
+            .map(_.map(_.withAttribute(Http4sHandler.KeepAlive, keepAlive)))
           promise(result)
         }
       case x: Http2PingFrame =>
@@ -205,6 +211,13 @@ private[netty] class Http4sHandler[F[_]](dispatcher: Dispatcher[F])(implicit F: 
 
 private object Http4sHandler {
   private val logger = org.log4s.getLogger
+
+  /** Whether the connection may be reused after this response, as decided by netty's
+    * [[io.netty.handler.codec.http.HttpUtil.isKeepAlive]] (`Connection: close`, HTTP/1.0 without
+    * `Connection: keep-alive`).
+    */
+  private[client] val KeepAlive: VaultKey[Boolean] =
+    VaultKey.newKey[SyncIO, Boolean].unsafeRunSync()
 
   final case class Http2GoAwayError(error: Http2Error, lastStreamId: Int)
       extends Exception(s"http/2 received GoAway with ${error.name} and streamId=${lastStreamId}")
