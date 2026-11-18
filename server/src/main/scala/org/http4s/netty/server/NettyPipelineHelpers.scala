@@ -77,7 +77,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F],
-      wsCompression: WebSocketCompression): Unit = void {
+      wsCompression: WebSocketCompression,
+      shutdown: ServerShutdown): Unit = void {
     // Start with H1 autoRead setting. Will be switched to true on H2 upgrade or prior knowledge.
     pipeline.channel.config.setAutoRead(false)
 
@@ -97,7 +98,8 @@ private object NettyPipelineHelpers {
               serviceErrorHandler,
               requestLineParseErrorHandler,
               dispatcher,
-              wsCompression)
+              wsCompression,
+              shutdown)
           )
         else null
 
@@ -120,7 +122,8 @@ private object NettyPipelineHelpers {
           serviceErrorHandler,
           requestLineParseErrorHandler,
           dispatcher,
-          wsCompression)
+          wsCompression,
+          shutdown)
       }
     }
 
@@ -135,7 +138,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler,
       requestLineParseErrorHandler,
       dispatcher,
-      wsCompression)
+      wsCompression,
+      () => shutdown.isShuttingDown)
 
     // Cleanup handler for h2c upgrade path: removes H1 handlers after successful upgrade
     pipeline.addLast(
@@ -164,7 +168,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F],
-      wsCompression: WebSocketCompression): Unit = void {
+      wsCompression: WebSocketCompression,
+      shutdown: ServerShutdown): Unit = void {
     // H2, being a multiplexed protocol, needs to always be reading events in case
     // it needs to close a stream, etc. Flow control is provided by the protocol itself.
     pipeline.channel.config.setAutoRead(true)
@@ -178,7 +183,8 @@ private object NettyPipelineHelpers {
           serviceErrorHandler,
           requestLineParseErrorHandler,
           dispatcher,
-          wsCompression)
+          wsCompression,
+          shutdown)
       )
   }
 
@@ -189,7 +195,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F],
-      wsCompression: WebSocketCompression): Unit = void {
+      wsCompression: WebSocketCompression,
+      shutdown: ServerShutdown): Unit = void {
     // For HTTP/1.x pipelines the only backpressure we can exert is via the TCP
     // flow control mechanisms. That means we set auto-read to false so that we
     // can explicitly signal that we're ready for more data.
@@ -205,7 +212,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler,
       requestLineParseErrorHandler,
       dispatcher,
-      wsCompression)
+      wsCompression,
+      () => shutdown.isShuttingDown)
   }
 
   // Apply maxHeaderSize to HTTP/2 as well, otherwise Netty's 8 KiB default
@@ -223,10 +231,14 @@ private object NettyPipelineHelpers {
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F],
-      wsCompression: WebSocketCompression): Http2MultiplexHandler =
+      wsCompression: WebSocketCompression,
+      shutdown: ServerShutdown): Http2MultiplexHandler =
     new Http2MultiplexHandler(new ChannelInitializer[Channel] {
       override def initChannel(ch: Channel): Unit = {
+        // Tracked so that shutdown waits for the stream to close, see ServerShutdown.channels
+        void(shutdown.channels.add(ch))
         ch.pipeline.addLast(new Http2StreamFrameToHttpObjectCodec(true))
+        // HTTP/2 has no Connection header, shutdown sends GOAWAY on the connection instead
         addHttp4sHandlers(
           ch.pipeline,
           config,
@@ -234,7 +246,8 @@ private object NettyPipelineHelpers {
           serviceErrorHandler,
           requestLineParseErrorHandler,
           dispatcher,
-          wsCompression)
+          wsCompression,
+          () => false)
       }
     })
 
@@ -245,7 +258,8 @@ private object NettyPipelineHelpers {
       serviceErrorHandler: ServiceErrorHandler[F],
       requestLineParseErrorHandler: Throwable => F[Response[F]],
       dispatcher: Dispatcher[F],
-      wsCompression: WebSocketCompression): Unit = void {
+      wsCompression: WebSocketCompression,
+      isShuttingDown: () => Boolean): Unit = void {
 
     if (config.idleTimeout.isFinite && config.idleTimeout.length > 0) {
       void(
@@ -261,7 +275,7 @@ private object NettyPipelineHelpers {
           newWebSocketCompressionHandler(wsCompression, config.wsMaxFrameLength)))
     }
     pipeline.addLast(wsAggregatorName, new WebSocketFrameAggregator(config.wsMaxFrameLength))
-    pipeline.addLast(streamsHandlerName, new DirectStreamingServerHandler())
+    pipeline.addLast(streamsHandlerName, new DirectStreamingServerHandler(isShuttingDown))
     pipeline.addLast(
       http4sHandlerName,
       Http4sNettyHandler

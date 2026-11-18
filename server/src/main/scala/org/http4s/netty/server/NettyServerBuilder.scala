@@ -31,7 +31,6 @@ import io.netty.channel.epoll.Epoll
 import io.netty.channel.epoll.EpollIoHandler
 import io.netty.channel.epoll.EpollServerSocketChannel
 import io.netty.channel.group.ChannelGroup
-import io.netty.channel.group.DefaultChannelGroup
 import io.netty.channel.kqueue.KQueue
 import io.netty.channel.kqueue.KQueueIoHandler
 import io.netty.channel.kqueue.KQueueServerSocketChannel
@@ -53,7 +52,6 @@ import io.netty.handler.ssl.IdentityCipherSuiteFilter
 import io.netty.handler.ssl.JdkSslContext
 import io.netty.handler.ssl.SslContext
 import io.netty.handler.ssl.SslHandler
-import io.netty.util.concurrent.GlobalEventExecutor
 import org.http4s.HttpApp
 import org.http4s.Request
 import org.http4s.Response
@@ -64,7 +62,6 @@ import org.http4s.server.websocket.WebSocketBuilder2
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
@@ -285,7 +282,7 @@ final class NettyServerBuilder[F[_]] private (
   private def bind(
       dispatcher: Dispatcher[F],
       loop: EventLoopHolder[_ <: ServerChannel],
-      shuttingDown: AtomicBoolean) = {
+      shutdown: ServerShutdown) = {
     val resolvedAddress =
       if (socketAddress.isUnresolved)
         new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
@@ -298,8 +295,7 @@ final class NettyServerBuilder[F[_]] private (
       idleTimeout,
       wsMaxFrameLength,
       wsCompression)
-    val allChannels =
-      new DefaultChannelGroup(GlobalEventExecutor.INSTANCE)
+    val allChannels = shutdown.channels
     val server = new ServerBootstrap()
     server.option(ChannelOption.SO_BACKLOG, Int.box(1024))
     val channel = loop
@@ -307,7 +303,6 @@ final class NettyServerBuilder[F[_]] private (
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = void {
           allChannels.add(ch)
-          ch.attr(DirectStreamingServerHandler.ShuttingDown).set(shuttingDown)
           val pipeline = ch.pipeline()
           sslConfig.toHandler(ch.alloc()) match {
             case Some(handler) =>
@@ -318,7 +313,8 @@ final class NettyServerBuilder[F[_]] private (
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
                 dispatcher,
-                wsCompressionSettings
+                wsCompressionSettings,
+                shutdown
               )
               pipeline.addLast("ssl", handler)
               pipeline.addLast(negotiationHandler)
@@ -333,7 +329,8 @@ final class NettyServerBuilder[F[_]] private (
                 serviceErrorHandler,
                 requestLineParseErrorHandler,
                 dispatcher,
-                wsCompressionSettings
+                wsCompressionSettings,
+                shutdown
               )
           }
         }
@@ -352,13 +349,16 @@ final class NettyServerBuilder[F[_]] private (
           l.shutdown()
           logger.info("All channels shut down. Server shut down gracefully")
         })
-      dispatcher <- Dispatcher.parallel[F](await = true)
-      shuttingDown <- Resource.eval(Sync[F].delay(new AtomicBoolean(false)))
-      bound <- Resource.make(Sync[F].delay(bind(dispatcher, loop, shuttingDown))) {
+      // Released only after every connection has closed or been force-closed at the shutdown
+      // timeout, so requests still running have lost their connection and have already been asked
+      // to cancel. Awaiting them could hang: a cancel that reaches the Dispatcher while it is being
+      // released is never run.
+      dispatcher <- Dispatcher.parallel[F](await = false)
+      shutdown <- Resource.eval(Sync[F].delay(new ServerShutdown))
+      bound <- Resource.make(Sync[F].delay(bind(dispatcher, loop, shutdown))) {
         case Bound(address, _, channel, allChannels) =>
           Sync[F].delay {
-            // Responses written from now on close their connection instead of keeping it alive
-            shuttingDown.set(true)
+            shutdown.begin()
             channel.close().awaitUninterruptibly()
             closeHttp2Gracefully(allChannels)
             logger.info(
@@ -381,7 +381,7 @@ final class NettyServerBuilder[F[_]] private (
                     d,
                     Sync[F].delay {
                       logger.info(
-                        s"Shutdown timeout expired. Force-closing ${allChannels.size()} connection(s)")
+                        s"Shutdown timeout expired. Force-closing ${allChannels.size()} connection(s) and stream(s)")
                       void(allChannels.close().awaitUninterruptibly())
                     }
                   )

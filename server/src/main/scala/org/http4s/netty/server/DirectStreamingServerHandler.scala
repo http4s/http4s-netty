@@ -20,12 +20,9 @@ import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
 import io.netty.handler.codec.http._
-import io.netty.util.AttributeKey
 import org.playframework.netty.http.HttpStreamsServerHandlerBridge
 import org.playframework.netty.http.StreamedHttpMessage
 import org.playframework.netty.http.WebSocketHttpResponse
-
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** Extends [[HttpStreamsServerHandlerBridge]] to support direct body streaming.
   *
@@ -43,8 +40,16 @@ import java.util.concurrent.atomic.AtomicBoolean
   * package) rather than [[HttpStreamsServerHandler]] directly because `HttpStreamsHandler` is
   * package-private in Java. Scala 3 enforces this at runtime and throws [[IllegalAccessError]] when
   * `super.write()` or `sentOutMessage()` would resolve through a package-private class.
+  *
+  * @param isShuttingDown
+  *   whether the server is shutting down, in which case responses are sent with
+  *   `Connection: close`. Always false for HTTP/2 streams.
   */
-private[server] class DirectStreamingServerHandler extends HttpStreamsServerHandlerBridge {
+private[server] class DirectStreamingServerHandler(isShuttingDown: () => Boolean)
+    extends HttpStreamsServerHandlerBridge {
+
+  /** A handler for a server that never shuts down, kept for binary compatibility. */
+  def this() = this(() => false)
 
   // Whether we are currently in the direct streaming state (between headers and LastHttpContent).
   private[this] var directStreaming: Boolean = false
@@ -64,7 +69,7 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
   }
 
   override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit = {
-    if (!directStreaming) closeIfShuttingDown(ctx, msg)
+    if (!directStreaming) closeIfShuttingDown(msg)
     if (directStreaming)
       msg match {
         case _: LastHttpContent =>
@@ -101,14 +106,12 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
 
   /** While the server is shutting down, mark responses with `Connection: close` so the client stops
     * reusing the connection and it is closed once the response is written. WebSocket upgrades are
-    * left alone. HTTP/2 stream channels don't carry the attribute, so this only applies to HTTP/1.
+    * left alone.
     */
-  private[this] def closeIfShuttingDown(ctx: ChannelHandlerContext, msg: AnyRef): Unit =
+  private[this] def closeIfShuttingDown(msg: AnyRef): Unit =
     msg match {
       case _: WebSocketHttpResponse => ()
-      case response: HttpResponse
-          if Option(ctx.channel.attr(DirectStreamingServerHandler.ShuttingDown).get)
-            .exists(_.get) =>
+      case response: HttpResponse if isShuttingDown() =>
         val _ = response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
       case _ => ()
     }
@@ -123,13 +126,4 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
     else
       !"keep-alive".equalsIgnoreCase(connection)
   }
-}
-
-private[server] object DirectStreamingServerHandler {
-
-  /** Set on every accepted connection, holding the server-wide flag that is raised when shutdown
-    * starts.
-    */
-  val ShuttingDown: AttributeKey[AtomicBoolean] =
-    AttributeKey.valueOf[AtomicBoolean]("http4s-netty-server-shutting-down")
 }
