@@ -20,9 +20,12 @@ import io.netty.channel.ChannelFuture
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelPromise
 import io.netty.handler.codec.http._
+import io.netty.util.AttributeKey
 import org.playframework.netty.http.HttpStreamsServerHandlerBridge
 import org.playframework.netty.http.StreamedHttpMessage
 import org.playframework.netty.http.WebSocketHttpResponse
+
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Extends [[HttpStreamsServerHandlerBridge]] to support direct body streaming.
   *
@@ -60,7 +63,8 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
     super.channelRead(ctx, msg)
   }
 
-  override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit =
+  override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit = {
+    if (!directStreaming) closeIfShuttingDown(ctx, msg)
     if (directStreaming)
       msg match {
         case _: LastHttpContent =>
@@ -93,6 +97,21 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
           // delegate to the parent's reactive streams handling.
           superWrite(ctx, msg, promise)
       }
+  }
+
+  /** While the server is shutting down, mark responses with `Connection: close` so the client stops
+    * reusing the connection and it is closed once the response is written. WebSocket upgrades are
+    * left alone. HTTP/2 stream channels don't carry the attribute, so this only applies to HTTP/1.
+    */
+  private[this] def closeIfShuttingDown(ctx: ChannelHandlerContext, msg: AnyRef): Unit =
+    msg match {
+      case _: WebSocketHttpResponse => ()
+      case response: HttpResponse
+          if Option(ctx.channel.attr(DirectStreamingServerHandler.ShuttingDown).get)
+            .exists(_.get) =>
+        val _ = response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+      case _ => ()
+    }
 
   /** Determine whether the connection should be closed after this response, mirroring the logic
     * from [[HttpStreamsServerHandler]]'s `unbufferedWrite`.
@@ -104,4 +123,13 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
     else
       !"keep-alive".equalsIgnoreCase(connection)
   }
+}
+
+private[server] object DirectStreamingServerHandler {
+
+  /** Set on every accepted connection, holding the server-wide flag that is raised when shutdown
+    * starts.
+    */
+  val ShuttingDown: AttributeKey[AtomicBoolean] =
+    AttributeKey.valueOf[AtomicBoolean]("http4s-netty-server-shutting-down")
 }

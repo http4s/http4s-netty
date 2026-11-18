@@ -42,6 +42,7 @@ import io.netty.channel.uring.IoUring
 import io.netty.channel.uring.IoUringIoHandler
 import io.netty.channel.uring.IoUringServerSocketChannel
 import io.netty.handler.codec.compression.ZlibCodecFactory
+import io.netty.handler.codec.http2.Http2FrameCodec
 import io.netty.handler.ssl.ApplicationProtocolConfig
 import io.netty.handler.ssl.ApplicationProtocolConfig.Protocol
 import io.netty.handler.ssl.ApplicationProtocolConfig.SelectedListenerFailureBehavior
@@ -63,6 +64,7 @@ import org.http4s.server.websocket.WebSocketBuilder2
 
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
@@ -280,7 +282,10 @@ final class NettyServerBuilder[F[_]] private (
 
   def withShutdownTimeout(timeout: Duration): Self = copy(shutdownTimeout = timeout)
 
-  private def bind(dispatcher: Dispatcher[F], loop: EventLoopHolder[_ <: ServerChannel]) = {
+  private def bind(
+      dispatcher: Dispatcher[F],
+      loop: EventLoopHolder[_ <: ServerChannel],
+      shuttingDown: AtomicBoolean) = {
     val resolvedAddress =
       if (socketAddress.isUnresolved)
         new InetSocketAddress(socketAddress.getHostName, socketAddress.getPort)
@@ -302,6 +307,7 @@ final class NettyServerBuilder[F[_]] private (
       .childHandler(new ChannelInitializer[SocketChannel] {
         override def initChannel(ch: SocketChannel): Unit = void {
           allChannels.add(ch)
+          ch.attr(DirectStreamingServerHandler.ShuttingDown).set(shuttingDown)
           val pipeline = ch.pipeline()
           sslConfig.toHandler(ch.alloc()) match {
             case Some(handler) =>
@@ -347,10 +353,14 @@ final class NettyServerBuilder[F[_]] private (
           logger.info("All channels shut down. Server shut down gracefully")
         })
       dispatcher <- Dispatcher.parallel[F](await = true)
-      bound <- Resource.make(Sync[F].delay(bind(dispatcher, loop))) {
+      shuttingDown <- Resource.eval(Sync[F].delay(new AtomicBoolean(false)))
+      bound <- Resource.make(Sync[F].delay(bind(dispatcher, loop, shuttingDown))) {
         case Bound(address, _, channel, allChannels) =>
           Sync[F].delay {
+            // Responses written from now on close their connection instead of keeping it alive
+            shuttingDown.set(true)
             channel.close().awaitUninterruptibly()
+            closeHttp2Gracefully(allChannels)
             logger.info(
               s"Server bound at $address no longer accepting new connections, waiting for in-flight requests to complete")
           } *> {
@@ -422,6 +432,27 @@ final class NettyServerBuilder[F[_]] private (
     }
 
   }
+
+  /** Sends GOAWAY on every HTTP/2 connection, so clients stop opening streams on it. Closing an
+    * HTTP/2 connection is graceful: the codec sends GOAWAY, lets in-flight streams finish and then
+    * closes the connection. The codec's grace period defaults to 0 (close right after GOAWAY), so
+    * it is aligned with the shutdown timeout first.
+    */
+  private def closeHttp2Gracefully(allChannels: ChannelGroup): Unit = {
+    val graceMillis = shutdownTimeout match {
+      case d: FiniteDuration => d.toMillis
+      case _ => -1L // wait indefinitely
+    }
+    allChannels.forEach { (ch: Channel) =>
+      Option(ch.pipeline.get(classOf[Http2FrameCodec])).foreach { codec =>
+        ch.eventLoop.execute { () =>
+          codec.gracefulShutdownTimeoutMillis(graceMillis)
+          void(ch.close())
+        }
+      }
+    }
+  }
+
   private case class Bound(
       address: InetSocketAddress,
       holder: EventLoopHolder[_ <: ServerChannel],
