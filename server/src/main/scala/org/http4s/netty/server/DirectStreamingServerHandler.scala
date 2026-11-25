@@ -40,8 +40,16 @@ import org.playframework.netty.http.WebSocketHttpResponse
   * package) rather than [[HttpStreamsServerHandler]] directly because `HttpStreamsHandler` is
   * package-private in Java. Scala 3 enforces this at runtime and throws [[IllegalAccessError]] when
   * `super.write()` or `sentOutMessage()` would resolve through a package-private class.
+  *
+  * @param isShuttingDown
+  *   whether the server is shutting down, in which case responses are sent with
+  *   `Connection: close`. Always false for HTTP/2 streams.
   */
-private[server] class DirectStreamingServerHandler extends HttpStreamsServerHandlerBridge {
+private[server] class DirectStreamingServerHandler(isShuttingDown: () => Boolean)
+    extends HttpStreamsServerHandlerBridge {
+
+  /** A handler for a server that never shuts down, kept for binary compatibility. */
+  def this() = this(() => false)
 
   // Whether we are currently in the direct streaming state (between headers and LastHttpContent).
   private[this] var directStreaming: Boolean = false
@@ -60,7 +68,8 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
     super.channelRead(ctx, msg)
   }
 
-  override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit =
+  override def write(ctx: ChannelHandlerContext, msg: AnyRef, promise: ChannelPromise): Unit = {
+    if (!directStreaming) closeIfShuttingDown(msg)
     if (directStreaming)
       msg match {
         case _: LastHttpContent =>
@@ -93,6 +102,19 @@ private[server] class DirectStreamingServerHandler extends HttpStreamsServerHand
           // delegate to the parent's reactive streams handling.
           superWrite(ctx, msg, promise)
       }
+  }
+
+  /** While the server is shutting down, mark responses with `Connection: close` so the client stops
+    * reusing the connection and it is closed once the response is written. WebSocket upgrades are
+    * left alone.
+    */
+  private[this] def closeIfShuttingDown(msg: AnyRef): Unit =
+    msg match {
+      case _: WebSocketHttpResponse => ()
+      case response: HttpResponse if isShuttingDown() =>
+        val _ = response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+      case _ => ()
+    }
 
   /** Determine whether the connection should be closed after this response, mirroring the logic
     * from [[HttpStreamsServerHandler]]'s `unbufferedWrite`.
